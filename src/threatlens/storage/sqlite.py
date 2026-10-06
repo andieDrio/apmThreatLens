@@ -1,0 +1,172 @@
+"""SQLite persistence for the foundational ThreatLens domain.
+
+SQLite is used here as a dependency-free persistence implementation for the initial
+architecture gate. The repository boundary is intentionally isolated so a later
+PostgreSQL adapter can replace it without changing domain contracts.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from pathlib import Path
+from uuid import UUID
+
+from threatlens.domain.models import Asset, Campaign, Evidence, Finding, Scope, Service
+
+SCHEMA = """
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS campaigns (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    authorized INTEGER NOT NULL CHECK (authorized IN (0, 1)),
+    state TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS scopes (
+    campaign_id TEXT PRIMARY KEY REFERENCES campaigns(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS scope_entries (
+    campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    value TEXT NOT NULL,
+    included INTEGER NOT NULL CHECK (included IN (0, 1)),
+    PRIMARY KEY (campaign_id, value, included)
+);
+
+CREATE TABLE IF NOT EXISTS assets (
+    id TEXT PRIMARY KEY,
+    canonical_id TEXT NOT NULL UNIQUE,
+    asset_type TEXT NOT NULL,
+    value TEXT NOT NULL,
+    first_seen_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS services (
+    id TEXT PRIMARY KEY,
+    asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    protocol TEXT NOT NULL,
+    port INTEGER NOT NULL CHECK (port BETWEEN 1 AND 65535),
+    service_name TEXT,
+    version TEXT,
+    UNIQUE(asset_id, protocol, port)
+);
+
+CREATE TABLE IF NOT EXISTS evidence (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    content TEXT NOT NULL,
+    source TEXT NOT NULL,
+    captured_at TEXT NOT NULL,
+    sha256 TEXT,
+    metadata_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS findings (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    asset_id TEXT NOT NULL REFERENCES assets(id),
+    state TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    vulnerability_id TEXT,
+    cwe TEXT,
+    cve TEXT,
+    cvss REAL CHECK (cvss IS NULL OR (cvss >= 0 AND cvss <= 10)),
+    confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+    source TEXT NOT NULL,
+    detected_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS finding_evidence (
+    finding_id TEXT NOT NULL REFERENCES findings(id) ON DELETE CASCADE,
+    evidence_id TEXT NOT NULL REFERENCES evidence(id),
+    PRIMARY KEY (finding_id, evidence_id)
+);
+"""
+
+
+class SQLiteRepository:
+    """Transactional repository for domain persistence."""
+
+    def __init__(self, path: str | Path) -> None:
+        self.path = str(path)
+        self.connection = sqlite3.connect(self.path)
+        self.connection.row_factory = sqlite3.Row
+        self.connection.execute("PRAGMA foreign_keys = ON")
+        self.connection.execute("PRAGMA journal_mode = WAL")
+
+    def close(self) -> None:
+        self.connection.close()
+
+    def initialize(self) -> None:
+        self.connection.executescript(SCHEMA)
+        self.connection.commit()
+
+    def save_campaign(self, campaign: Campaign) -> None:
+        with self.connection:
+            self.connection.execute(
+                "INSERT INTO campaigns (id,name,authorized,state,created_at) VALUES (?,?,?,?,?)",
+                (str(campaign.id), campaign.name, int(campaign.authorized), campaign.state.value, campaign.created_at.isoformat()),
+            )
+            self.connection.execute("INSERT INTO scopes (campaign_id) VALUES (?)", (str(campaign.id),))
+            self.connection.executemany(
+                "INSERT INTO scope_entries (campaign_id,value,included) VALUES (?,?,?)",
+                [(str(campaign.id), value, 1) for value in campaign.scope.include]
+                + [(str(campaign.id), value, 0) for value in campaign.scope.exclude],
+            )
+
+    def save_asset(self, asset: Asset) -> None:
+        with self.connection:
+            self.connection.execute(
+                """INSERT INTO assets (id,canonical_id,asset_type,value,first_seen_at,last_seen_at)
+                   VALUES (?,?,?,?,?,?)
+                   ON CONFLICT(canonical_id) DO UPDATE SET last_seen_at=excluded.last_seen_at""",
+                (str(asset.id), asset.canonical_id, asset.asset_type, asset.value, asset.first_seen_at.isoformat(), asset.last_seen_at.isoformat()),
+            )
+
+    def save_service(self, service: Service) -> None:
+        with self.connection:
+            self.connection.execute(
+                """INSERT INTO services (id,asset_id,protocol,port,service_name,version)
+                   VALUES (?,?,?,?,?,?)
+                   ON CONFLICT(asset_id,protocol,port) DO UPDATE SET
+                     service_name=excluded.service_name, version=excluded.version""",
+                (str(service.id), str(service.asset_id), service.protocol, service.port, service.service_name, service.version),
+            )
+
+    def save_evidence(self, evidence: Evidence) -> None:
+        import json
+
+        with self.connection:
+            self.connection.execute(
+                """INSERT INTO evidence (id,kind,content,source,captured_at,sha256,metadata_json)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (str(evidence.id), evidence.kind, evidence.content, evidence.source, evidence.captured_at.isoformat(), evidence.sha256, json.dumps(dict(evidence.metadata), sort_keys=True)),
+            )
+
+    def save_finding(self, finding: Finding) -> None:
+        with self.connection:
+            self.connection.execute(
+                """INSERT INTO findings
+                   (id,title,asset_id,state,severity,vulnerability_id,cwe,cve,cvss,confidence,source,detected_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (str(finding.id), finding.title, str(finding.asset_id), finding.state.value, finding.severity.value, finding.vulnerability_id, finding.cwe, finding.cve, finding.cvss, finding.confidence, finding.source, finding.detected_at.isoformat()),
+            )
+            self.connection.executemany(
+                "INSERT INTO finding_evidence (finding_id,evidence_id) VALUES (?,?)",
+                [(str(finding.id), str(evidence_id)) for evidence_id in finding.evidence_ids],
+            )
+
+    def count(self, table: str) -> int:
+        allowed = {"campaigns", "assets", "services", "evidence", "findings", "finding_evidence"}
+        if table not in allowed:
+            raise ValueError("unsupported table")
+        return int(self.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+
+    def asset_id(self, canonical_id: str) -> UUID:
+        row = self.connection.execute("SELECT id FROM assets WHERE canonical_id=?", (canonical_id,)).fetchone()
+        if row is None:
+            raise KeyError(canonical_id)
+        return UUID(row[0])
