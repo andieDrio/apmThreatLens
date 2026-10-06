@@ -40,10 +40,18 @@ class ServiceObservation:
             raise ValueError("service observation banner exceeds 8192 bytes")
 
 
-_PRODUCT_VERSION = re.compile(r"(?P<product>[A-Za-z][A-Za-z0-9_.-]{1,63})/(?P<version>[0-9][A-Za-z0-9._+-]{0,63})")
+_PRODUCT_VERSION = re.compile(
+    r"(?P<product>[A-Za-z][A-Za-z0-9_.-]{1,63})/(?P<version>[0-9][A-Za-z0-9._+-]{0,63})"
+)
+_SSH_BANNER = re.compile(
+    r"SSH-[0-9.]+-(?P<product>[^\s/]+)(?:/(?P<version>[^\s]+))?(?:\s+(?P<comment>.+))?$",
+    re.I,
+)
 
 
-def normalize_observation(*, port: int, banner: str | None = None, protocol: str | None = None) -> ServiceObservation:
+def normalize_observation(
+    *, port: int, banner: str | None = None, protocol: str | None = None
+) -> ServiceObservation:
     """Normalize a bounded banner/protocol observation without declaring vulnerability."""
     if not 1 <= port <= 65535:
         raise ValueError("service observation port must be within 1..65535")
@@ -63,16 +71,19 @@ def normalize_observation(*, port: int, banner: str | None = None, protocol: str
             else:
                 product = server[:128]
     elif proto is Protocol.SSH:
-        match = re.match(r"SSH-[0-9.]+-(?P<product>[^\s/]+)(?:/(?P<version>[^\s]+))?", text, re.I)
+        match = _SSH_BANNER.match(text)
         if match:
             product = match.group("product")
-            version = match.group("version")
+            version = match.group("version") or match.group("comment")
     else:
         match = _PRODUCT_VERSION.search(text)
         if match:
             product, version = match.group("product"), match.group("version")
 
-    confidence = 0.95 if protocol else (0.9 if proto is not Protocol.UNKNOWN else 0.2)
+    if protocol:
+        confidence = 0.95 if proto is not Protocol.UNKNOWN else 0.2
+    else:
+        confidence = 0.9 if proto is not Protocol.UNKNOWN else 0.2
     if product:
         confidence = min(0.99, confidence + 0.04)
 
