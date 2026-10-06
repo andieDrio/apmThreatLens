@@ -3,7 +3,9 @@ name = "apm-threatlens"
 version = "0.1.0"
 description = "Evidence-driven VAPT orchestration platform"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "psycopg[binary]>=3.2,<4",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
