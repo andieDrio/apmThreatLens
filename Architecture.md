@@ -105,6 +105,8 @@ Risk must be explainable and must not depend exclusively on CVSS. Environmental 
 
 Use explicit identifiers, lifecycle states, timestamps, provenance, and database/application constraints appropriate to the selected persistence technology. Correlation must remain deterministic and auditable.
 
+The current persistence boundary uses SQLite for the dependency-free initial implementation. Its schema enforces foreign keys, unique asset canonical identity, service uniqueness per asset/protocol/port, finding/evidence relationships, and bounded CVSS/confidence values. The storage implementation is isolated so a PostgreSQL adapter can replace it without changing domain contracts.
+
 ## 9. Security
 
 The platform itself is security-sensitive. Apply authentication, authorization, least privilege, secure secret handling, strict validation, output encoding, parameterized persistence operations, SSRF protections, path protections, secure command-execution boundaries, and comprehensive audit logging.
@@ -112,3 +114,7 @@ The platform itself is security-sensitive. Apply authentication, authorization, 
 ## 10. Architecture Gate 01
 
 Establish the minimal production-grade backend/domain contract foundation required for later orchestration and provider implementations, without introducing fake scanner results or premature coupling to any one security tool.
+
+## 11. Architecture Gate 02
+
+Establish the persistent data-integrity boundary for Campaign → Scope → Asset → Service → Finding → Evidence. The current SQLite repository is an initial implementation of this boundary; provider execution and higher-level orchestration must depend on repository contracts rather than direct SQL access.
