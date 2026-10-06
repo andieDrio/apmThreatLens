@@ -24,15 +24,17 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 
 ### Completed
 
-- Foundational domain contracts for campaign, scope, asset, service, evidence, and finding.
+- Foundational domain contracts for campaign, scope, asset, service, scan, evidence, and finding.
 - Provider protocol boundaries.
 - Explicit campaign authorization and execution safety policy.
 - Initial SQLite persistence boundary with database constraints and foreign-key integrity.
-- Automated persistence tests covering relationships, deterministic asset identity, and orphan prevention.
+- Persisted scan execution IDs and fail-closed lifecycle transitions.
+- Campaign/scan orchestration boundary with provider isolation and cancellation semantics.
+- Automated persistence and orchestration tests covering relationships, deterministic asset identity, lifecycle transitions, provider failure, cancellation, and terminal-state protection.
 
-### In Progress
+### Current Architecture Gate
 
-Architecture Gate 02: persistent data-integrity architecture. The current SQLite adapter is the first implementation and remains intentionally isolated from provider-specific tooling.
+Architecture Gate 03: campaign/scan orchestration. The current implementation is deliberately provider-neutral; no real scanner is invoked by the orchestration tests.
 
 ### Validation Limitation
 
@@ -40,4 +42,4 @@ Repository changes are verified through GitHub. Local pytest, lint, build, and r
 
 ## Next Architecture Direction
 
-After persistence contracts are stabilized, the next priority is the campaign/scan orchestration boundary, including lifecycle transitions, execution IDs, cancellation semantics, and provider execution isolation.
+The next priority is the provider execution contract and execution observability boundary: provider registration/capabilities, execution metadata, structured events, failure classification, timeout/cancellation propagation, and evidence/finding handoff without coupling orchestration to a specific scanner.
