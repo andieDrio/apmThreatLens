@@ -1,5 +1,6 @@
 from threading import Event
 from time import sleep
+from uuid import uuid4
 
 import pytest
 
@@ -32,7 +33,8 @@ class SlowProvider:
     name = "slow"
 
     def execute(self, campaign, execution_id, cancel_event) -> None:
-        sleep(0.01)
+        while not cancel_event.is_set():
+            sleep(0.005)
 
 
 def campaign() -> Campaign:
@@ -68,9 +70,10 @@ def test_registry_rejects_metadata_executor_name_mismatch() -> None:
 def test_runtime_emits_start_and_complete_events() -> None:
     runtime = ExecutionRuntime(ExecutionPolicy())
     provider = ObservableProvider()
-    result = runtime.execute(campaign(), __import__("uuid").uuid4(), metadata(provider.name), provider, Event())
+    result = runtime.execute(campaign(), uuid4(), metadata(provider.name), provider, Event())
     assert result.success
     assert not result.cancelled
+    assert not result.timed_out
     assert [event.event_type for event in result.events] == [
         ProviderEventType.STARTED,
         ProviderEventType.COMPLETED,
@@ -82,7 +85,20 @@ def test_runtime_emits_start_and_complete_events() -> None:
 def test_runtime_converts_provider_failure_to_structured_error() -> None:
     runtime = ExecutionRuntime(ExecutionPolicy())
     provider = FailingProvider()
-    result = runtime.execute(campaign(), __import__("uuid").uuid4(), metadata(provider.name), provider, Event())
+    result = runtime.execute(campaign(), uuid4(), metadata(provider.name), provider, Event())
     assert not result.success
     assert result.error == "RuntimeError: boom"
+    assert not result.timed_out
+    assert result.events[-1].event_type is ProviderEventType.ERROR
+
+
+def test_runtime_cancels_cooperatively_on_timeout() -> None:
+    runtime = ExecutionRuntime(ExecutionPolicy(timeout_seconds=0.01))
+    provider = SlowProvider()
+    cancel_event = Event()
+    result = runtime.execute(campaign(), uuid4(), metadata(provider.name), provider, cancel_event)
+    assert result.timed_out
+    assert not result.success
+    assert cancel_event.is_set()
+    assert result.error == "TimeoutError: provider exceeded 0.010s execution budget"
     assert result.events[-1].event_type is ProviderEventType.ERROR
