@@ -1,8 +1,4 @@
-"""Immutable domain models used across provider and orchestration boundaries.
-
-These models intentionally contain no scanner-specific fields. Provider-specific payloads
-must be normalized before being represented as domain objects.
-"""
+"""Immutable domain models used across provider and orchestration boundaries."""
 
 from __future__ import annotations
 
@@ -47,8 +43,6 @@ class Severity(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Scope:
-    """Explicit execution boundary for a campaign."""
-
     include: Tuple[str, ...]
     exclude: Tuple[str, ...] = ()
 
@@ -102,10 +96,10 @@ class Service:
     id: UUID = field(default_factory=uuid4)
 
     def __post_init__(self) -> None:
-        if not 1 <= self.port <= 65535:
-            raise ValueError("service.port must be within 1..65535")
         if not self.protocol.strip():
             raise ValueError("service.protocol cannot be blank")
+        if not 1 <= self.port <= 65535:
+            raise ValueError("service.port must be within 1..65535")
 
 
 @dataclass(frozen=True, slots=True)
