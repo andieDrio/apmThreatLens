@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from threading import Event
 from time import monotonic
-from typing import Protocol, Sequence
+from typing import Callable, Protocol
 from uuid import UUID
 
 from threatlens.domain.models import Campaign
@@ -131,7 +131,7 @@ class ExecutionRuntime:
         metadata: ProviderMetadata,
         executor: ProviderExecutor,
         cancel_event: Event,
-        observer: callable | None = None,
+        observer: Callable[[ProviderEvent], None] | None = None,
     ) -> ExecutionResult:
         context = ExecutionContext(campaign.id, execution_id, metadata, self.policy, cancel_event)
         events: list[ProviderEvent] = []
