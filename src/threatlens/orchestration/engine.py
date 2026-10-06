@@ -27,6 +27,8 @@ class ScanRepository(Protocol):
         self, execution_id: UUID, target: LifecycleState, error: str | None = None
     ) -> None: ...
 
+    def scan_state(self, execution_id: UUID) -> LifecycleState: ...
+
 
 @dataclass(slots=True)
 class ScanOrchestrator:
@@ -46,8 +48,13 @@ class ScanOrchestrator:
         """Cancel only a queued or running execution; terminal scans cannot be altered."""
         self.repository.update_scan_state(execution_id, LifecycleState.CANCELLED)
 
-    def run(self, campaign: Campaign, provider: ScanExecutor, cancel_event: Event | None = None) -> Scan:
-        """Run one provider execution while keeping lifecycle state authoritative in storage."""
+    def run(
+        self,
+        campaign: Campaign,
+        provider: ScanExecutor,
+        cancel_event: Event | None = None,
+    ) -> Scan:
+        """Run one provider execution while storage remains authoritative for lifecycle state."""
         validate_campaign_execution(campaign, self.policy)
         event = cancel_event or Event()
         scan = self.queue(campaign, provider)
@@ -79,12 +86,6 @@ class ScanOrchestrator:
             campaign_id=scan.campaign_id,
             provider_name=scan.provider_name,
             execution_id=scan.execution_id,
-            state=self.repository_state(scan.execution_id),
+            state=self.repository.scan_state(scan.execution_id),
             queued_at=scan.queued_at,
         )
-
-    def repository_state(self, execution_id: UUID) -> LifecycleState:
-        getter = getattr(self.repository, "scan_state", None)
-        if getter is None:
-            raise RuntimeError("repository must expose scan_state for authoritative lifecycle reads")
-        return getter(execution_id)
