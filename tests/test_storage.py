@@ -1,3 +1,8 @@
+import sqlite3
+from uuid import uuid4
+
+import pytest
+
 from threatlens.domain.models import Asset, Campaign, Evidence, Finding, Scope, Service
 from threatlens.storage.sqlite import SQLiteRepository
 
@@ -55,9 +60,7 @@ def test_asset_identity_is_idempotent(tmp_path) -> None:
 def test_foreign_keys_prevent_orphan_service(tmp_path) -> None:
     repo = SQLiteRepository(tmp_path / "threatlens.db")
     repo.initialize()
-    import pytest
-    from uuid import uuid4
 
-    with pytest.raises(Exception):
+    with pytest.raises(sqlite3.IntegrityError):
         repo.save_service(Service(asset_id=uuid4(), protocol="tcp", port=443))
     repo.close()
