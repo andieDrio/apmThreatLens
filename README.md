@@ -37,12 +37,14 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 - Controlled TCP network discovery adapter with explicit host allowlisting through campaign scope, exclusion enforcement, bounded target count, bounded ports, per-connect timeout, cooperative cancellation, service normalization, and evidence provenance.
 - Service identification and protocol metadata normalizer for bounded observations, with explicit protocol classification, product/version extraction, confidence, and banner-size limits. Identification remains an observation layer and does not create vulnerability claims.
 - Controlled active service interrogation provider using only explicit, bounded protocol probes for authorized in-scope hosts, with target/port/response limits, cancellation, timeout, and evidence provenance.
-- Controlled TLS assessment provider with bounded TLS handshake inspection, certificate metadata capture, hostname verification state, cipher/protocol observation, timeout/target limits, exclusion enforcement, cancellation, and evidence provenance. TLS observations do not automatically create vulnerability findings.
-- Automated persistence, orchestration, provider-runtime, evidence-handoff, discovery, network-discovery, identification, interrogation, and TLS assessment tests.
+- Controlled TLS assessment provider with bounded TLS handshake inspection, certificate metadata capture, hostname verification state, cipher/protocol observation, timeout/target limits, exclusion enforcement, cancellation, and evidence provenance.
+- Deterministic TLS security-policy evaluation for deprecated TLS versions, certificate validation failures, hostname mismatch, certificate expiration, and weak/deprecated ciphers.
+- End-to-end TLS finding handoff through persisted evidence, asset resolution, normalized finding validation, and the existing ProviderHandoff boundary.
+- Automated persistence, orchestration, provider-runtime, evidence-handoff, discovery, network-discovery, identification, interrogation, TLS assessment, and TLS finding integration tests.
 
 ### Current Architecture Gate
 
-Architecture Gate 10: TLS assessment and transport-security normalization. The implementation performs bounded TLS observations against authorized in-scope hosts, preserves certificate/protocol/cipher evidence, and keeps transport observations separate from vulnerability claims.
+Architecture Gate 11: TLS security-policy evaluation and finding integration. TLS observations are converted into deterministic, evidence-backed findings only after the observation has been sealed and persisted through ProviderHandoff. Findings must resolve to an authorized asset and reference the exact persisted evidence that triggered the rule.
 
 ### PostgreSQL Deployment Readiness
 
@@ -56,4 +58,4 @@ Repository changes are verified through GitHub. Local pytest, lint, build, Postg
 
 ## Next Architecture Direction
 
-The next priority is controlled TLS security-policy evaluation over the normalized TLS observations, followed by evidence-backed vulnerability assessment and vulnerability-intelligence correlation. Transport observations must remain distinct from confirmed vulnerability findings.
+The next priority is hardening the normalized finding contract for cross-provider correlation and deterministic deduplication, while preserving evidence provenance and preventing duplicate logical findings from multiple assessment providers.
