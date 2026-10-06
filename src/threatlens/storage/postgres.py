@@ -1,88 +1,53 @@
-"""PostgreSQL persistence adapter using the same repository contracts as SQLite.
-
-The adapter is deployment-ready but does not auto-create databases or start a
-server. Connection configuration is supplied by the deployment environment.
-"""
+"""PostgreSQL persistence adapter using the same repository contracts as SQLite."""
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from uuid import UUID
 
 from threatlens.domain.models import Asset, Campaign, Evidence, Finding, Service
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS campaigns (
-    id UUID PRIMARY KEY,
-    name TEXT NOT NULL,
-    authorized BOOLEAN NOT NULL,
-    state TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL
+    id UUID PRIMARY KEY, name TEXT NOT NULL, authorized BOOLEAN NOT NULL,
+    state TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL
 );
 CREATE TABLE IF NOT EXISTS scopes (
     campaign_id UUID PRIMARY KEY REFERENCES campaigns(id) ON DELETE CASCADE
 );
 CREATE TABLE IF NOT EXISTS scope_entries (
     campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
-    value TEXT NOT NULL,
-    included BOOLEAN NOT NULL,
+    value TEXT NOT NULL, included BOOLEAN NOT NULL,
     PRIMARY KEY (campaign_id, value, included)
 );
 CREATE TABLE IF NOT EXISTS assets (
-    id UUID PRIMARY KEY,
-    canonical_id TEXT NOT NULL UNIQUE,
-    asset_type TEXT NOT NULL,
-    value TEXT NOT NULL,
-    first_seen_at TIMESTAMPTZ NOT NULL,
-    last_seen_at TIMESTAMPTZ NOT NULL
+    id UUID PRIMARY KEY, canonical_id TEXT NOT NULL UNIQUE, asset_type TEXT NOT NULL,
+    value TEXT NOT NULL, first_seen_at TIMESTAMPTZ NOT NULL, last_seen_at TIMESTAMPTZ NOT NULL
 );
 CREATE TABLE IF NOT EXISTS services (
-    id UUID PRIMARY KEY,
-    asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
-    protocol TEXT NOT NULL,
-    port INTEGER NOT NULL CHECK (port BETWEEN 1 AND 65535),
-    service_name TEXT,
-    version TEXT,
-    UNIQUE(asset_id, protocol, port)
+    id UUID PRIMARY KEY, asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    protocol TEXT NOT NULL, port INTEGER NOT NULL CHECK (port BETWEEN 1 AND 65535),
+    service_name TEXT, version TEXT, UNIQUE(asset_id, protocol, port)
 );
 CREATE TABLE IF NOT EXISTS evidence (
-    id UUID PRIMARY KEY,
-    kind TEXT NOT NULL,
-    content TEXT NOT NULL,
-    source TEXT NOT NULL,
-    captured_at TIMESTAMPTZ NOT NULL,
-    sha256 TEXT,
-    metadata_json JSONB NOT NULL
+    id UUID PRIMARY KEY, kind TEXT NOT NULL, content TEXT NOT NULL, source TEXT NOT NULL,
+    captured_at TIMESTAMPTZ NOT NULL, sha256 TEXT, metadata_json JSONB NOT NULL
 );
 CREATE TABLE IF NOT EXISTS findings (
-    id UUID PRIMARY KEY,
-    title TEXT NOT NULL,
-    asset_id UUID NOT NULL REFERENCES assets(id),
-    state TEXT NOT NULL,
-    severity TEXT NOT NULL,
-    vulnerability_id TEXT,
-    cwe TEXT,
-    cve TEXT,
+    id UUID PRIMARY KEY, title TEXT NOT NULL, asset_id UUID NOT NULL REFERENCES assets(id),
+    state TEXT NOT NULL, severity TEXT NOT NULL, vulnerability_id TEXT, cwe TEXT, cve TEXT,
     cvss DOUBLE PRECISION CHECK (cvss IS NULL OR (cvss >= 0 AND cvss <= 10)),
     confidence DOUBLE PRECISION NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
-    source TEXT NOT NULL,
-    detected_at TIMESTAMPTZ NOT NULL
+    source TEXT NOT NULL, detected_at TIMESTAMPTZ NOT NULL
 );
 CREATE TABLE IF NOT EXISTS finding_evidence (
     finding_id UUID NOT NULL REFERENCES findings(id) ON DELETE CASCADE,
-    evidence_id UUID NOT NULL REFERENCES evidence(id),
-    PRIMARY KEY (finding_id, evidence_id)
+    evidence_id UUID NOT NULL REFERENCES evidence(id), PRIMARY KEY (finding_id, evidence_id)
 );
 CREATE TABLE IF NOT EXISTS scans (
-    execution_id UUID PRIMARY KEY,
-    campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
-    provider_name TEXT NOT NULL,
-    state TEXT NOT NULL,
-    queued_at TIMESTAMPTZ NOT NULL,
-    started_at TIMESTAMPTZ,
-    finished_at TIMESTAMPTZ,
-    error TEXT
+    execution_id UUID PRIMARY KEY, campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    provider_name TEXT NOT NULL, state TEXT NOT NULL, queued_at TIMESTAMPTZ NOT NULL,
+    started_at TIMESTAMPTZ, finished_at TIMESTAMPTZ, error TEXT
 );
 """
 
@@ -144,8 +109,7 @@ class PostgresRepository:
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.execute(
-                    """INSERT INTO evidence
-                       (id,kind,content,source,captured_at,sha256,metadata_json)
+                    """INSERT INTO evidence (id,kind,content,source,captured_at,sha256,metadata_json)
                        VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                     (evidence.id, evidence.kind, evidence.content, evidence.source,
                      evidence.captured_at, evidence.sha256, json.dumps(dict(evidence.metadata), sort_keys=True)),
