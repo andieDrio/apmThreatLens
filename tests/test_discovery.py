@@ -1,5 +1,7 @@
 from threading import Event
 
+import pytest
+
 from threatlens.domain.models import Campaign, Scope
 from threatlens.providers.discovery import DiscoveryProvider
 from threatlens.providers.handoff import ProviderHandoff
@@ -47,16 +49,6 @@ def test_discovery_cancellation_stops_before_processing(tmp_path) -> None:
     repo.close()
 
 
-def test_discovery_rejects_blank_target(tmp_path) -> None:
-    repo = SQLiteRepository(tmp_path / "threatlens.db")
-    repo.initialize()
-    provider = DiscoveryProvider(repo, ProviderHandoff(repo))
-    campaign = Campaign(
-        name="invalid-discovery",
-        scope=Scope(include=("   ",)),
-        authorized=True,
-    )
-
-    # Scope itself rejects blank targets before a provider can execute.
-    assert campaign.scope.include == ("   ",)
-    repo.close()
+def test_discovery_rejects_blank_target() -> None:
+    with pytest.raises(ValueError, match="scope.include cannot contain blank targets"):
+        Scope(include=("   ",))
