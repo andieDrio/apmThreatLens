@@ -40,11 +40,12 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 - Controlled TLS assessment provider with bounded TLS handshake inspection, certificate metadata capture, hostname verification state, cipher/protocol observation, timeout/target limits, exclusion enforcement, cancellation, and evidence provenance.
 - Deterministic TLS security-policy evaluation for deprecated TLS versions, certificate validation failures, hostname mismatch, certificate expiration, and weak/deprecated ciphers.
 - End-to-end TLS finding handoff through persisted evidence, asset resolution, normalized finding validation, and the existing ProviderHandoff boundary.
-- Automated persistence, orchestration, provider-runtime, evidence-handoff, discovery, network-discovery, identification, interrogation, TLS assessment, and TLS finding integration tests.
+- Deterministic cross-provider finding correlation using asset identity plus vulnerability identity (or normalized title/CWE fallback), with stable logical finding IDs and preservation of all unique evidence and contributing provider sources.
+- Automated persistence, orchestration, provider-runtime, evidence-handoff, discovery, network-discovery, identification, interrogation, TLS assessment, TLS finding integration, and finding-correlation tests.
 
 ### Current Architecture Gate
 
-Architecture Gate 11: TLS security-policy evaluation and finding integration. TLS observations are converted into deterministic, evidence-backed findings only after the observation has been sealed and persisted through ProviderHandoff. Findings must resolve to an authorized asset and reference the exact persisted evidence that triggered the rule.
+Architecture Gate 12: normalized finding correlation and deterministic deduplication. Equivalent findings from multiple assessment providers are reduced to one logical finding while preserving all unique evidence references and contributing provider sources. Correlation is deliberately conservative and never infers endpoint/service-location equivalence that the current Finding contract cannot represent.
 
 ### PostgreSQL Deployment Readiness
 
@@ -58,4 +59,4 @@ Repository changes are verified through GitHub. Local pytest, lint, build, Postg
 
 ## Next Architecture Direction
 
-The next priority is hardening the normalized finding contract for cross-provider correlation and deterministic deduplication, while preserving evidence provenance and preventing duplicate logical findings from multiple assessment providers.
+The next priority is integrating the normalized correlation engine at the persistence/orchestration boundary so duplicate logical findings are prevented before durable storage while preserving all evidence provenance.
