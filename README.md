@@ -36,11 +36,12 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 - Controlled discovery provider that normalizes only authorized campaign targets, honors exclusions/cancellation, persists normalized assets, and records discovery evidence without claiming vulnerabilities or performing network probing.
 - Controlled TCP network discovery adapter with explicit host allowlisting through campaign scope, exclusion enforcement, bounded target count, bounded ports, per-connect timeout, cooperative cancellation, service normalization, and evidence provenance.
 - Service identification and protocol metadata normalizer for bounded observations, with explicit protocol classification, product/version extraction, confidence, and banner-size limits. Identification remains an observation layer and does not create vulnerability claims.
-- Automated persistence, orchestration, provider-runtime, evidence-handoff, discovery, network-discovery, and identification tests.
+- Controlled active service interrogation provider using only explicit, bounded protocol probes for authorized in-scope hosts, with target/port/response limits, cancellation, timeout, and evidence provenance.
+- Automated persistence, orchestration, provider-runtime, evidence-handoff, discovery, network-discovery, identification, and interrogation tests.
 
 ### Current Architecture Gate
 
-Architecture Gate 08: service identification and protocol metadata normalization. The implementation normalizes bounded provider observations into protocol/service/product/version metadata while preserving the distinction between observed service information and vulnerability assessment.
+Architecture Gate 09: evidence-backed active service interrogation. The implementation enriches explicitly scoped service observations through a small allowlisted set of protocol-specific probes while preserving strict target, port, timeout, response-size, cancellation, and evidence boundaries. It does not create vulnerability findings.
 
 ### PostgreSQL Deployment Readiness
 
@@ -54,4 +55,4 @@ Repository changes are verified through GitHub. Local pytest, lint, build, Postg
 
 ## Next Architecture Direction
 
-The next priority is evidence-backed active service interrogation, constrained by the existing network scope and execution policies, so that service observations can be enriched without turning observations into unsupported vulnerability claims.
+The next priority is TLS-aware service assessment and transport metadata normalization, using the existing authorization, scope, execution, evidence, and persistence boundaries. TLS assessment must remain separate from generic service identification and must not automatically create vulnerability findings without explicit assessment evidence.
