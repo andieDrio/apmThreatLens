@@ -234,3 +234,9 @@ Establish bounded TLS assessment and transport-security normalization. The imple
 ## 30. Architecture Gate 11
 
 Establish deterministic TLS security-policy evaluation and end-to-end finding integration. The policy layer must be network-free and deterministic; every finding must reference the exact persisted evidence that triggered it and the authorized asset being assessed. The TLS provider must persist evidence before evaluating findings, resolve the target to an asset before finding persistence, and use the existing ProviderHandoff rather than writing findings directly to storage. Missing asset resolution must fail closed when finding integration is enabled. Evidence-only execution remains supported when no resolver is configured for isolated observation workflows.
+
+## 31. Architecture Gate 12
+
+Establish deterministic cross-provider finding correlation and deduplication before later risk aggregation. `correlation_key()` must derive logical identity from asset identity plus vulnerability identity, or normalized title/CWE when no vulnerability identifier exists; provider-specific IDs and evidence IDs must never determine logical identity. `correlate_findings()` must collapse equivalent findings into one stable UUIDv5 logical finding, preserve every unique evidence reference, retain contributing provider sources, and select the strongest supported severity/state/confidence without fabricating technical context.
+
+Correlation is deliberately conservative because the current `Finding` domain contract does not yet model endpoint, parameter, or service-location identity. The engine must therefore never infer equivalence across different assets or across unsupported location dimensions. This gate is a pure normalization layer and must not perform network access or write directly to persistence.
