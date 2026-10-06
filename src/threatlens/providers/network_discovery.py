@@ -1,10 +1,4 @@
-"""Controlled TCP network discovery adapter.
-
-Gate 07 permits active network interaction only against explicitly scoped host
-identifiers. It intentionally avoids CIDR expansion, UDP probing, service
-exploitation, and arbitrary port-range discovery. A future scanner backend can
-plug into the same runtime after these safety boundaries are preserved.
-"""
+"""Controlled TCP network discovery adapter."""
 
 from __future__ import annotations
 
@@ -17,7 +11,7 @@ from uuid import UUID
 
 from threatlens.domain.models import Asset, Campaign, Evidence, Service
 from threatlens.providers.handoff import ProviderHandoff
-from threatlens.providers.runtime import ProviderMetadata
+from threatlens.providers.runtime import ProviderCapability, ProviderMetadata
 
 
 class NetworkDiscoveryRepository(Protocol):
@@ -52,7 +46,7 @@ class TcpProbe(Protocol):
 
 
 class SocketTcpProbe:
-    """Minimal TCP connect probe; no payload is sent to the target."""
+    """Minimal TCP connect probe; no application payload is sent."""
 
     def connect(self, address: tuple[str, int], timeout: float) -> bool:
         try:
@@ -69,7 +63,13 @@ class NetworkDiscoveryProvider:
     metadata = ProviderMetadata(
         name=name,
         version="1.0.0",
-        capabilities=frozenset({"NETWORK", "DISCOVERY", "EVIDENCE"}),
+        capabilities=frozenset(
+            {
+                ProviderCapability.NETWORK,
+                ProviderCapability.DISCOVERY,
+                ProviderCapability.EVIDENCE,
+            }
+        ),
         safe_by_default=True,
     )
 
@@ -92,7 +92,6 @@ class NetworkDiscoveryProvider:
 
         excluded = {self._normalize_host(value) for value in campaign.scope.exclude}
         processed = 0
-
         for target in campaign.scope.include:
             if cancel_event.is_set():
                 return
@@ -103,19 +102,13 @@ class NetworkDiscoveryProvider:
             if processed > self.policy.max_targets:
                 raise ValueError("network discovery target count exceeds execution policy")
 
-            asset = Asset(
-                canonical_id=f"host:{host}",
-                asset_type="ipv4" if self._is_ipv4(host) else "ipv6" if self._is_ipv6(host) else "fqdn",
-                value=host,
-            )
+            asset = Asset(canonical_id=f"host:{host}", asset_type=self._asset_type(host), value=host)
             self.repository.save_asset(asset)
-
             for port in self.policy.ports:
                 if cancel_event.is_set():
                     return
                 if not self.probe.connect((host, port), self.policy.timeout_seconds):
                     continue
-
                 service = Service(
                     asset_id=asset.id,
                     protocol="tcp",
@@ -127,12 +120,7 @@ class NetworkDiscoveryProvider:
                     kind="tcp-connect",
                     content=f"tcp://{host}:{port} accepted a TCP connection",
                     source=self.name,
-                    metadata={
-                        "asset_id": str(asset.id),
-                        "host": host,
-                        "port": str(port),
-                        "protocol": "tcp",
-                    },
+                    metadata={"asset_id": str(asset.id), "host": host, "port": str(port), "protocol": "tcp"},
                 )
                 self.handoff.persist_evidence(
                     execution_id=execution_id,
@@ -154,24 +142,22 @@ class NetworkDiscoveryProvider:
                 raise ValueError(f"invalid network discovery host: {target!r}") from None
             normalized = value.lower().rstrip(".")
             labels = normalized.split(".")
-            if not all(label and len(label) <= 63 and label[0] != "-" and label[-1] != "-" for label in labels):
+            if not all(
+                label and len(label) <= 63 and label[0] != "-" and label[-1] != "-" for label in labels
+            ):
                 raise ValueError(f"invalid network discovery host: {target!r}")
             return normalized
 
     @staticmethod
-    def _is_ipv4(host: str) -> bool:
+    def _asset_type(host: str) -> str:
         try:
-            return ip_address(host).version == 4
+            return "ipv4" if ip_address(host).version == 4 else "ipv6"
         except ValueError:
-            return False
-
-    @staticmethod
-    def _is_ipv6(host: str) -> bool:
-        try:
-            return ip_address(host).version == 6
-        except ValueError:
-            return False
+            return "fqdn"
 
     @staticmethod
     def _well_known_service(port: int) -> str | None:
-        return {22: "ssh", 25: "smtp", 53: "dns", 80: "http", 110: "pop3", 143: "imap", 443: "https", 445: "smb", 3389: "rdp"}.get(port)
+        return {
+            22: "ssh", 25: "smtp", 53: "dns", 80: "http", 110: "pop3",
+            143: "imap", 443: "https", 445: "smb", 3389: "rdp",
+        }.get(port)
