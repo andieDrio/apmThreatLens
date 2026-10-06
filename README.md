@@ -35,11 +35,12 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 - Evidence-first provider handoff with immutable evidence sealing, SHA-256 content integrity, execution/provider provenance, and finding/evidence validation.
 - Controlled discovery provider that normalizes only authorized campaign targets, honors exclusions/cancellation, persists normalized assets, and records discovery evidence without claiming vulnerabilities or performing network probing.
 - Controlled TCP network discovery adapter with explicit host allowlisting through campaign scope, exclusion enforcement, bounded target count, bounded ports, per-connect timeout, cooperative cancellation, service normalization, and evidence provenance.
-- Automated persistence, orchestration, provider-runtime, evidence-handoff, discovery, and network-discovery tests.
+- Service identification and protocol metadata normalizer for bounded observations, with explicit protocol classification, product/version extraction, confidence, and banner-size limits. Identification remains an observation layer and does not create vulnerability claims.
+- Automated persistence, orchestration, provider-runtime, evidence-handoff, discovery, network-discovery, and identification tests.
 
 ### Current Architecture Gate
 
-Architecture Gate 07: controlled TCP network discovery adapter. Active network interaction is limited to explicitly scoped IP/FQDN targets and a bounded explicit port set. CIDR expansion, UDP probing, exploitation, and unrestricted scanning are intentionally outside this gate.
+Architecture Gate 08: service identification and protocol metadata normalization. The implementation normalizes bounded provider observations into protocol/service/product/version metadata while preserving the distinction between observed service information and vulnerability assessment.
 
 ### PostgreSQL Deployment Readiness
 
@@ -53,4 +54,4 @@ Repository changes are verified through GitHub. Local pytest, lint, build, Postg
 
 ## Next Architecture Direction
 
-The next priority is service identification and protocol metadata normalization over the controlled network-discovery results, while preserving scope, evidence provenance, and the distinction between observed service exposure and vulnerability claims.
+The next priority is evidence-backed active service interrogation, constrained by the existing network scope and execution policies, so that service observations can be enriched without turning observations into unsupported vulnerability claims.
