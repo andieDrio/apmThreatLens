@@ -32,11 +32,12 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 - Campaign/scan orchestration boundary with provider isolation and cancellation semantics.
 - Provider registry with explicit metadata and capability declarations.
 - Provider execution runtime with structured execution events, execution metrics, failure capture, and cooperative timeout/cancellation signaling.
-- Automated persistence, orchestration, and provider-runtime tests.
+- Evidence-first provider handoff with immutable evidence sealing, SHA-256 content integrity, execution/provider provenance, and finding/evidence validation.
+- Automated persistence, orchestration, provider-runtime, and evidence-handoff tests.
 
 ### Current Architecture Gate
 
-Architecture Gate 04: provider execution and observability. The current implementation remains provider-neutral; no real scanner is invoked by the architecture tests.
+Architecture Gate 05: evidence and finding handoff. Raw evidence is kept conceptually separate from normalized findings; provider output must be bound to execution/provider provenance before persistence.
 
 ### Validation Limitation
 
@@ -44,4 +45,4 @@ Repository changes are verified through GitHub. Local pytest, lint, build, and r
 
 ## Next Architecture Direction
 
-The next priority is evidence/finding handoff and normalized provider output, followed by the first controlled discovery provider. Real scanner integrations must enter through the provider runtime and remain governed by campaign scope and execution safety controls.
+The next priority is the first controlled discovery provider, which must consume authorized campaign scope, execute through the provider registry/runtime, normalize discovered assets, persist evidence where applicable, and preserve execution provenance. Real network interaction must remain explicitly scoped and safety-controlled.
