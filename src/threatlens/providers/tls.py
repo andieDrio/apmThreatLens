@@ -7,10 +7,10 @@ import ssl
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from threading import Event
-from typing import Protocol
+from typing import Callable, Protocol
 from uuid import UUID
 
-from threatlens.domain.models import Campaign, Evidence
+from threatlens.domain.models import Asset, Campaign, Evidence
 from threatlens.providers.handoff import ProviderHandoff
 from threatlens.providers.runtime import ProviderCapability, ProviderMetadata
 
@@ -98,15 +98,24 @@ class TLSAssessmentProvider:
     name = "builtin-tls-assessment"
     metadata = ProviderMetadata(
         name=name,
-        version="1.0.0",
+        version="1.1.0",
         capabilities=frozenset({ProviderCapability.TLS, ProviderCapability.EVIDENCE}),
         safe_by_default=True,
     )
 
-    def __init__(self, handoff: ProviderHandoff, policy: TLSPolicy | None = None, probe: TLSProbe | None = None) -> None:
+    def __init__(
+        self,
+        handoff: ProviderHandoff,
+        policy: TLSPolicy | None = None,
+        probe: TLSProbe | None = None,
+        asset_resolver: Callable[[str], Asset | None] | None = None,
+        finding_policy: object | None = None,
+    ) -> None:
         self.handoff = handoff
         self.policy = policy or TLSPolicy()
         self.probe = probe or SocketTLSProbe()
+        self.asset_resolver = asset_resolver
+        self.finding_policy = finding_policy
 
     def execute(self, campaign: Campaign, execution_id: UUID, cancel_event: Event) -> None:
         if len(campaign.scope.include) > self.policy.max_targets:
@@ -138,7 +147,51 @@ class TLSAssessmentProvider:
                         "certificate_error": observation.certificate_error or "",
                     },
                 )
-                self.handoff.persist_evidence(execution_id=execution_id, provider=self.metadata, evidence=evidence)
+                persisted_evidence = self.handoff.persist_evidence(
+                    execution_id=execution_id,
+                    provider=self.metadata,
+                    evidence=evidence,
+                )
+                self._persist_policy_findings(
+                    host=host,
+                    observation=observation,
+                    evidence=persisted_evidence,
+                    execution_id=execution_id,
+                )
+
+    def _persist_policy_findings(
+        self,
+        *,
+        host: str,
+        observation: TLSObservation,
+        evidence: Evidence,
+        execution_id: UUID,
+    ) -> None:
+        """Evaluate only persisted evidence and hand findings back through the domain boundary."""
+        if self.asset_resolver is None:
+            return
+        asset = self.asset_resolver(host)
+        if asset is None:
+            raise ValueError(f"TLS finding integration could not resolve asset: {host}")
+
+        from threatlens.providers.tls_policy import TLSPolicy as FindingPolicy
+        from threatlens.providers.tls_policy import evaluate_tls_observation
+
+        policy = self.finding_policy if isinstance(self.finding_policy, FindingPolicy) else None
+        findings = evaluate_tls_observation(
+            observation,
+            asset_id=asset.id,
+            evidence_id=evidence.id,
+            policy=policy,
+        )
+        for finding in findings:
+            self.handoff.persist_finding(
+                execution_id=execution_id,
+                provider=self.metadata,
+                asset=asset,
+                finding=finding,
+                evidence=(evidence,),
+            )
 
     @staticmethod
     def _normalize_host(target: str) -> str:
