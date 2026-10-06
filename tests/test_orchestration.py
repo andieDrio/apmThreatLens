@@ -4,6 +4,7 @@ import pytest
 
 from threatlens.domain.models import Campaign, LifecycleState, Scope
 from threatlens.orchestration.engine import ScanOrchestrator
+from threatlens.providers.runtime import ProviderCapability, ProviderMetadata, ProviderRegistry
 from threatlens.safety.policy import ExecutionPolicy
 from threatlens.storage.sqlite import SQLiteRepository
 
@@ -51,6 +52,24 @@ def test_successful_provider_reaches_completed(tmp_path) -> None:
     result = orchestrator.run(campaign, SuccessfulProvider())
     assert result.state is LifecycleState.COMPLETED
     assert repo.scan_state(result.execution_id) is LifecycleState.COMPLETED
+    repo.close()
+
+
+def test_registered_provider_path_uses_runtime_and_observer(tmp_path) -> None:
+    repo, orchestrator, campaign = make_orchestrator(tmp_path)
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderMetadata(
+            name="test-provider",
+            version="1.0.0",
+            capabilities=frozenset({ProviderCapability.NETWORK}),
+        ),
+        SuccessfulProvider(),
+    )
+    observed = []
+    result = orchestrator.run_registered(campaign, "test-provider", registry, observer=observed.append)
+    assert result.state is LifecycleState.COMPLETED
+    assert [event.event_type.value for event in observed] == ["STARTED", "COMPLETED"]
     repo.close()
 
 
