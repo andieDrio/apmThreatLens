@@ -33,11 +33,12 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 - Provider registry with explicit metadata and capability declarations.
 - Provider execution runtime with structured execution events, execution metrics, failure capture, and cooperative timeout/cancellation signaling.
 - Evidence-first provider handoff with immutable evidence sealing, SHA-256 content integrity, execution/provider provenance, and finding/evidence validation.
-- Automated persistence, orchestration, provider-runtime, and evidence-handoff tests.
+- Controlled discovery provider that normalizes only authorized campaign targets, honors exclusions/cancellation, persists normalized assets, and records discovery evidence without claiming vulnerabilities or performing network probing.
+- Automated persistence, orchestration, provider-runtime, evidence-handoff, and discovery tests.
 
 ### Current Architecture Gate
 
-Architecture Gate 05: evidence and finding handoff. Raw evidence is kept conceptually separate from normalized findings; provider output must be bound to execution/provider provenance before persistence.
+Architecture Gate 06: first controlled discovery provider. The current implementation is intentionally non-networking: it establishes scope-safe target normalization, asset identity, evidence provenance, exclusion handling, and cancellation behavior before any active probing backend is introduced.
 
 ### Validation Limitation
 
@@ -45,4 +46,4 @@ Repository changes are verified through GitHub. Local pytest, lint, build, and r
 
 ## Next Architecture Direction
 
-The next priority is the first controlled discovery provider, which must consume authorized campaign scope, execute through the provider registry/runtime, normalize discovered assets, persist evidence where applicable, and preserve execution provenance. Real network interaction must remain explicitly scoped and safety-controlled.
+The next priority is the discovery execution adapter boundary for controlled network enumeration. It must preserve the same authorization, exclusion, rate-limit, timeout, cancellation, provider-runtime, evidence, and asset-identity guarantees before any real network interaction is enabled.
