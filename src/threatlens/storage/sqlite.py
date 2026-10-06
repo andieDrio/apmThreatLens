@@ -1,17 +1,23 @@
-"""SQLite persistence for the foundational ThreatLens domain.
-
-SQLite is used here as a dependency-free persistence implementation for the initial
-architecture gate. The repository boundary is intentionally isolated so a later
-PostgreSQL adapter can replace it without changing domain contracts.
-"""
+"""SQLite persistence for the foundational ThreatLens domain."""
 
 from __future__ import annotations
 
+import json
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
-from threatlens.domain.models import Asset, Campaign, Evidence, Finding, Scope, Service
+from threatlens.domain.models import (
+    Asset,
+    Campaign,
+    Evidence,
+    Finding,
+    LifecycleState,
+    Scan,
+    Service,
+    validate_lifecycle_transition,
+)
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -34,6 +40,19 @@ CREATE TABLE IF NOT EXISTS scope_entries (
     included INTEGER NOT NULL CHECK (included IN (0, 1)),
     PRIMARY KEY (campaign_id, value, included)
 );
+
+CREATE TABLE IF NOT EXISTS scans (
+    execution_id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    provider_name TEXT NOT NULL,
+    state TEXT NOT NULL,
+    queued_at TEXT NOT NULL,
+    started_at TEXT,
+    finished_at TEXT,
+    error TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_scans_campaign_id ON scans(campaign_id);
 
 CREATE TABLE IF NOT EXISTS assets (
     id TEXT PRIMARY KEY,
@@ -108,7 +127,10 @@ class SQLiteRepository:
         with self.connection:
             self.connection.execute(
                 "INSERT INTO campaigns (id,name,authorized,state,created_at) VALUES (?,?,?,?,?)",
-                (str(campaign.id), campaign.name, int(campaign.authorized), campaign.state.value, campaign.created_at.isoformat()),
+                (
+                    str(campaign.id), campaign.name, int(campaign.authorized),
+                    campaign.state.value, campaign.created_at.isoformat(),
+                ),
             )
             self.connection.execute("INSERT INTO scopes (campaign_id) VALUES (?)", (str(campaign.id),))
             self.connection.executemany(
@@ -117,13 +139,73 @@ class SQLiteRepository:
                 + [(str(campaign.id), value, 0) for value in campaign.scope.exclude],
             )
 
+    def save_scan(self, scan: Scan) -> None:
+        with self.connection:
+            self.connection.execute(
+                """INSERT INTO scans
+                   (execution_id,campaign_id,provider_name,state,queued_at,started_at,finished_at,error)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (
+                    str(scan.execution_id), str(scan.campaign_id), scan.provider_name,
+                    scan.state.value, scan.queued_at.isoformat(),
+                    scan.started_at.isoformat() if scan.started_at else None,
+                    scan.finished_at.isoformat() if scan.finished_at else None,
+                    scan.error,
+                ),
+            )
+
+    def update_scan_state(
+        self,
+        execution_id: UUID,
+        target: LifecycleState,
+        error: str | None = None,
+    ) -> None:
+        row = self.connection.execute(
+            "SELECT state FROM scans WHERE execution_id = ?", (str(execution_id),)
+        ).fetchone()
+        if row is None:
+            raise KeyError(str(execution_id))
+        current = LifecycleState(row[0])
+        validate_lifecycle_transition(current, target)
+
+        now = datetime.now(timezone.utc).isoformat()
+        started_at = now if target is LifecycleState.RUNNING else None
+        finished_at = now if target in {
+            LifecycleState.COMPLETED,
+            LifecycleState.FAILED,
+            LifecycleState.CANCELLED,
+            LifecycleState.PARTIAL,
+        } else None
+
+        with self.connection:
+            self.connection.execute(
+                """UPDATE scans
+                   SET state = ?,
+                       started_at = COALESCE(?, started_at),
+                       finished_at = COALESCE(?, finished_at),
+                       error = ?
+                   WHERE execution_id = ?""",
+                (target.value, started_at, finished_at, error, str(execution_id)),
+            )
+
+    def scan_state(self, execution_id: UUID) -> LifecycleState:
+        row = self.connection.execute(
+            "SELECT state FROM scans WHERE execution_id = ?", (str(execution_id),)
+        ).fetchone()
+        if row is None:
+            raise KeyError(str(execution_id))
+        return LifecycleState(row[0])
+
     def save_asset(self, asset: Asset) -> None:
         with self.connection:
             self.connection.execute(
                 """INSERT INTO assets (id,canonical_id,asset_type,value,first_seen_at,last_seen_at)
                    VALUES (?,?,?,?,?,?)
                    ON CONFLICT(canonical_id) DO UPDATE SET last_seen_at=excluded.last_seen_at""",
-                (str(asset.id), asset.canonical_id, asset.asset_type, asset.value, asset.first_seen_at.isoformat(), asset.last_seen_at.isoformat()),
+                (
+                    str(asset.id), asset.canonical_id, asset.asset_type, asset.value,
+                    asset.first_seen_at.isoformat(), asset.last_seen_at.isoformat(),
+                ),
             )
 
     def save_service(self, service: Service) -> None:
@@ -133,17 +215,22 @@ class SQLiteRepository:
                    VALUES (?,?,?,?,?,?)
                    ON CONFLICT(asset_id,protocol,port) DO UPDATE SET
                      service_name=excluded.service_name, version=excluded.version""",
-                (str(service.id), str(service.asset_id), service.protocol, service.port, service.service_name, service.version),
+                (
+                    str(service.id), str(service.asset_id), service.protocol, service.port,
+                    service.service_name, service.version,
+                ),
             )
 
     def save_evidence(self, evidence: Evidence) -> None:
-        import json
-
         with self.connection:
             self.connection.execute(
                 """INSERT INTO evidence (id,kind,content,source,captured_at,sha256,metadata_json)
                    VALUES (?,?,?,?,?,?,?)""",
-                (str(evidence.id), evidence.kind, evidence.content, evidence.source, evidence.captured_at.isoformat(), evidence.sha256, json.dumps(dict(evidence.metadata), sort_keys=True)),
+                (
+                    str(evidence.id), evidence.kind, evidence.content, evidence.source,
+                    evidence.captured_at.isoformat(), evidence.sha256,
+                    json.dumps(dict(evidence.metadata), sort_keys=True),
+                ),
             )
 
     def save_finding(self, finding: Finding) -> None:
@@ -152,7 +239,11 @@ class SQLiteRepository:
                 """INSERT INTO findings
                    (id,title,asset_id,state,severity,vulnerability_id,cwe,cve,cvss,confidence,source,detected_at)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (str(finding.id), finding.title, str(finding.asset_id), finding.state.value, finding.severity.value, finding.vulnerability_id, finding.cwe, finding.cve, finding.cvss, finding.confidence, finding.source, finding.detected_at.isoformat()),
+                (
+                    str(finding.id), finding.title, str(finding.asset_id), finding.state.value,
+                    finding.severity.value, finding.vulnerability_id, finding.cwe, finding.cve,
+                    finding.cvss, finding.confidence, finding.source, finding.detected_at.isoformat(),
+                ),
             )
             self.connection.executemany(
                 "INSERT INTO finding_evidence (finding_id,evidence_id) VALUES (?,?)",
@@ -160,7 +251,7 @@ class SQLiteRepository:
             )
 
     def count(self, table: str) -> int:
-        allowed = {"campaigns", "assets", "services", "evidence", "findings", "finding_evidence"}
+        allowed = {"campaigns", "scans", "assets", "services", "evidence", "findings", "finding_evidence"}
         if table not in allowed:
             raise ValueError("unsupported table")
         return int(self.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
