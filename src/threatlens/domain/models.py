@@ -22,6 +22,29 @@ class LifecycleState(StrEnum):
     PARTIAL = "PARTIAL"
 
 
+_ALLOWED_LIFECYCLE_TRANSITIONS: dict[LifecycleState, frozenset[LifecycleState]] = {
+    LifecycleState.QUEUED: frozenset({LifecycleState.RUNNING, LifecycleState.CANCELLED}),
+    LifecycleState.RUNNING: frozenset(
+        {
+            LifecycleState.COMPLETED,
+            LifecycleState.FAILED,
+            LifecycleState.CANCELLED,
+            LifecycleState.PARTIAL,
+        }
+    ),
+    LifecycleState.COMPLETED: frozenset(),
+    LifecycleState.FAILED: frozenset(),
+    LifecycleState.CANCELLED: frozenset(),
+    LifecycleState.PARTIAL: frozenset(),
+}
+
+
+def validate_lifecycle_transition(current: LifecycleState, target: LifecycleState) -> None:
+    """Fail closed when a scan attempts an invalid lifecycle transition."""
+    if target not in _ALLOWED_LIFECYCLE_TRANSITIONS[current]:
+        raise ValueError(f"invalid lifecycle transition: {current.value} -> {target.value}")
+
+
 class FindingState(StrEnum):
     CONFIRMED = "CONFIRMED"
     LIKELY = "LIKELY"
@@ -69,6 +92,24 @@ class Campaign:
             raise ValueError("campaign.name cannot be blank")
         if not self.authorized:
             raise ValueError("campaign must be explicitly authorized")
+
+
+@dataclass(frozen=True, slots=True)
+class Scan:
+    campaign_id: UUID
+    provider_name: str
+    execution_id: UUID = field(default_factory=uuid4)
+    state: LifecycleState = LifecycleState.QUEUED
+    queued_at: datetime = field(default_factory=utc_now)
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    error: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.provider_name.strip():
+            raise ValueError("scan.provider_name cannot be blank")
+        if self.state is LifecycleState.QUEUED and self.started_at is not None:
+            raise ValueError("queued scan cannot have started_at")
 
 
 @dataclass(frozen=True, slots=True)
