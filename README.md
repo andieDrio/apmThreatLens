@@ -30,11 +30,13 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 - Initial SQLite persistence boundary with database constraints and foreign-key integrity.
 - Persisted scan execution IDs and fail-closed lifecycle transitions.
 - Campaign/scan orchestration boundary with provider isolation and cancellation semantics.
-- Automated persistence and orchestration tests covering relationships, deterministic asset identity, lifecycle transitions, provider failure, cancellation, and terminal-state protection.
+- Provider registry with explicit metadata and capability declarations.
+- Provider execution runtime with structured execution events, execution metrics, failure capture, and cooperative timeout/cancellation signaling.
+- Automated persistence, orchestration, and provider-runtime tests.
 
 ### Current Architecture Gate
 
-Architecture Gate 03: campaign/scan orchestration. The current implementation is deliberately provider-neutral; no real scanner is invoked by the orchestration tests.
+Architecture Gate 04: provider execution and observability. The current implementation remains provider-neutral; no real scanner is invoked by the architecture tests.
 
 ### Validation Limitation
 
@@ -42,4 +44,4 @@ Repository changes are verified through GitHub. Local pytest, lint, build, and r
 
 ## Next Architecture Direction
 
-The next priority is the provider execution contract and execution observability boundary: provider registration/capabilities, execution metadata, structured events, failure classification, timeout/cancellation propagation, and evidence/finding handoff without coupling orchestration to a specific scanner.
+The next priority is evidence/finding handoff and normalized provider output, followed by the first controlled discovery provider. Real scanner integrations must enter through the provider runtime and remain governed by campaign scope and execution safety controls.
