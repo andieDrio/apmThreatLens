@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from threading import Event
+from threading import Event, Thread
 from time import monotonic
 from typing import Callable, Protocol
 from uuid import UUID
@@ -90,6 +90,7 @@ class ExecutionMetrics:
 class ExecutionResult:
     success: bool
     cancelled: bool
+    timed_out: bool
     error: str | None
     metrics: ExecutionMetrics
     events: tuple[ProviderEvent, ...]
@@ -119,7 +120,7 @@ class ProviderRegistry:
 
 
 class ExecutionRuntime:
-    """Runs one provider and captures bounded, structured execution telemetry."""
+    """Runs one provider with cooperative timeout/cancellation and structured telemetry."""
 
     def __init__(self, policy: ExecutionPolicy) -> None:
         self.policy = policy
@@ -136,6 +137,8 @@ class ExecutionRuntime:
         context = ExecutionContext(campaign.id, execution_id, metadata, self.policy, cancel_event)
         events: list[ProviderEvent] = []
         started = monotonic()
+        done = Event()
+        provider_error: list[str] = []
 
         def emit(event_type: ProviderEventType, message: str = "", **attributes: str) -> None:
             event = ProviderEvent(
@@ -150,26 +153,39 @@ class ExecutionRuntime:
             if observer is not None:
                 observer(event)
 
+        def invoke() -> None:
+            try:
+                executor.execute(campaign, execution_id, cancel_event)
+            except Exception as exc:
+                provider_error.append(f"{type(exc).__name__}: {exc}")
+            finally:
+                done.set()
+
         emit(ProviderEventType.STARTED, version=metadata.version)
-        error: str | None = None
-        success = False
-        try:
-            executor.execute(campaign, execution_id, cancel_event)
-            if cancel_event.is_set():
-                emit(ProviderEventType.CANCELLED, "provider cancellation requested")
-            else:
-                success = True
-                emit(ProviderEventType.COMPLETED)
-        except Exception as exc:
-            error = f"{type(exc).__name__}: {exc}"
+        worker = Thread(target=invoke, name=f"threatlens-provider-{execution_id}", daemon=True)
+        worker.start()
+        completed_in_time = done.wait(self.policy.timeout_seconds)
+        timed_out = not completed_in_time
+        error: str | None = provider_error[0] if provider_error else None
+
+        if timed_out:
+            cancel_event.set()
+            error = f"TimeoutError: provider exceeded {self.policy.timeout_seconds:.3f}s execution budget"
             emit(ProviderEventType.ERROR, error)
+        elif error is not None:
+            emit(ProviderEventType.ERROR, error)
+        elif cancel_event.is_set():
+            emit(ProviderEventType.CANCELLED, "provider cancellation requested")
+        else:
+            emit(ProviderEventType.COMPLETED)
 
         duration = monotonic() - started
         evidence_count = sum(e.event_type is ProviderEventType.EVIDENCE for e in events)
         finding_count = sum(e.event_type is ProviderEventType.FINDING for e in events)
         return ExecutionResult(
-            success=success,
-            cancelled=cancel_event.is_set(),
+            success=not timed_out and error is None and not cancel_event.is_set(),
+            cancelled=cancel_event.is_set() and not timed_out,
+            timed_out=timed_out,
             error=error,
             metrics=ExecutionMetrics(duration, len(events), evidence_count, finding_count),
             events=tuple(events),
