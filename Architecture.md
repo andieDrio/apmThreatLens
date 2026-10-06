@@ -107,7 +107,7 @@ Risk must be explainable and must not depend exclusively on CVSS. Environmental 
 
 Use explicit identifiers, lifecycle states, timestamps, provenance, and database/application constraints appropriate to the selected persistence technology. Correlation must remain deterministic and auditable.
 
-The current persistence boundary uses SQLite for the dependency-free initial implementation. Its schema enforces foreign keys, unique asset canonical identity, service uniqueness per asset/protocol/port, finding/evidence relationships, and bounded CVSS/confidence values.
+SQLite remains the dependency-light local test persistence implementation. PostgreSQL is now a first-class deployment persistence target through `PostgresRepository`, using the same domain repository methods and equivalent integrity constraints. PostgreSQL connection details are deployment configuration; the application does not auto-start or auto-create a database server.
 
 ## 9. Campaign / Scan Orchestration
 
@@ -141,30 +141,48 @@ The first discovery provider is deliberately non-networking. `DiscoveryProvider`
 
 Gate 06 must not expand scope through discovered data. It must not probe the network, claim vulnerabilities, or bypass the provider runtime. Cancellation is checked before processing each target. This establishes the safe discovery-to-asset/evidence pattern before an active network enumeration adapter is introduced.
 
-## 13. Security
+## 13. Controlled Network Discovery
+
+Gate 07 introduces `NetworkDiscoveryProvider` for active but bounded TCP connection discovery. The provider accepts only explicitly listed IP addresses or FQDNs already contained in the authorized campaign scope. URL targets, path-bearing values, CIDR expansion, UDP probing, arbitrary port ranges, and exploitation are rejected or excluded from this adapter.
+
+The execution policy bounds the target count, explicit port set, and per-connection timeout. The provider checks cancellation before each target and port. Positive TCP observations create normalized `Service` records and raw `tcp-connect` evidence; they do not create vulnerability findings. Service exposure is therefore kept distinct from vulnerability assessment.
+
+The TCP adapter uses a minimal connection attempt and sends no application payload. A future scanner backend must preserve the same authorization, exclusion, timeout, cancellation, evidence, and provider-runtime boundaries.
+
+## 14. PostgreSQL Deployment Boundary
+
+PostgreSQL is a supported production persistence backend through `PostgresRepository`. The schema mirrors the current domain integrity requirements: foreign keys, unique canonical asset identity, service uniqueness per asset/protocol/port, finding/evidence relationships, scan execution identity, and bounded CVSS/confidence values.
+
+The repository contains `.env.example` with a non-secret `THREATLENS_DATABASE_URL` template. Real credentials must remain outside version control. Local PostgreSQL installation, service lifecycle, database creation, and credential provisioning are deployment responsibilities and must not be silently automated by the application.
+
+## 15. Security
 
 The platform itself is security-sensitive. Apply authentication, authorization, least privilege, secure secret handling, strict validation, output encoding, parameterized persistence operations, SSRF protections, path protections, secure command-execution boundaries, and comprehensive audit logging.
 
-## 14. Architecture Gate 01
+## 16. Architecture Gate 01
 
 Establish the minimal production-grade backend/domain contract foundation required for later orchestration and provider implementations, without introducing fake scanner results or premature coupling to any one security tool.
 
-## 15. Architecture Gate 02
+## 17. Architecture Gate 02
 
 Establish the persistent data-integrity boundary for Campaign → Scope → Asset → Service → Finding → Evidence. The current SQLite repository is the initial implementation of this boundary; provider execution and higher-level orchestration must depend on repository contracts rather than direct SQL access.
 
-## 16. Architecture Gate 03
+## 18. Architecture Gate 03
 
 Establish the campaign/scan orchestration boundary with execution IDs, explicit lifecycle transitions, cancellation semantics, provider isolation, and persisted authoritative execution state. Actual scanner/provider implementations remain out of scope for this gate.
 
-## 17. Architecture Gate 04
+## 19. Architecture Gate 04
 
 Establish provider registration, capability metadata, execution context, structured execution events, runtime metrics, provider failure capture, and cooperative timeout/cancellation signaling. Real scanner integrations remain out of scope until evidence/finding handoff contracts are established.
 
-## 18. Architecture Gate 05
+## 20. Architecture Gate 05
 
 Establish the evidence/finding handoff boundary: immutable evidence sealing, content integrity, execution/provider provenance, evidence-backed normalized findings, asset identity validation, and rejection of findings that cannot be traced to supplied evidence.
 
-## 19. Architecture Gate 06
+## 21. Architecture Gate 06
 
-Establish the first controlled discovery provider. The initial implementation must normalize explicitly scoped targets, honor exclusions and cancellation, persist assets with deterministic canonical identity, and preserve discovery evidence/provenance without performing network probing or generating vulnerability claims. The next gate is the controlled network discovery adapter boundary.
+Establish the first controlled discovery provider. The initial implementation must normalize explicitly scoped targets, honor exclusions and cancellation, persist assets with deterministic canonical identity, and preserve discovery evidence/provenance without performing network probing or generating vulnerability claims.
+
+## 22. Architecture Gate 07
+
+Establish the controlled network discovery adapter. The implementation must perform only bounded TCP connection discovery against explicitly scoped IP/FQDN targets, enforce exclusions and target/port/time limits, honor cancellation, normalize positive services, preserve raw evidence/provenance, and never convert service exposure into a vulnerability claim. PostgreSQL deployment readiness is included as a persistence backend so later backend deployment does not require a storage-contract rewrite.
