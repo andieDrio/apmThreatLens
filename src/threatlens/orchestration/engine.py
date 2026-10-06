@@ -4,10 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from threading import Event
-from typing import Protocol
+from typing import Callable, Protocol
 from uuid import UUID
 
 from threatlens.domain.models import Campaign, LifecycleState, Scan
+from threatlens.providers.runtime import (
+    ExecutionRuntime,
+    ProviderEvent,
+    ProviderRegistry,
+)
 from threatlens.safety.policy import ExecutionPolicy, validate_campaign_execution
 
 
@@ -47,6 +52,60 @@ class ScanOrchestrator:
     def cancel(self, execution_id: UUID) -> None:
         """Cancel only a queued or running execution; terminal scans cannot be altered."""
         self.repository.update_scan_state(execution_id, LifecycleState.CANCELLED)
+
+    def run_registered(
+        self,
+        campaign: Campaign,
+        provider_name: str,
+        registry: ProviderRegistry,
+        cancel_event: Event | None = None,
+        observer: Callable[[ProviderEvent], None] | None = None,
+    ) -> Scan:
+        """Execute a provider selected from the explicit application registry."""
+        validate_campaign_execution(campaign, self.policy)
+        metadata, provider = registry.get(provider_name)
+        event = cancel_event or Event()
+        scan = self.queue(campaign, provider)
+
+        if event.is_set():
+            self.repository.update_scan_state(scan.execution_id, LifecycleState.CANCELLED)
+            return Scan(
+                campaign_id=scan.campaign_id,
+                provider_name=scan.provider_name,
+                execution_id=scan.execution_id,
+                state=LifecycleState.CANCELLED,
+                queued_at=scan.queued_at,
+                finished_at=scan.queued_at,
+            )
+
+        self.repository.update_scan_state(scan.execution_id, LifecycleState.RUNNING)
+        result = ExecutionRuntime(self.policy).execute(
+            campaign,
+            scan.execution_id,
+            metadata,
+            provider,
+            event,
+            observer,
+        )
+
+        if result.cancelled:
+            final_state = LifecycleState.CANCELLED
+            error = result.error
+        elif result.success:
+            final_state = LifecycleState.COMPLETED
+            error = None
+        else:
+            final_state = LifecycleState.FAILED
+            error = result.error or "provider execution failed"
+        self.repository.update_scan_state(scan.execution_id, final_state, error=error)
+
+        return Scan(
+            campaign_id=scan.campaign_id,
+            provider_name=scan.provider_name,
+            execution_id=scan.execution_id,
+            state=self.repository.scan_state(scan.execution_id),
+            queued_at=scan.queued_at,
+        )
 
     def run(
         self,
