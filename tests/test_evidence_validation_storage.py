@@ -29,7 +29,7 @@ def test_evidence_validation_is_durable_and_requires_existing_evidence(tmp_path)
 def test_validation_rejects_missing_supporting_evidence(tmp_path) -> None:
     repo = SQLiteRepository(tmp_path / "threatlens.db")
     repo.initialize()
-    evidence = Evidence(kind="banner", content="SSH-2.0-test", source="test")
+    evidence = ProviderHandoff.seal_evidence(Evidence(kind="banner", content="SSH-2.0-test", source="test"))
     repo.save_evidence(evidence)
     validation = EvidenceValidation(
         evidence_id=evidence.id,
@@ -46,7 +46,7 @@ def test_validation_rejects_missing_supporting_evidence(tmp_path) -> None:
 def test_pending_validation_transitions_append_only(tmp_path) -> None:
     repo = SQLiteRepository(tmp_path / "threatlens.db")
     repo.initialize()
-    evidence = Evidence(kind="banner", content="SSH-2.0-test", source="test")
+    evidence = ProviderHandoff.seal_evidence(Evidence(kind="banner", content="SSH-2.0-test", source="test"))
     repo.save_evidence(evidence)
     pending = EvidenceValidation(
         evidence_id=evidence.id,
@@ -70,7 +70,7 @@ def test_pending_validation_transitions_append_only(tmp_path) -> None:
 def test_validation_cannot_be_rewritten_without_supersession(tmp_path) -> None:
     repo = SQLiteRepository(tmp_path / "threatlens.db")
     repo.initialize()
-    evidence = Evidence(kind="banner", content="SSH-2.0-test", source="test")
+    evidence = ProviderHandoff.seal_evidence(Evidence(kind="banner", content="SSH-2.0-test", source="test"))
     repo.save_evidence(evidence)
     validation = EvidenceValidation(
         evidence_id=evidence.id,
