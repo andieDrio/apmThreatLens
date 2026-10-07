@@ -397,7 +397,7 @@ The matcher returns a bounded `VulnerabilityMatch` containing vulnerability iden
 
 ## Validation Status
 
-Gate 22 has been locally validated clean. Gates 23–24 have also been locally validated clean with `pytest -q` and `ruff check .`. Gate 25 remains pending local validation. Gate 26 is now complete after local validation. Gate 27 is implemented and pending local validation.
+Gate 22 has been locally validated clean. Gates 23–24 have also been locally validated clean with `pytest -q` and `ruff check .`. Gate 25 remains pending local validation. Gate 26 is now complete after local validation. Gate 27 is complete after explicit local validation. Gate 28 is implemented and pending local validation.
 
 
 ## 48. Architecture Gate 25 — Evidence-Backed Vulnerability Finding Enrichment — IMPLEMENTED
@@ -429,3 +429,14 @@ Gate 27 strengthens the explainable risk boundary by requiring explicit provenan
 This does not fabricate environmental telemetry or infer business impact, exposure, criticality, threat relevance, exploitability, or control coverage. Unknown values remain unknown and are excluded from the weighted calculation as before. Operator-supplied context remains supported when its source is explicitly identified.
 
 **Validation status:** Gate 27 focused regression tests are implemented. Local pytest -q and ruff check . are required before the gate can be declared complete.
+
+
+## 51. Architecture Gate 28 — Application API Boundary Foundation — IMPLEMENTED
+
+Gate 28 establishes the HTTP control-plane boundary between the ThreatLens domain/application layers and the future graphical interface. The FastAPI application exposes a public health check and versioned authentication endpoints for login, logout, and the authenticated current principal. Bearer session tokens are validated exclusively through AuthenticationService; raw tokens are not persisted, and authorization decisions continue through the existing role/permission model.
+
+The API factory accepts injected repository and authentication services, keeping transport concerns separate from persistence and domain contracts and making the boundary testable without weakening production PostgreSQL requirements. The production entrypoint initializes the canonical PostgreSQL repository from THREATLENS_DATABASE_URL.
+
+The initial API surface deliberately does not expose arbitrary database access or assessment mutation. Campaign execution, findings, evidence, risk, attack paths, and reporting endpoints will be added behind explicit application contracts so the GUI cannot bypass authorization, scope, evidence, or orchestration boundaries.
+
+**Validation status:** Gate 28 focused API regression tests are implemented. Local pytest -q and ruff check . are required before the gate can be declared complete.
