@@ -180,17 +180,24 @@ class ScanOrchestrator:
             )
         try:
             provider.execute(campaign, scan.execution_id, event)
-            final_state = LifecycleState.CANCELLED if event.is_set() else LifecycleState.COMPLETED
-            if not self.repository.update_scan_state_if_current_with_audit(scan.execution_id, LifecycleState.RUNNING, final_state, AuditEvent(actor_user_id=principal.user_id, action="SCAN_FINALIZED", resource_type="SCAN", resource_id=scan.execution_id, outcome=final_state.value, detail="provider execution finalized")):
-                final_state = self.repository.scan_state(scan.execution_id)
         except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
             self.repository.update_scan_state_if_current_with_audit(
                 scan.execution_id,
                 LifecycleState.RUNNING,
                 LifecycleState.FAILED,
-                AuditEvent(actor_user_id=principal.user_id, action="SCAN_FINALIZED", resource_type="SCAN", resource_id=scan.execution_id, outcome=LifecycleState.FAILED.value, detail=f"{type(exc).__name__}: {exc}"),
-                error=f"{type(exc).__name__}: {exc}",
+                AuditEvent(actor_user_id=principal.user_id, action="SCAN_FINALIZED", resource_type="SCAN", resource_id=scan.execution_id, outcome=LifecycleState.FAILED.value, detail=error),
+                error=error,
             )
+        else:
+            final_state = LifecycleState.CANCELLED if event.is_set() else LifecycleState.COMPLETED
+            if not self.repository.update_scan_state_if_current_with_audit(
+                scan.execution_id,
+                LifecycleState.RUNNING,
+                final_state,
+                AuditEvent(actor_user_id=principal.user_id, action="SCAN_FINALIZED", resource_type="SCAN", resource_id=scan.execution_id, outcome=final_state.value, detail="provider execution finalized"),
+            ):
+                final_state = self.repository.scan_state(scan.execution_id)
 
         return Scan(
             campaign_id=scan.campaign_id,
