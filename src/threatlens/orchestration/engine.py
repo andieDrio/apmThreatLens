@@ -216,9 +216,6 @@ class ScanOrchestrator:
                 AuditEvent(actor_user_id=principal.user_id, action="SCAN_FINALIZED", resource_type="SCAN", resource_id=scan.execution_id, outcome=LifecycleState.FAILED.value, detail=error),
                 error=error,
             )
-        finally:
-            heartbeat_stop.set()
-            heartbeat_thread.join(0.1)
         else:
             final_state = LifecycleState.CANCELLED if event.is_set() else LifecycleState.COMPLETED
             if not self.repository.update_scan_state_if_current_with_audit(
@@ -228,6 +225,9 @@ class ScanOrchestrator:
                 AuditEvent(actor_user_id=principal.user_id, action="SCAN_FINALIZED", resource_type="SCAN", resource_id=scan.execution_id, outcome=final_state.value, detail="provider execution finalized"),
             ):
                 final_state = self.repository.scan_state(scan.execution_id)
+        finally:
+            heartbeat_stop.set()
+            heartbeat_thread.join(0.1)
 
         return Scan(
             campaign_id=scan.campaign_id,
