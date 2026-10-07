@@ -41,11 +41,11 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 - Deterministic TLS security-policy evaluation for deprecated TLS versions, certificate validation failures, hostname mismatch, certificate expiration, and weak/deprecated ciphers.
 - End-to-end TLS finding handoff through persisted evidence, asset resolution, normalized finding validation, and the existing ProviderHandoff boundary.
 - Deterministic cross-provider finding correlation using asset identity plus vulnerability identity (or normalized title/CWE fallback), with stable logical finding IDs and preservation of all unique evidence and contributing provider sources.
-- Automated persistence, orchestration, provider-runtime, evidence-handoff, discovery, network-discovery, identification, interrogation, TLS assessment, TLS finding integration, and finding-correlation tests.
+- Automated persistence, orchestration, provider-runtime, evidence-handoff, discovery, network-discovery, identification, interrogation, TLS assessment, TLS finding integration, finding-correlation, risk-engine, and attack-path tests.
 
 ### Current Architecture Gate
 
-Architecture Gate 14: Explainable Risk Engine. Correlated findings are scored deterministically using technical severity, exploitability, exposure, asset criticality, business impact, threat relevance, and finding confidence. Explicit control coverage acts only as a mitigating factor. Missing environmental inputs remain unknown and are excluded rather than guessed; CVSS is a supporting signal, never the sole risk determinant. Each assessment returns factor scores, weights, source inputs, missing inputs, and human-readable rationale.
+Architecture Gate 15: Attack-Path Analysis. The system analyzes only explicitly supplied directional relationships that are validated and evidence-backed, between explicitly designated entry and objective assets. Paths are deterministic, cycle-safe, bounded by hop/path limits, and prioritized using already-computed finding risk without inventing exploitability, trust, reachability, or compromise relationships.
 
 ### PostgreSQL Deployment Readiness
 
@@ -59,4 +59,4 @@ Repository changes are verified through GitHub. Local pytest, lint, build, Postg
 
 ## Next Architecture Direction
 
-The next priority is Attack-Path Analysis over correlated findings, assets, services, exposure, and validated relationships. Attack-path inference must remain evidence-backed, deterministic where possible, scope-aware, and conservative when graph context is incomplete.
+The next priority is Evidence Management and Validation: preserve evidence lifecycle/integrity, support validation state transitions, and make remediation/verification decisions traceable to immutable evidence without allowing unsupported claims.
