@@ -192,7 +192,7 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
                     cursor.execute(
                         """INSERT INTO scans
                            (execution_id,campaign_id,provider_name,state,queued_at,started_at,finished_at,error,heartbeat_at)
-                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (scan.execution_id, scan.campaign_id, scan.provider_name, scan.state.value,
                          scan.queued_at, scan.started_at, scan.finished_at, scan.error),
                     )
