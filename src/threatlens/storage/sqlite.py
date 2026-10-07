@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS scans (
     queued_at TEXT NOT NULL,
     started_at TEXT,
     finished_at TEXT,
-    error TEXT
+    error TEXT,
+    heartbeat_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_scans_campaign_id ON scans(campaign_id);
@@ -122,6 +123,13 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys = ON")
         self.connection.execute("PRAGMA journal_mode = WAL")
+        self._ensure_scan_heartbeat_column()
+
+    def _ensure_scan_heartbeat_column(self) -> None:
+        columns = {row[1] for row in self.connection.execute("PRAGMA table_info(scans)").fetchall()}
+        if "heartbeat_at" not in columns:
+            self.connection.execute("ALTER TABLE scans ADD COLUMN heartbeat_at TEXT")
+            self.connection.commit()
 
     def close(self) -> None:
         self.connection.close()
@@ -153,14 +161,14 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
         with self.connection:
             self.connection.execute(
                 """INSERT INTO scans
-                   (execution_id,campaign_id,provider_name,state,queued_at,started_at,finished_at,error)
+                   (execution_id,campaign_id,provider_name,state,queued_at,started_at,finished_at,error,heartbeat_at)
                    VALUES (?,?,?,?,?,?,?,?)""",
                 (
                     str(scan.execution_id), str(scan.campaign_id), scan.provider_name,
                     scan.state.value, scan.queued_at.isoformat(),
                     scan.started_at.isoformat() if scan.started_at else None,
                     scan.finished_at.isoformat() if scan.finished_at else None,
-                    scan.error,
+                    scan.error, scan.heartbeat_at.isoformat() if scan.heartbeat_at else None,
                 ),
             )
 
@@ -221,6 +229,37 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
                     (target.value, started_at, finished_at, error, str(execution_id)),
                 )
                 self.connection.commit()
+            except BaseException:
+                self.connection.rollback()
+                raise
+
+    def heartbeat_scan(self, execution_id: UUID) -> bool:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._transaction_lock:
+            cursor = self.connection.execute(
+                "UPDATE scans SET heartbeat_at=? WHERE execution_id=? AND state=?",
+                (now, str(execution_id), LifecycleState.RUNNING.value),
+            )
+            self.connection.commit()
+            return cursor.rowcount == 1
+
+    def recover_stale_scan(self, execution_id: UUID, stale_after_seconds: float, event: AuditEvent) -> bool:
+        cutoff = datetime.now(timezone.utc).timestamp() - stale_after_seconds
+        with self._transaction_lock:
+            self.connection.execute("BEGIN IMMEDIATE")
+            try:
+                row = self.connection.execute("SELECT state, heartbeat_at, started_at FROM scans WHERE execution_id=?", (str(execution_id),)).fetchone()
+                if row is None:
+                    raise KeyError(str(execution_id))
+                heartbeat = row["heartbeat_at"] or row["started_at"]
+                if row["state"] != LifecycleState.RUNNING.value or not heartbeat or datetime.fromisoformat(heartbeat).timestamp() > cutoff:
+                    self.connection.rollback()
+                    return False
+                now = datetime.now(timezone.utc).isoformat()
+                self.connection.execute("UPDATE scans SET state=?, finished_at=?, error=? WHERE execution_id=? AND state=?", (LifecycleState.FAILED.value, now, "execution lease expired; provider execution could not be confirmed alive", str(execution_id), LifecycleState.RUNNING.value))
+                self.connection.execute("INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?)", (str(event.id), str(event.actor_user_id) if event.actor_user_id else None, event.action, event.resource_type, str(event.resource_id) if event.resource_id else None, event.outcome, event.detail, event.created_at.isoformat()))
+                self.connection.commit()
+                return True
             except BaseException:
                 self.connection.rollback()
                 raise
