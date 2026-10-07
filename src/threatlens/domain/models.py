@@ -197,3 +197,38 @@ class Finding:
             value = getattr(self, field_name)
             if value is not None and not value.strip():
                 raise ValueError(f"finding.{field_name} cannot be blank")
+
+
+@dataclass(frozen=True, slots=True)
+class User:
+    username: str
+    password_hash: str
+    role: str
+    active: bool = True
+    id: UUID = field(default_factory=uuid4)
+    created_at: datetime = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        if not self.username.strip():
+            raise ValueError("user.username cannot be blank")
+        if not self.password_hash.strip():
+            raise ValueError("user.password_hash cannot be blank")
+        if not self.role.strip():
+            raise ValueError("user.role cannot be blank")
+
+
+@dataclass(frozen=True, slots=True)
+class AuditEvent:
+    action: str
+    resource_type: str
+    outcome: str
+    detail: str
+    actor_user_id: UUID | None = None
+    resource_id: UUID | None = None
+    id: UUID = field(default_factory=uuid4)
+    created_at: datetime = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        for field_name in ("action", "resource_type", "outcome", "detail"):
+            if not getattr(self, field_name).strip():
+                raise ValueError(f"audit_event.{field_name} cannot be blank")
