@@ -45,7 +45,7 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 
 ### Current Architecture Gate
 
-Architecture Gate 18: Reliability and Performance. Raw evidence remains immutable and SHA-256 sealed. Validation is an explicit append-only lifecycle with PENDING → VALIDATED/REJECTED and terminal SUPERSEDED handling; validation decisions require traceability to persisted evidence and re-check stored evidence integrity before acceptance. Raw evidence is never rewritten by validation.
+Architecture Gate 19: PostgreSQL Canonical Persistence Enforcement. Gate 18 Reliability and Performance is complete after local validation. Running executions use durable heartbeat leases, stale recovery is explicit and authenticated, provider concurrency is bounded, lifecycle transitions are compare-and-set protected, persistence/audit mutations are atomic, and non-cooperative provider timeouts are explicitly surfaced. The next gate removes the remaining SQLite production ambiguity by making PostgreSQL the sole active development/test persistence path.
 
 ### PostgreSQL Deployment Readiness
 
