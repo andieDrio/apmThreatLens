@@ -7,7 +7,8 @@ from threading import Event
 from typing import Callable, Protocol
 from uuid import UUID
 
-from threatlens.domain.models import Campaign, LifecycleState, Scan
+from threatlens.auth import AuthenticationService, AuthenticatedPrincipal, Permission
+from threatlens.domain.models import AuditEvent, Campaign, LifecycleState, Scan
 from threatlens.providers.runtime import (
     ExecutionRuntime,
     ProviderEvent,
@@ -39,14 +40,17 @@ class ScanRepository(Protocol):
 class ScanOrchestrator:
     repository: ScanRepository
     policy: ExecutionPolicy
+    authentication: AuthenticationService
 
-    def queue(self, campaign: Campaign, provider: ScanExecutor) -> Scan:
+    def queue(self, campaign: Campaign, provider: ScanExecutor, principal: AuthenticatedPrincipal | None = None) -> Scan:
         """Create a persisted queued execution after authorization/scope validation."""
         validate_campaign_execution(campaign, self.policy)
+        self.authentication.authorize(principal, Permission.ASSESS)
         if not provider.name.strip():
             raise ValueError("provider.name cannot be blank")
         scan = Scan(campaign_id=campaign.id, provider_name=provider.name)
         self.repository.save_scan(scan)
+        self.repository.save_audit_event(AuditEvent(actor_user_id=principal.user_id, action="SCAN_QUEUED", resource_type="SCAN", resource_id=scan.execution_id, outcome="SUCCESS", detail=f"provider={provider.name}"))
         return scan
 
     def cancel(self, execution_id: UUID) -> None:
@@ -60,12 +64,13 @@ class ScanOrchestrator:
         registry: ProviderRegistry,
         cancel_event: Event | None = None,
         observer: Callable[[ProviderEvent], None] | None = None,
+        principal: AuthenticatedPrincipal | None = None,
     ) -> Scan:
         """Execute a provider selected from the explicit application registry."""
         validate_campaign_execution(campaign, self.policy)
         metadata, provider = registry.get(provider_name)
         event = cancel_event or Event()
-        scan = self.queue(campaign, provider)
+        scan = self.queue(campaign, provider, principal)
 
         if event.is_set():
             self.repository.update_scan_state(scan.execution_id, LifecycleState.CANCELLED)
@@ -112,11 +117,12 @@ class ScanOrchestrator:
         campaign: Campaign,
         provider: ScanExecutor,
         cancel_event: Event | None = None,
+        principal: AuthenticatedPrincipal | None = None,
     ) -> Scan:
         """Run one provider execution while storage remains authoritative for lifecycle state."""
         validate_campaign_execution(campaign, self.policy)
         event = cancel_event or Event()
-        scan = self.queue(campaign, provider)
+        scan = self.queue(campaign, provider, principal)
 
         if event.is_set():
             self.repository.update_scan_state(scan.execution_id, LifecycleState.CANCELLED)
