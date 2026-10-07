@@ -252,3 +252,14 @@ Gate 13 makes finding correlation durable at the persistence boundary. DurableFi
 ProviderHandoff remains the only provider-facing finding boundary: after asset/evidence validation, it optionally delegates to the durable correlator rather than allowing providers to write correlated records directly. SQLite and PostgreSQL repositories expose the same correlation primitives. Raw evidence is never modified by correlation. A repository restart therefore retains the logical finding identity and prevents the same provider-independent weakness from becoming a new logical finding.
 
 The current gate does not infer endpoint, parameter, service-location, or application-context equivalence because those dimensions are not yet represented in the Finding domain contract. Correlation remains deliberately conservative until those fields are introduced by a later architecture gate.
+
+
+## 33. Architecture Gate 14
+
+Gate 14 establishes the Explainable Risk Engine over already-normalized and, where applicable, durably correlated findings. RiskEngine is a network-free deterministic policy component. It consumes the finding's technical severity and confidence plus explicit environmental context for exploitability, exposure, asset criticality, business impact, threat relevance, and control coverage.
+
+The weighted risk model uses technical severity (20%), exploitability (15%), exposure (15%), asset criticality (15%), business impact (15%), threat relevance (10%), and finding confidence (10%). If CVSS is present and no explicit exploitability value is supplied, CVSS may provide the exploitability signal, but CVSS is never the complete risk score. Control coverage is a separate mitigation factor and can reduce residual risk by at most 50% of its normalized coverage value.
+
+Unknown environmental inputs are not treated as zero. They are excluded from the weighted calculation and reported in missing_inputs, preventing the engine from fabricating low exposure, low business impact, or effective controls. Every RiskAssessment retains factor-level scores, weights, rationale, source inputs, missing inputs, a deterministic normalized score, and a Critical/High/Medium/Low/Informational level.
+
+The engine performs no network access, scanner execution, provider calls, database writes, or unsupported threat inference. It operates only on the evidence-backed Finding contract and explicit context supplied by a higher orchestration layer. This preserves the provider, persistence, and evidence boundaries established by earlier gates while making prioritization auditable and explainable.
