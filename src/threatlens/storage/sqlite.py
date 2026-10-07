@@ -123,10 +123,11 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys = ON")
         self.connection.execute("PRAGMA journal_mode = WAL")
-        self._ensure_scan_heartbeat_column()
 
     def _ensure_scan_heartbeat_column(self) -> None:
         columns = {row[1] for row in self.connection.execute("PRAGMA table_info(scans)").fetchall()}
+        if not columns:
+            return
         if "heartbeat_at" not in columns:
             self.connection.execute("ALTER TABLE scans ADD COLUMN heartbeat_at TEXT")
             self.connection.commit()
@@ -137,6 +138,7 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
     def initialize(self) -> None:
         self.connection.executescript(SCHEMA)
         self.connection.commit()
+        self._ensure_scan_heartbeat_column()
         self.initialize_finding_correlation()
         self.initialize_evidence_validation()
         self.initialize_auth()
