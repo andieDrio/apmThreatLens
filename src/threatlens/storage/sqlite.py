@@ -170,7 +170,8 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
         error: str | None = None,
     ) -> None:
         with self._transaction_lock:
-            with self.connection:
+            self.connection.execute("BEGIN IMMEDIATE")
+            try:
                 row = self.connection.execute(
                     "SELECT state FROM scans WHERE execution_id = ?", (str(execution_id),)
                 ).fetchone()
@@ -194,6 +195,10 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
                        WHERE execution_id = ?""",
                     (target.value, started_at, finished_at, error, str(execution_id)),
                 )
+                self.connection.commit()
+            except BaseException:
+                self.connection.rollback()
+                raise
 
     def scan_state(self, execution_id: UUID) -> LifecycleState:
         with self._transaction_lock:
