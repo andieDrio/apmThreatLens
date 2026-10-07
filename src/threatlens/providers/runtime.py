@@ -168,7 +168,7 @@ class ExecutionRuntime:
                     timed_out=False,
                     worker_still_running=False,
                     error=None,
-                    metrics=ExecutionMetrics(monotonic() - started, 2, 0, 0),
+                    metrics=ExecutionMetrics(monotonic() - started, len(events), 0, 0),
                     events=tuple(events),
                 )
 
