@@ -32,11 +32,6 @@ class APIScannerProvider(Protocol):
     def execute(self, campaign, execution_id, cancel_event) -> None: ...
 
 
-class APIScannerProvider(Protocol):
-    name: str
-    def execute(self, campaign, execution_id, cancel_event) -> None: ...
-
-
 class EvidenceProvider(Protocol):
     name: str
     def store(self, evidence: Evidence) -> Evidence: ...
