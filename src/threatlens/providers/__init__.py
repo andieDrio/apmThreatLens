@@ -1,5 +1,11 @@
 """Built-in provider package."""
 
+from threatlens.providers.vulnerability_intelligence import (
+    VulnerabilityIntelligenceRecord,
+    VulnerabilityMatch,
+    normalize_vulnerability_record,
+    match_vulnerability,
+)
 from threatlens.providers.api import (
     APIAssessmentPolicy,
     APIAssessmentProvider,
@@ -14,6 +20,10 @@ from threatlens.providers.web import (
 )
 
 __all__ = [
+    "VulnerabilityIntelligenceRecord",
+    "VulnerabilityMatch",
+    "normalize_vulnerability_record",
+    "match_vulnerability",
     "APIObservation",
     "APIAssessmentPolicy",
     "APIAssessmentProvider",
