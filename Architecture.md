@@ -197,7 +197,7 @@ Establish the minimal production-grade backend/domain contract foundation requir
 
 ## 21. Architecture Gate 02
 
-Establish the persistent data-integrity boundary for Campaign → Scope → Asset → Service → Finding → Evidence. The current SQLite repository is the initial implementation of this boundary; provider execution and higher-level orchestration must depend on repository contracts rather than direct SQL access.
+Establish the persistent data-integrity boundary for Campaign → Scope → Asset → Service → Finding → Evidence. PostgreSQL is the canonical implementation of this boundary. Any retained SQLite adapter is legacy/unit-test compatibility only; provider execution and higher-level orchestration must depend on repository contracts rather than direct SQL access.
 
 ## 22. Architecture Gate 03
 
@@ -337,3 +337,12 @@ A durable RUNNING lifecycle requires evidence that the execution owner is still 
 Stale recovery is explicit and authenticated. The repository may transition a scan from RUNNING to FAILED only when the heartbeat lease is expired, and the transition plus SCAN_RECOVERED_STALE audit event occur in one transaction. A recent heartbeat is never recovered. The design deliberately avoids age-only recovery because a legitimate long-running assessment may exceed arbitrary wall-clock durations.
 
 SQLite and PostgreSQL expose equivalent heartbeat and stale-recovery operations. Recovery is fail-closed: persistence errors roll back the lifecycle mutation and audit event. Provider execution is never automatically rerun as part of stale recovery.
+
+
+## 29. Architecture Gate 18 — Reliability and Performance
+
+Gate 18 is complete after explicit local validation. The reliability boundary includes bounded cooperative cancellation grace, explicit reporting of non-cooperative workers, shared provider concurrency limits, cancellation-aware slot acquisition, compare-and-set lifecycle transitions, atomic lifecycle/audit persistence, recovery after persistence faults, durable execution heartbeats, explicit authenticated stale-lease recovery, and deterministic cleanup of heartbeat workers after provider timeout. The persistence layer remains authoritative for lifecycle state; Python threads are never represented as forcibly terminated.
+
+## 30. Architecture Gate 19 — PostgreSQL Canonical Persistence Enforcement
+
+Gate 19 makes the already-declared PostgreSQL production boundary singular across active development and integration testing. Active repository tests and fixtures must use PostgreSQL, configured through an explicit test database connection such as THREATLENS_TEST_DATABASE_URL; tests must not silently fall back to SQLite. SQLite code, if retained temporarily for legacy compatibility, must not receive new production behavior and must not be selected by the application runtime. The gate is complete only after PostgreSQL-backed tests validate domain persistence, lifecycle transactions, correlation persistence, evidence-validation persistence, authentication persistence, concurrency behavior, and failure-atomicity behavior without weakening constraints or safety controls.
