@@ -119,11 +119,11 @@ API-specific authenticated workflows, schema-driven API discovery, parameter fuz
 
 Gate 22 is complete after clean local pytest and Ruff validation. The API assessment foundation remains bounded to explicit HTTP(S) API targets, read-only HEAD/GET behavior, destination safety checks, redirect suppression, bounded captures, evidence-first persistence, and conservative malformed-JSON policy evaluation.
 
-### Architecture Gate 23 — Vulnerability Intelligence Foundation — IMPLEMENTED
+### Architecture Gate 23 — Vulnerability Intelligence Foundation — COMPLETE
 
 Gate 23 establishes a provider-independent vulnerability-intelligence contract for trusted upstream metadata. Intelligence records normalize vulnerability identifiers, severity, CVE/CWE identifiers, affected product/version metadata, CVSS, confidence, references, source provenance, and optional evidence references. Invalid identifiers and out-of-range confidence/CVSS values are rejected. The boundary is network-free and never fetches feeds or invents vulnerability data.
 
-### Architecture Gate 24 — Deterministic Vulnerability Matching — IMPLEMENTED
+### Architecture Gate 24 — Deterministic Vulnerability Matching — COMPLETE
 
 Gate 24 adds deterministic matching between normalized service observations and trusted vulnerability intelligence. A match requires the same authorized asset, an explicit product/service-name agreement, and an exact observed-version match against the intelligence record's affected-version set. Missing product/version metadata, different assets, and non-exact versions produce no match. Matching returns a rationale, bounded confidence, source provenance, and the service identity without creating a finding or asserting exploitability; later finding enrichment must still cross ProviderHandoff and preserve evidence requirements.
 
