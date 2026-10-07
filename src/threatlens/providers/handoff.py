@@ -9,6 +9,8 @@ from uuid import UUID
 
 from threatlens.domain.models import Asset, Evidence, Finding
 from threatlens.providers.runtime import ProviderMetadata
+from threatlens.providers.vulnerability_enrichment import intelligence_evidence
+from threatlens.providers.vulnerability_intelligence import VulnerabilityIntelligenceRecord
 
 
 class EvidenceFindingRepository(Protocol):
@@ -51,6 +53,30 @@ class ProviderHandoff:
         sealed = replace(sealed, metadata=metadata, source=provider.name)
         self.repository.save_evidence(sealed)
         return sealed
+
+    def persist_intelligence_enriched_finding(
+        self,
+        execution_id: UUID,
+        provider: ProviderMetadata,
+        asset: Asset,
+        finding: Finding,
+        intelligence: VulnerabilityIntelligenceRecord,
+        evidence: tuple[Evidence, ...],
+    ) -> Finding:
+        """Persist an intelligence-enriched finding through the normal handoff."""
+
+        intelligence_evidence(intelligence, evidence)
+        if not intelligence.evidence_ids:
+            raise ValueError(
+                "intelligence-backed finding enrichment requires evidence"
+            )
+        return self.persist_finding(
+            execution_id,
+            provider,
+            asset,
+            finding,
+            tuple(dict.fromkeys((*evidence,))),
+        )
 
     def persist_finding(
         self,
