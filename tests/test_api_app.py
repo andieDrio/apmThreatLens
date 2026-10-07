@@ -103,6 +103,24 @@ class FakeRepository:
             ],
         }
 
+    def campaigns_read_model(self, limit=50, offset=0):
+        return {
+            "total": 1,
+            "limit": limit,
+            "offset": offset,
+            "items": [
+                {
+                    "id": "88888888-8888-8888-8888-888888888888",
+                    "name": "authorized-test",
+                    "authorized": True,
+                    "state": "QUEUED",
+                    "created_at": datetime(2026, 10, 7, 6, 0, tzinfo=UTC),
+                    "include": ["fqdn:example.test", "10.10.10.0/24"],
+                    "exclude": ["10.10.10.5"],
+                }
+            ],
+        }
+
     def scans_read_model(self, limit=50, offset=0):
         return {
             "total": 2,
@@ -272,6 +290,45 @@ async def test_findings_read_model_rejects_unbounded_limit(client):
     token = login.json()["access_token"]
     response = await client.get(
         "/api/v1/findings?limit=101",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_campaigns_read_model_requires_authentication(client):
+    response = await client.get("/api/v1/campaigns")
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_campaigns_read_model_exposes_explicit_scope(client):
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "analyst", "password": "correct-horse-battery-123"},
+    )
+    token = login.json()["access_token"]
+    response = await client.get(
+        "/api/v1/campaigns?limit=1&offset=0",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["authorized"] is True
+    assert payload["items"][0]["include"] == ["fqdn:example.test", "10.10.10.0/24"]
+    assert payload["items"][0]["exclude"] == ["10.10.10.5"]
+
+
+@pytest.mark.anyio
+async def test_campaigns_read_model_rejects_unbounded_limit(client):
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "analyst", "password": "correct-horse-battery-123"},
+    )
+    token = login.json()["access_token"]
+    response = await client.get(
+        "/api/v1/campaigns?limit=101",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 422
