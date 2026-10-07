@@ -358,7 +358,7 @@ Gate 20 closes the PostgreSQL concurrency hardening boundary. Durable finding co
 
 These controls rely on PostgreSQL transactional semantics rather than process-local Python locks for cross-instance correctness. Persistence failures remain fail-closed and do not permit an in-memory provider result to masquerade as a committed lifecycle state.
 
-## 43. Architecture Gate 21 — Controlled Web/API Assessment Foundation
+## 43. Architecture Gate 21 — Controlled Web Assessment Foundation
 
 Gate 21 establishes the first bounded HTTP assessment provider for explicitly authorized HTTP(S) URL targets. The provider accepts only absolute HTTP(S) URLs without userinfo or fragments, honors campaign exclusions and cancellation, bounds target count, request timeout, response size, and HTTP methods, and disables automatic redirect following. Redirect destinations are never treated as newly authorized scope.
 
@@ -366,4 +366,4 @@ The safe default method is HEAD. GET is available only when explicitly configure
 
 Each HTTP response is serialized into immutable, SHA-256-sealed evidence with execution/provider provenance before any policy finding is generated. The current deterministic policy layer evaluates only evidence-backed response-header controls: missing HSTS on successful HTTPS responses and missing X-Content-Type-Options. Findings reference the exact persisted evidence and cross the ProviderHandoff boundary.
 
-Gate 21 deliberately excludes authenticated API workflows, arbitrary methods, state-changing requests, parameter fuzzing, schema-driven API discovery, credential testing, SSRF exploitation, redirect traversal, and intrusive web testing. Those capabilities require later explicit authorization, execution, evidence, and safety contracts.
+Gate 21 deliberately excludes authenticated API workflows, state-changing requests, parameter fuzzing, schema-driven API discovery, credential testing, SSRF exploitation, redirect traversal, and intrusive web testing. API-specific assessment will require a separate architecture gate with explicit authorization, execution, evidence, and safety contracts.
