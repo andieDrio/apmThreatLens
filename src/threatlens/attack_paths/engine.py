@@ -30,7 +30,7 @@ class AttackPathRelation:
     target_asset_id: UUID
     relationship_type: AttackPathRelationType
     evidence_ids: tuple[UUID, ...]
-    validated: bool = True
+    validated: bool = False
     id: UUID | None = None
 
     def __post_init__(self) -> None:
