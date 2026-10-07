@@ -240,3 +240,15 @@ Establish deterministic TLS security-policy evaluation and end-to-end finding in
 Establish deterministic cross-provider finding correlation and deduplication before later risk aggregation. `correlation_key()` must derive logical identity from asset identity plus vulnerability identity, or normalized title/CWE when no vulnerability identifier exists; provider-specific IDs and evidence IDs must never determine logical identity. `correlate_findings()` must collapse equivalent findings into one stable UUIDv5 logical finding, preserve every unique evidence reference, retain contributing provider sources, and select the strongest supported severity/state/confidence without fabricating technical context.
 
 Correlation is deliberately conservative because the current `Finding` domain contract does not yet model endpoint, parameter, or service-location identity. The engine must therefore never infer equivalence across different assets or across unsupported location dimensions. This gate is a pure normalization layer and must not perform network access or write directly to persistence.
+
+## 31. Architecture Gate 12
+
+Gate 12 establishes deterministic, provider-independent correlation as a pure normalization layer. A correlation key is derived from authorized asset identity plus vulnerability ID, or asset identity plus normalized title/CWE when no vulnerability ID exists. Correlation unions unique evidence references, preserves contributing sources, selects the strongest severity/confidence, and never correlates findings from different assets.
+
+## 32. Architecture Gate 13
+
+Gate 13 makes finding correlation durable at the persistence boundary. DurableFindingCorrelator assigns the deterministic logical finding ID before first persistence, stores a unique finding_correlations key-to-finding mapping, and routes subsequent provider findings through the same logical record. Existing findings are updated using the correlation result while evidence relationships are unioned with duplicate-safe inserts.
+
+ProviderHandoff remains the only provider-facing finding boundary: after asset/evidence validation, it optionally delegates to the durable correlator rather than allowing providers to write correlated records directly. SQLite and PostgreSQL repositories expose the same correlation primitives. Raw evidence is never modified by correlation. A repository restart therefore retains the logical finding identity and prevents the same provider-independent weakness from becoming a new logical finding.
+
+The current gate does not infer endpoint, parameter, service-location, or application-context equivalence because those dimensions are not yet represented in the Finding domain contract. Correlation remains deliberately conservative until those fields are introduced by a later architecture gate.
