@@ -524,6 +524,47 @@ class PostgresRepository(
             "scans_by_state": scans_by_state,
         }
 
+    def scans_read_model(self, limit: int = 50, offset: int = 0) -> dict[str, object]:
+        """Return bounded scan execution state for the authenticated application layer."""
+        if not 1 <= limit <= 100:
+            raise ValueError("limit must be within 1..100")
+        if offset < 0:
+            raise ValueError("offset cannot be negative")
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM scans")
+            total = int(cursor.fetchone()[0])
+            cursor.execute(
+                """SELECT s.execution_id, s.campaign_id, c.name, s.provider_name, s.state,
+                          s.queued_at, s.started_at, s.finished_at, s.heartbeat_at,
+                          LEFT(s.error, 2048)
+                   FROM scans s
+                   JOIN campaigns c ON c.id = s.campaign_id
+                   ORDER BY s.queued_at DESC, s.execution_id DESC
+                   LIMIT %s OFFSET %s""",
+                (limit, offset),
+            )
+            rows = cursor.fetchall()
+        return {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "items": [
+                {
+                    "execution_id": str(row[0]),
+                    "campaign_id": str(row[1]),
+                    "campaign_name": row[2],
+                    "provider_name": row[3],
+                    "state": str(row[4]),
+                    "queued_at": row[5],
+                    "started_at": row[6],
+                    "finished_at": row[7],
+                    "heartbeat_at": row[8],
+                    "error": row[9],
+                }
+                for row in rows
+            ],
+        }
+
     def findings_read_model(self, limit: int = 50, offset: int = 0) -> dict[str, object]:
         """Return a bounded finding list without exposing raw evidence or arbitrary SQL."""
         if not 1 <= limit <= 100:
