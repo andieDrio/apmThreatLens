@@ -181,7 +181,7 @@ The PostgreSQL repository uses fixed SQL with an enforced maximum page size of 1
 **Validation status:** Gate 30 focused API regression tests are implemented. Local `pytest -q` and `ruff check .` are required before the gate can be declared complete.
 
 
-### Architecture Gate 33 — Campaign & Scope Read Model API — IMPLEMENTED
+### Architecture Gate 33 — Campaign & Scope Read Model API — COMPLETE
 
 Gate 33 establishes the authenticated GUI-facing campaign and authorization-scope read model at `GET /api/v1/campaigns`. The endpoint requires READ permission and returns bounded campaign identity, authorization state, lifecycle state, creation time, and the explicit include/exclude scope entries.
 
