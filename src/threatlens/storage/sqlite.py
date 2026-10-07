@@ -15,6 +15,7 @@ from threatlens.storage.finding_correlation import SQLiteFindingCorrelationMixin
 
 from threatlens.domain.models import (
     Asset,
+    AuditEvent,
     Campaign,
     Evidence,
     Finding,
@@ -163,6 +164,30 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
                 ),
             )
 
+
+    def save_scan_with_audit(self, scan: Scan, event: AuditEvent) -> None:
+        with self._transaction_lock:
+            self.connection.execute("BEGIN IMMEDIATE")
+            try:
+                self.connection.execute(
+                    """INSERT INTO scans
+                       (execution_id,campaign_id,provider_name,state,queued_at,started_at,finished_at,error)
+                       VALUES (?,?,?,?,?,?,?,?)""",
+                    (str(scan.execution_id), str(scan.campaign_id), scan.provider_name, scan.state.value,
+                     scan.queued_at.isoformat(), scan.started_at.isoformat() if scan.started_at else None,
+                     scan.finished_at.isoformat() if scan.finished_at else None, scan.error),
+                )
+                self.connection.execute(
+                    "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (str(event.id), str(event.actor_user_id) if event.actor_user_id else None,
+                     event.action, event.resource_type, str(event.resource_id) if event.resource_id else None,
+                     event.outcome, event.detail, event.created_at.isoformat()),
+                )
+                self.connection.commit()
+            except BaseException:
+                self.connection.rollback()
+                raise
+
     def update_scan_state(
         self,
         execution_id: UUID,
@@ -238,6 +263,63 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
                  LifecycleState.QUEUED.value, LifecycleState.RUNNING.value),
             )
             return cursor.rowcount == 1
+
+
+    def update_scan_state_if_current_with_audit(
+        self, execution_id: UUID, expected: LifecycleState, target: LifecycleState,
+        event: AuditEvent, error: str | None = None
+    ) -> bool:
+        validate_lifecycle_transition(expected, target)
+        now = datetime.now(timezone.utc).isoformat()
+        started_at = now if target is LifecycleState.RUNNING else None
+        finished_at = now if target in {LifecycleState.COMPLETED, LifecycleState.FAILED, LifecycleState.CANCELLED, LifecycleState.PARTIAL} else None
+        with self._transaction_lock:
+            self.connection.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = self.connection.execute(
+                    """UPDATE scans SET state=?, started_at=COALESCE(?,started_at),
+                       finished_at=COALESCE(?,finished_at), error=?
+                       WHERE execution_id=? AND state=?""",
+                    (target.value, started_at, finished_at, error, str(execution_id), expected.value),
+                )
+                if cursor.rowcount != 1:
+                    self.connection.rollback()
+                    return False
+                self.connection.execute(
+                    "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (str(event.id), str(event.actor_user_id) if event.actor_user_id else None,
+                     event.action, event.resource_type, str(event.resource_id) if event.resource_id else None,
+                     event.outcome, event.detail, event.created_at.isoformat()),
+                )
+                self.connection.commit()
+                return True
+            except BaseException:
+                self.connection.rollback()
+                raise
+
+    def cancel_scan_with_audit(self, execution_id: UUID, success_event: AuditEvent, noop_event: AuditEvent) -> bool:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._transaction_lock:
+            self.connection.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = self.connection.execute(
+                    """UPDATE scans SET state=?, finished_at=?
+                       WHERE execution_id=? AND state IN (?,?)""",
+                    (LifecycleState.CANCELLED.value, now, str(execution_id),
+                     LifecycleState.QUEUED.value, LifecycleState.RUNNING.value),
+                )
+                event = success_event if cursor.rowcount == 1 else noop_event
+                self.connection.execute(
+                    "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (str(event.id), str(event.actor_user_id) if event.actor_user_id else None,
+                     event.action, event.resource_type, str(event.resource_id) if event.resource_id else None,
+                     event.outcome, event.detail, event.created_at.isoformat()),
+                )
+                self.connection.commit()
+                return cursor.rowcount == 1
+            except BaseException:
+                self.connection.rollback()
+                raise
 
     def save_asset(self, asset: Asset) -> None:
         with self.connection:
