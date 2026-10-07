@@ -179,11 +179,11 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
             try:
                 self.connection.execute(
                     """INSERT INTO scans
-                       (execution_id,campaign_id,provider_name,state,queued_at,started_at,finished_at,error)
+                       (execution_id,campaign_id,provider_name,state,queued_at,started_at,finished_at,error,heartbeat_at)
                        VALUES (?,?,?,?,?,?,?,?,?)""",
                     (str(scan.execution_id), str(scan.campaign_id), scan.provider_name, scan.state.value,
                      scan.queued_at.isoformat(), scan.started_at.isoformat() if scan.started_at else None,
-                     scan.finished_at.isoformat() if scan.finished_at else None, scan.error),
+                     scan.finished_at.isoformat() if scan.finished_at else None, scan.error, scan.heartbeat_at.isoformat() if scan.heartbeat_at else None),
                 )
                 self.connection.execute(
                     "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?)",
