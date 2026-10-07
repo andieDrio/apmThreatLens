@@ -223,7 +223,10 @@ class ExecutionRuntime:
             heartbeat_stop.set()
             worker.join(self.policy.cancellation_grace_seconds)
             heartbeat_worker.join(0.1)
-            error = f"TimeoutError: provider exceeded {self.policy.timeout_seconds:.3f}s execution budget"
+            error = (
+                "TimeoutError: provider exceeded "
+                f"{self.policy.timeout_seconds:.3f}s execution budget"
+            )
             if worker.is_alive():
                 error += "; provider worker did not stop within cancellation grace period"
             emit(ProviderEventType.ERROR, error)
