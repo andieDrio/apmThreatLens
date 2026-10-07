@@ -13,6 +13,7 @@ class ExecutionPolicy:
     max_concurrency: int = 4
     requests_per_second: float = 5.0
     timeout_seconds: float = 30.0
+    cancellation_grace_seconds: float = 0.25
 
     def __post_init__(self) -> None:
         if self.max_concurrency < 1:
@@ -21,6 +22,8 @@ class ExecutionPolicy:
             raise ValueError("requests_per_second must be positive")
         if self.timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
+        if self.cancellation_grace_seconds < 0:
+            raise ValueError("cancellation_grace_seconds cannot be negative")
 
 
 def validate_campaign_execution(campaign: Campaign, policy: ExecutionPolicy) -> None:
