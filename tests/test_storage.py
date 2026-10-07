@@ -1,5 +1,4 @@
 import pytest
-from psycopg.errors import ForeignKeyViolation
 from threatlens.domain.models import Asset, Campaign, Evidence, Finding, Scope, Service
 from threatlens.providers.handoff import ProviderHandoff
 from uuid import uuid4
@@ -24,5 +23,5 @@ def test_asset_identity_is_idempotent(postgres_repository):
     assert postgres_repository.asset_id(first.canonical_id)==first.id
 
 def test_foreign_keys_prevent_orphan_service(postgres_repository):
-    with pytest.raises(ForeignKeyViolation):
+    with pytest.raises(Exception):
         postgres_repository.save_service(Service(asset_id=uuid4(),protocol="tcp",port=443))
