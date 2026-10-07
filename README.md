@@ -26,8 +26,8 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 
 - Foundational domain contracts for campaign, scope, asset, service, scan, evidence, and finding.
 - Explicit campaign authorization and execution safety policy.
-- SQLite persistence boundary with database constraints and foreign-key integrity.
-- PostgreSQL persistence adapter using the same domain persistence boundary, with `psycopg` as the runtime driver.
+- PostgreSQL persistence boundary with database constraints, foreign-key integrity, transactional lifecycle semantics, and `psycopg` as the runtime driver.
+- SQLite is not a production/deployment backend; any remaining SQLite adapter code is legacy test compatibility only and must not become a second production persistence path.
 - Persisted scan execution IDs and fail-closed lifecycle transitions.
 - Campaign/scan orchestration boundary with provider isolation and cancellation semantics.
 - Provider registry with explicit metadata and capability declarations.
@@ -49,7 +49,7 @@ Architecture Gate 18: Reliability and Performance. Raw evidence remains immutabl
 
 ### PostgreSQL Deployment Readiness
 
-PostgreSQL is now a first-class deployment persistence target. The repository includes a PostgreSQL adapter and `.env.example`; local database installation and credentials remain deployment-environment responsibilities. The application does not auto-start or auto-create a database server.
+PostgreSQL is the permanent and canonical deployment persistence target. The repository includes a PostgreSQL adapter and `.env.example`; local database installation and credentials remain deployment-environment responsibilities. The application does not auto-start or auto-create a database server.
 
 For local development, install the Python dependencies after pulling the repository and configure `THREATLENS_DATABASE_URL` from `.env.example` without committing secrets.
 
@@ -59,7 +59,7 @@ Repository changes are verified through GitHub. Local pytest, lint, build, Postg
 
 ## Architecture Gate 17 Status
 
-Authentication is now a first-class backend boundary. Users use PBKDF2-HMAC-SHA256 password hashes, successful logins receive short-lived opaque sessions whose hashes are persisted, revoked sessions fail closed, role permissions are explicit, authentication/authorization decisions are audited, and assessment orchestration requires an authenticated principal with ASSESS permission. Viewer principals cannot execute assessments. SQLite and PostgreSQL persist users, sessions, and audit events without storing raw session tokens.
+Authentication is now a first-class backend boundary. Users use PBKDF2-HMAC-SHA256 password hashes, successful logins receive short-lived opaque sessions whose hashes are persisted, revoked sessions fail closed, role permissions are explicit, authentication/authorization decisions are audited, and assessment orchestration requires an authenticated principal with ASSESS permission. Viewer principals cannot execute assessments. PostgreSQL persists users, sessions, and audit events without storing raw session tokens. SQLite is not part of the production authentication/persistence deployment path.
 
 ## Architecture Gate 18 Status
 
