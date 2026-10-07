@@ -1,4 +1,4 @@
-from threading import Event
+from threading import Event, Lock, Thread
 from time import sleep
 from uuid import uuid4
 
@@ -119,3 +119,44 @@ def test_runtime_marks_non_cooperative_timeout_worker(tmp_path) -> None:
     assert result.worker_still_running
     assert "cancellation grace period" in result.error
     sleep(0.2)
+
+
+class ConcurrencyTrackingProvider:
+    name = "concurrency-tracker"
+
+    def __init__(self) -> None:
+        self.active = 0
+        self.max_active = 0
+        self.lock = Lock()
+
+    def execute(self, campaign, execution_id, cancel_event) -> None:
+        with self.lock:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+        try:
+            sleep(0.03)
+        finally:
+            with self.lock:
+                self.active -= 1
+
+
+def test_runtime_enforces_max_concurrency_across_parallel_executions() -> None:
+    runtime = ExecutionRuntime(ExecutionPolicy(max_concurrency=1, timeout_seconds=1.0))
+    provider = ConcurrencyTrackingProvider()
+    results = []
+
+    def run_once() -> None:
+        results.append(
+            runtime.execute(campaign(), uuid4(), metadata(provider.name), provider, Event())
+        )
+
+    first = Thread(target=run_once)
+    second = Thread(target=run_once)
+    first.start()
+    second.start()
+    first.join()
+    second.join()
+
+    assert provider.max_active == 1
+    assert len(results) == 2
+    assert all(result.success for result in results)
