@@ -274,3 +274,11 @@ AttackPathRelation requires a source asset, target asset, explicit relationship 
 AttackPathAnalyzer accepts explicit entry assets and objective assets, walks only validated evidence-backed relationships, prevents cycles, and enforces maximum-hop and maximum-path limits. A reported path must contain at least one finding on an asset in the path. Path prioritization uses already-computed finding risk supplied by the risk-analysis layer; the analyzer does not invent additional exploitability or compromise probability. The highest associated finding risk is used as the path's deterministic risk score, and an explicit risk level may be supplied from the risk engine.
 
 This gate is intentionally network-free and persistence-independent. It creates the graph-analysis contract required for later evidence-backed attack-path persistence, remediation, and validation without allowing graph inference to bypass scope, evidence, or provider boundaries.
+
+## 35. Architecture Gate 16
+
+Gate 16 establishes the evidence management and validation lifecycle. Raw Evidence remains immutable and its SHA-256 digest is the content-integrity anchor established by the provider handoff. Validation decisions are separate domain records and never rewrite the evidence payload.
+
+Evidence validation states are explicit: PENDING may transition to VALIDATED or REJECTED; final decisions may only become SUPERSEDED through an append-only replacement record. Validation records require a validator and rationale, and final decisions require supporting evidence references. Persistence rejects validation against missing evidence and re-checks the stored SHA-256 content digest before accepting a decision.
+
+SQLite and PostgreSQL persist validation records behind the repository boundary with foreign keys to evidence and optional supersession links. This makes validation auditable across restarts and prevents a mutable status field from erasing prior decisions. The boundary does not claim that validation itself proves exploitability, remediation, or compromise; those conclusions require later evidence-backed workflows.
