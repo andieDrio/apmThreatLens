@@ -49,11 +49,9 @@ def test_analyzer_follows_only_validated_evidence_backed_relationships():
         objective_asset_ids=(objective,),
         relations=relations,
         findings=(_finding(objective),),
-        risk_scores={next(iter(_finding(objective).evidence_ids)): 0.0},
         max_hops=4,
     )
 
-    # Finding IDs, not evidence IDs, are the risk-score keys.
     finding = _finding(objective)
     result = AttackPathAnalyzer().analyze(
         entry_asset_ids=(entry,),
@@ -75,7 +73,7 @@ def test_analyzer_follows_only_validated_evidence_backed_relationships():
     assert "validated relationships" in path.explanation[0]
 
 
-def test_unvalidated_or_evidence_less_relationships_are_ignored():
+def test_unvalidated_relationships_are_ignored_and_missing_evidence_is_rejected():
     entry = uuid4()
     objective = uuid4()
 
@@ -86,30 +84,24 @@ def test_unvalidated_or_evidence_less_relationships_are_ignored():
         evidence_ids=(uuid4(),),
         validated=False,
     )
-    ignored_without_evidence = object.__new__(AttackPathRelation)
-    object.__setattr__(ignored_without_evidence, "source_asset_id", entry)
-    object.__setattr__(ignored_without_evidence, "target_asset_id", objective)
-    object.__setattr__(
-        ignored_without_evidence,
-        "relationship_type",
-        AttackPathRelationType.NETWORK_REACHABILITY,
-    )
-    object.__setattr__(ignored_without_evidence, "evidence_ids", ())
-    object.__setattr__(ignored_without_evidence, "validated", True)
-    object.__setattr__(ignored_without_evidence, "id", uuid4())
+
+    with pytest.raises(ValueError):
+        AttackPathRelation(
+            source_asset_id=entry,
+            target_asset_id=objective,
+            relationship_type=AttackPathRelationType.NETWORK_REACHABILITY,
+            evidence_ids=(),
+        )
 
     result = AttackPathAnalyzer().analyze(
         entry_asset_ids=(entry,),
         objective_asset_ids=(objective,),
-        relations=(ignored_unvalidated, ignored_without_evidence),
+        relations=(ignored_unvalidated,),
         findings=(_finding(objective),),
     )
 
     assert result.paths == ()
-    assert set(result.ignored_relation_ids) == {
-        ignored_unvalidated.id,
-        ignored_without_evidence.id,
-    }
+    assert result.ignored_relation_ids == (ignored_unvalidated.id,)
 
 
 def test_cycles_do_not_create_infinite_paths_and_paths_are_deterministic():
