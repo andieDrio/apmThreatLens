@@ -494,6 +494,36 @@ class PostgresRepository(
                     )
                     return cursor.rowcount == 1
 
+    def dashboard_summary(self) -> dict[str, object]:
+        """Return bounded read-only aggregate data for the authenticated dashboard."""
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM campaigns")
+            campaigns = int(cursor.fetchone()[0])
+            cursor.execute("SELECT COUNT(*) FROM assets")
+            assets = int(cursor.fetchone()[0])
+            cursor.execute("SELECT COUNT(*) FROM services")
+            services = int(cursor.fetchone()[0])
+            cursor.execute("SELECT COUNT(*) FROM findings")
+            findings = int(cursor.fetchone()[0])
+            cursor.execute(
+                "SELECT severity, COUNT(*) FROM findings GROUP BY severity ORDER BY severity"
+            )
+            findings_by_severity = {
+                str(row[0]): int(row[1]) for row in cursor.fetchall()
+            }
+            cursor.execute(
+                "SELECT state, COUNT(*) FROM scans GROUP BY state ORDER BY state"
+            )
+            scans_by_state = {str(row[0]): int(row[1]) for row in cursor.fetchall()}
+        return {
+            "campaigns": campaigns,
+            "assets": assets,
+            "services": services,
+            "findings": findings,
+            "findings_by_severity": findings_by_severity,
+            "scans_by_state": scans_by_state,
+        }
+
     def asset_id(self, canonical_id: str) -> UUID:
         with self.connection.cursor() as cursor:
             cursor.execute("SELECT id FROM assets WHERE canonical_id=%s", (canonical_id,))
