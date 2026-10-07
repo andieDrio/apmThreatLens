@@ -147,6 +147,16 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
             cursor.execute(f"SELECT COUNT(*) FROM {table}")
             return int(cursor.fetchone()[0])
 
+    def scan_state(self, execution_id: UUID):
+        from threatlens.domain.models import LifecycleState
+        with self._transaction_lock:
+            with self.connection.cursor() as cursor:
+                cursor.execute("SELECT state FROM scans WHERE execution_id=%s", (execution_id,))
+                row = cursor.fetchone()
+        if row is None:
+            raise KeyError(str(execution_id))
+        return LifecycleState(row[0])
+
     def update_scan_state(self, execution_id: UUID, target, error: str | None = None) -> None:
         from datetime import datetime, timezone
         from threatlens.domain.models import LifecycleState, validate_lifecycle_transition
