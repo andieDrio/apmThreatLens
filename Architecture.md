@@ -451,7 +451,7 @@ The PostgreSQL repository supplies the aggregate data through fixed queries. The
 Gate 29 is complete after explicit local validation.
 
 
-## 53. Architecture Gate 30 — Findings Read Model API — IMPLEMENTED
+## 53. Architecture Gate 30 — Findings Read Model API — COMPLETE
 
 Gate 30 establishes the authenticated application read model for finding inventory. `GET /api/v1/findings` requires READ permission and returns a bounded page containing finding identity, lifecycle state, severity, vulnerability metadata, confidence, source, detection time, asset canonical identity, and explicit service/endpoint/parameter/location context.
 
@@ -459,4 +459,15 @@ The repository contract is deliberately read-only and bounded. PostgreSQL uses f
 
 The API therefore gives the future GUI a usable findings table without allowing the presentation layer to bypass the domain, authorization, evidence, or persistence boundaries.
 
-**Validation status:** Gate 30 focused API regression tests are implemented. Local pytest -q and ruff check . are required before the gate can be declared complete.
+Gate 30 is complete after explicit local validation.
+
+
+## 54. Architecture Gate 31 — Asset & Service Read Model API — IMPLEMENTED
+
+Gate 31 establishes the authenticated application read model for the authorized attack-surface inventory. `GET /api/v1/assets` requires READ permission and returns bounded asset identity plus explicit service observations associated with each asset.
+
+The response includes canonical asset identity, asset type/value, first/last observation timestamps, and service protocol/port/name/version. PostgreSQL uses fixed queries with a maximum page size of 100 and deterministic ordering. The endpoint is read-only and excludes raw evidence, credentials, audit records, arbitrary SQL, and unrestricted database access.
+
+The service information remains observational context. The read model does not infer vulnerabilities or exploitability and does not bypass the existing provider, evidence, correlation, or authorization boundaries.
+
+**Validation status:** Gate 31 focused API regression tests are implemented. Local pytest -q and ruff check . are required before the gate can be declared complete.
