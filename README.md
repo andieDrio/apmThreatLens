@@ -43,11 +43,13 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 - Deterministic TLS security-policy evaluation for deprecated TLS versions, certificate validation failures, hostname mismatch, certificate expiration, and weak/deprecated ciphers.
 - End-to-end TLS finding handoff through persisted evidence, asset resolution, normalized finding validation, and the existing ProviderHandoff boundary.
 - Deterministic cross-provider finding correlation using asset identity plus vulnerability identity (or normalized title/CWE fallback), with stable logical finding IDs and preservation of all unique evidence and contributing provider sources.
-- Automated persistence, orchestration, provider-runtime, evidence-handoff, discovery, network-discovery, identification, interrogation, TLS assessment, TLS finding integration, finding-correlation, risk-engine, attack-path, and evidence-validation tests.
+- Automated persistence, orchestration, provider-runtime, evidence-handoff, discovery, network-discovery, identification, interrogation, TLS assessment, TLS finding integration, API assessment, vulnerability-intelligence normalization/matching, finding-correlation, risk-engine, attack-path, and evidence-validation tests.
+- Trusted vulnerability-intelligence normalization with strict CVE/CWE validation, bounded metadata, provenance, and optional evidence references.
+- Deterministic vulnerability matching requiring explicit product and exact version agreement; no CVE inference or unsupported vulnerability claims.
 
 ### Current Architecture Gate
 
-Architecture Gate 22: Controlled API Assessment Foundation. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
+Architecture Gate 24: Deterministic Vulnerability Intelligence Matching. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
 
 ### Gate 19 PostgreSQL Enforcement — COMPLETE
 
@@ -110,3 +112,17 @@ Gate 21 establishes the first bounded HTTP assessment boundary for explicitly sc
 HTTP observations are persisted as sealed evidence before policy findings are emitted. The deterministic web policy currently evaluates only conservative response-header controls: missing HSTS on successful HTTPS responses and missing X-Content-Type-Options. Findings retain the exact evidence reference and are sent through ProviderHandoff rather than written directly to persistence. Redirect targets are evidence only and are never followed or treated as newly authorized scope.
 
 API-specific authenticated workflows, schema-driven API discovery, parameter fuzzing, state-changing requests, SSRF exploitation, authentication bypass testing, and intrusive web testing remain outside this gate and require a separate explicit API assessment gate.
+
+
+### Architecture Gate 22 — Controlled API Assessment Foundation — COMPLETE
+
+Gate 22 is complete after clean local pytest and Ruff validation. The API assessment foundation remains bounded to explicit HTTP(S) API targets, read-only HEAD/GET behavior, destination safety checks, redirect suppression, bounded captures, evidence-first persistence, and conservative malformed-JSON policy evaluation.
+
+### Architecture Gate 23 — Vulnerability Intelligence Foundation — COMPLETE
+
+Gate 23 establishes a provider-independent vulnerability-intelligence contract for trusted upstream metadata. Intelligence records normalize vulnerability identifiers, severity, CVE/CWE identifiers, affected product/version metadata, CVSS, confidence, references, source provenance, and optional evidence references. Invalid identifiers and out-of-range confidence/CVSS values are rejected. The boundary is network-free and never fetches feeds or invents vulnerability data.
+
+### Architecture Gate 24 — Deterministic Vulnerability Matching — COMPLETE
+
+Gate 24 adds deterministic matching between normalized service observations and trusted vulnerability intelligence. A match requires the same authorized asset, an explicit product/service-name agreement, and an exact observed-version match against the intelligence record's affected-version set. Missing product/version metadata, different assets, and non-exact versions produce no match. Matching returns a rationale, bounded confidence, source provenance, and the service identity without creating a finding or asserting exploitability; later finding enrichment must still cross ProviderHandoff and preserve evidence requirements.
+
