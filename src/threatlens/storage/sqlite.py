@@ -188,7 +188,11 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
                      scan.finished_at.isoformat() if scan.finished_at else None, scan.error, scan.heartbeat_at.isoformat() if scan.heartbeat_at else None),
                 )
                 self.connection.execute(
-                    "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                    "INSERT INTO audit_events "
+                    "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
+                    "VALUES (?,?,?,?,?,?,?,?)"
+                ),
                     (str(event.id), str(event.actor_user_id) if event.actor_user_id else None,
                      event.action, event.resource_type, str(event.resource_id) if event.resource_id else None,
                      event.outcome, event.detail, event.created_at.isoformat()),
@@ -258,8 +262,15 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
                     self.connection.rollback()
                     return False
                 now = datetime.now(timezone.utc).isoformat()
-                self.connection.execute("UPDATE scans SET state=?, finished_at=?, error=? WHERE execution_id=? AND state=?", (LifecycleState.FAILED.value, now, "execution lease expired; provider execution could not be confirmed alive", str(execution_id), LifecycleState.RUNNING.value))
-                self.connection.execute("INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?)", (str(event.id), str(event.actor_user_id) if event.actor_user_id else None, event.action, event.resource_type, str(event.resource_id) if event.resource_id else None, event.outcome, event.detail, event.created_at.isoformat()))
+                self.connection.execute((
+                        "UPDATE scans SET state=?, finished_at=?, error=? "
+                        "WHERE execution_id=? AND state=?"
+                    ), (LifecycleState.FAILED.value, now, "execution lease expired; provider execution could not be confirmed alive", str(execution_id), LifecycleState.RUNNING.value))
+                self.connection.execute((
+                    "INSERT INTO audit_events "
+                    "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
+                    "VALUES (?,?,?,?,?,?,?,?)"
+                ), (str(event.id), str(event.actor_user_id) if event.actor_user_id else None, event.action, event.resource_type, str(event.resource_id) if event.resource_id else None, event.outcome, event.detail, event.created_at.isoformat()))
                 self.connection.commit()
                 return True
             except BaseException:
@@ -327,7 +338,11 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
                     self.connection.rollback()
                     return False
                 self.connection.execute(
-                    "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                    "INSERT INTO audit_events "
+                    "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
+                    "VALUES (?,?,?,?,?,?,?,?)"
+                ),
                     (str(event.id), str(event.actor_user_id) if event.actor_user_id else None,
                      event.action, event.resource_type, str(event.resource_id) if event.resource_id else None,
                      event.outcome, event.detail, event.created_at.isoformat()),
@@ -351,7 +366,11 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
                 )
                 event = success_event if cursor.rowcount == 1 else noop_event
                 self.connection.execute(
-                    "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                    "INSERT INTO audit_events "
+                    "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
+                    "VALUES (?,?,?,?,?,?,?,?)"
+                ),
                     (str(event.id), str(event.actor_user_id) if event.actor_user_id else None,
                      event.action, event.resource_type, str(event.resource_id) if event.resource_id else None,
                      event.outcome, event.detail, event.created_at.isoformat()),
