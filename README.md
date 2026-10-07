@@ -86,3 +86,8 @@ Recovery is explicit: after a persistence failure, operators can inspect the aut
 ## Next Architecture Direction
 
 After local validation of this hardening, continue Gate 18 reliability/performance review with any remaining transaction-boundary races before advancing to the next architecture priority.
+
+
+## Gate 18 Reliability Hardening Update — Execution Heartbeat and Stale Recovery
+
+Running scans now maintain a durable execution heartbeat. The runtime refreshes the heartbeat while provider work remains active, and the policy defines both a heartbeat interval and a stale-after threshold. A running execution is never recovered solely because it is old: stale recovery requires an expired heartbeat lease. Recovery is an explicit authenticated orchestration action that atomically transitions the stale execution to FAILED and records the recovery audit event. This prevents blind provider reruns after process interruption while providing a deterministic operator recovery path.
