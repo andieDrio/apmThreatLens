@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from threading import BoundedSemaphore, Event
+from threading import BoundedSemaphore, Event, Thread
 from typing import Callable, Protocol
 from uuid import UUID
 
@@ -198,6 +198,13 @@ class ScanOrchestrator:
                 state=self.repository.scan_state(scan.execution_id),
                 queued_at=scan.queued_at,
             )
+        heartbeat_stop = Event()
+        def heartbeat_loop() -> None:
+            while not heartbeat_stop.wait(self.policy.heartbeat_interval_seconds):
+                self.repository.heartbeat_scan(scan.execution_id)
+        heartbeat_thread = Thread(target=heartbeat_loop, name=f"threatlens-heartbeat-{scan.execution_id}", daemon=True)
+        self.repository.heartbeat_scan(scan.execution_id)
+        heartbeat_thread.start()
         try:
             provider.execute(campaign, scan.execution_id, event)
         except Exception as exc:
@@ -209,6 +216,9 @@ class ScanOrchestrator:
                 AuditEvent(actor_user_id=principal.user_id, action="SCAN_FINALIZED", resource_type="SCAN", resource_id=scan.execution_id, outcome=LifecycleState.FAILED.value, detail=error),
                 error=error,
             )
+        finally:
+            heartbeat_stop.set()
+            heartbeat_thread.join(0.1)
         else:
             final_state = LifecycleState.CANCELLED if event.is_set() else LifecycleState.COMPLETED
             if not self.repository.update_scan_state_if_current_with_audit(
