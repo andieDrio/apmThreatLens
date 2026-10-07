@@ -51,7 +51,7 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 
 ### Current Architecture Gate
 
-Architecture Gate 31: Asset & Service Read Model API. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
+Architecture Gate 32: Scan Read Model API. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
 
 ### Gate 19 PostgreSQL Enforcement — COMPLETE
 
@@ -181,7 +181,15 @@ The PostgreSQL repository uses fixed SQL with an enforced maximum page size of 1
 **Validation status:** Gate 30 focused API regression tests are implemented. Local `pytest -q` and `ruff check .` are required before the gate can be declared complete.
 
 
-### Architecture Gate 31 — Asset & Service Read Model API — IMPLEMENTED
+### Architecture Gate 32 — Scan Read Model API — IMPLEMENTED
+
+Gate 32 establishes the authenticated GUI-facing scan execution read model at `GET /api/v1/scans`. The endpoint requires READ permission and returns bounded execution metadata including campaign identity, provider, lifecycle state, queue/start/finish timestamps, heartbeat state, and a bounded error summary when present.
+
+PostgreSQL uses fixed SQL with a maximum page size of 100 and deterministic ordering. The endpoint is read-only and excludes raw evidence, credentials, audit records, arbitrary SQL, and provider-internal execution details. It exposes operational state only; it does not mutate scan lifecycle state or bypass orchestration authorization.
+
+**Validation status:** Gate 32 focused API regression tests are implemented. Local `pytest -q` and `ruff check .` are required before the gate can be declared complete.
+
+### Architecture Gate 31 — Asset & Service Read Model API — COMPLETE
 
 Gate 31 establishes the authenticated GUI-facing attack-surface inventory contract at `GET /api/v1/assets`. The endpoint returns bounded asset identity and explicitly observed service metadata, including protocol, port, service name, and version. Pagination is capped at 100 records per request.
 
