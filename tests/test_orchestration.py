@@ -108,3 +108,13 @@ def test_scan_requires_authenticated_principal(tmp_path):
     with pytest.raises(PermissionError, match="authentication required"):
         orchestrator.run(campaign, SuccessfulProvider())
     repo.close()
+
+
+def test_scan_cancellation_requires_authenticated_principal(tmp_path):
+    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
+    scan = orchestrator.queue(campaign, SuccessfulProvider(), principal=principal)
+    with pytest.raises(PermissionError, match="authentication required"):
+        orchestrator.cancel(scan.execution_id)
+    orchestrator.cancel(scan.execution_id, principal=principal)
+    assert repo.scan_state(scan.execution_id) is LifecycleState.CANCELLED
+    repo.close()
