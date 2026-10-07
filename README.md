@@ -69,6 +69,12 @@ Provider execution now has a bounded cancellation-grace policy after timeout. A 
 
 Scan lifecycle finalization now uses atomic repository compare-and-set transitions. External cancellation can atomically win over provider completion/failure, and late completion attempts observe the already-terminal state instead of overwriting it. SQLite and PostgreSQL expose the same race-safe lifecycle primitives. Cancellation of an already-terminal scan is an explicit no-op and is audited as such.
 
+## Gate 18 Reliability Hardening Update — Concurrency and Persistence Boundaries
+
+Provider execution now enforces ExecutionPolicy.max_concurrency through a shared bounded semaphore at the orchestrator runtime boundary. The limit counts actual provider worker lifetime: a timed-out non-cooperative worker retains its execution slot until the worker exits, preventing hidden concurrency overflow. Waiting executions remain cancellation-aware before acquiring a slot.
+
+SQLite scan lifecycle operations now execute their read/validate/write state transitions inside one repository transaction and use a repository lock for concurrent lifecycle access. SQLite permits cross-thread repository cancellation safely while preserving serialized connection use. PostgreSQL now exposes the same transactional update_scan_state() contract, locks lifecycle rows during read/validate/write transitions, and serializes scan/audit transaction access. Pre-start cancellation uses the atomic cancellation primitive.
+
 ## Next Architecture Direction
 
-Continue reliability/performance hardening with provider execution concurrency limits and persistence transaction-boundary review.
+After local validation of this hardening, continue Gate 18 reliability/performance review with any remaining transaction-boundary races before advancing to the next architecture priority.
