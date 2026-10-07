@@ -29,9 +29,10 @@ class DurableFindingCorrelator:
         key = correlation_key(finding)
         existing = self.repository.find_correlated_finding(key)
         if existing is None:
-            self.repository.save_finding(finding)
-            self.repository.save_correlation(key, finding.id)
-            return finding
+            logical = correlate_findings((finding,))[0]
+            self.repository.save_finding(logical)
+            self.repository.save_correlation(key, logical.id)
+            return logical
 
         merged = correlate_findings((existing, finding))[0]
         self.repository.update_correlated_finding(existing.id, merged)
