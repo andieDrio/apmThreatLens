@@ -160,3 +160,29 @@ def test_runtime_enforces_max_concurrency_across_parallel_executions() -> None:
     assert provider.max_active == 1
     assert len(results) == 2
     assert all(result.success for result in results)
+
+
+def test_runtime_stops_heartbeat_after_non_cooperative_timeout() -> None:
+    heartbeat_calls = 0
+    lock = Lock()
+
+    def heartbeat() -> None:
+        nonlocal heartbeat_calls
+        with lock:
+            heartbeat_calls += 1
+
+    runtime = ExecutionRuntime(
+        ExecutionPolicy(
+            timeout_seconds=0.01,
+            cancellation_grace_seconds=0.001,
+            heartbeat_interval_seconds=0.01,
+            stale_after_seconds=0.1,
+        )
+    )
+    result = runtime.execute(
+        campaign(), uuid4(), metadata("stubborn"), StubbornProvider(), Event(), heartbeat=heartbeat
+    )
+    assert result.timed_out
+    calls_at_return = heartbeat_calls
+    sleep(0.05)
+    assert heartbeat_calls == calls_at_return
