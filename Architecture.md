@@ -397,7 +397,7 @@ The matcher returns a bounded `VulnerabilityMatch` containing vulnerability iden
 
 ## Validation Status
 
-Gate 22 has been locally validated clean. Gates 23–24 have also been locally validated clean with `pytest -q` and `ruff check .`. Gate 25 remains pending local validation.
+Gate 22 has been locally validated clean. Gates 23–24 have also been locally validated clean with `pytest -q` and `ruff check .`. Gate 25 remains pending local validation. Gate 26 is now implemented and pending local validation.
 
 
 ## 48. Architecture Gate 25 — Evidence-Backed Vulnerability Finding Enrichment — IMPLEMENTED
@@ -407,3 +407,16 @@ Gate 25 establishes the controlled bridge from trusted vulnerability intelligenc
 The boundary is network-free and fail-closed. It does not fetch feeds, infer affected versions, invent CVEs, assert exploitability, or bypass asset/evidence validation. Intelligence metadata is treated as supporting evidence for an existing finding, not as an independent vulnerability claim.
 
 Validation remains pending local execution of pytest -q and ruff check .; Gate 25 must not be declared complete until those checks succeed.
+
+
+## 49. Architecture Gate 26 — Vulnerability Correlation Context Expansion — IMPLEMENTED
+
+Gate 26 expands deterministic finding identity beyond asset and vulnerability identity. The normalized Finding contract now supports explicit service_id, endpoint, parameter, and location context. These values are observational context supplied by an assessment provider; they are never inferred by the correlation engine.
+
+The correlation key includes every context dimension. UUID service identity is represented deterministically, while textual endpoint, parameter, and location values are case-folded and whitespace-normalized. A missing context value is distinct from a supplied value, so a context-bearing finding cannot silently correlate with a context-free finding. Findings on different services, endpoints, parameters, or locations therefore remain separate logical findings even when they share the same asset and vulnerability identity.
+
+PostgreSQL persists the expanded context with a foreign key from findings.service_id to services.id, plus endpoint/parameter/location fields. Existing installations receive additive columns during initialization. The legacy SQLite adapter receives the same additive compatibility migration, while PostgreSQL remains the canonical production persistence path. Durable correlation reloads and updates the same context fields used by in-memory correlation, preventing divergence between transient and persisted identities.
+
+Gate 26 does not introduce endpoint discovery, parameter fuzzing, exploitation, or automatic context inference. It only strengthens identity for evidence-backed findings already produced by authorized providers.
+
+**Validation status:** Gate 26 focused regression tests are implemented. Local pytest -q and ruff check . are required before the gate can be declared complete.
