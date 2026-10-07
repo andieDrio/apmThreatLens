@@ -95,7 +95,10 @@ def create_app(repository=None, auth_service=None) -> FastAPI:
             _, token = context.auth.authenticate(request.username, request.password)
         except PermissionError as exc:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
-        return LoginResponse(access_token=token, expires_in=int(context.auth.session_ttl.total_seconds()))
+        return LoginResponse(
+            access_token=token,
+            expires_in=int(context.auth.session_ttl.total_seconds()),
+        )
 
     @app.post("/api/v1/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
     def logout(current=Depends(principal)) -> None:
