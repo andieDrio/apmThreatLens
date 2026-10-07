@@ -25,6 +25,16 @@ class FailingProvider:
         raise RuntimeError("provider failure")
 
 
+class CancelDuringExecutionProvider:
+    name = "cancel-during-execution"
+
+    def __init__(self, cancel) -> None:
+        self.cancel = cancel
+
+    def execute(self, campaign, execution_id, cancel_event) -> None:
+        self.cancel(execution_id)
+
+
 class CancelAwareProvider:
     name = "cancel-aware-provider"
 
@@ -117,4 +127,13 @@ def test_scan_cancellation_requires_authenticated_principal(tmp_path):
         orchestrator.cancel(scan.execution_id)
     orchestrator.cancel(scan.execution_id, principal=principal)
     assert repo.scan_state(scan.execution_id) is LifecycleState.CANCELLED
+    repo.close()
+
+
+def test_concurrent_cancellation_wins_over_provider_completion(tmp_path) -> None:
+    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
+    provider = CancelDuringExecutionProvider(lambda execution_id: orchestrator.cancel(execution_id, principal))
+    result = orchestrator.run(campaign, provider, principal=principal)
+    assert result.state is LifecycleState.CANCELLED
+    assert repo.scan_state(result.execution_id) is LifecycleState.CANCELLED
     repo.close()
