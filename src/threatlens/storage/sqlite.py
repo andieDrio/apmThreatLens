@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
+from threatlens.storage.auth import SQLiteAuthMixin
 from threatlens.storage.evidence_validation import SQLiteEvidenceValidationMixin
 from threatlens.storage.finding_correlation import SQLiteFindingCorrelationMixin
 
@@ -109,7 +110,7 @@ CREATE TABLE IF NOT EXISTS finding_evidence (
 """
 
 
-class SQLiteRepository(SQLiteFindingCorrelationMixin, SQLiteEvidenceValidationMixin):
+class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvidenceValidationMixin):
     """Transactional repository for domain persistence."""
 
     def __init__(self, path: str | Path) -> None:
@@ -127,6 +128,7 @@ class SQLiteRepository(SQLiteFindingCorrelationMixin, SQLiteEvidenceValidationMi
         self.connection.commit()
         self.initialize_finding_correlation()
         self.initialize_evidence_validation()
+        self.initialize_auth()
 
     def save_campaign(self, campaign: Campaign) -> None:
         with self.connection:
@@ -256,7 +258,7 @@ class SQLiteRepository(SQLiteFindingCorrelationMixin, SQLiteEvidenceValidationMi
             )
 
     def count(self, table: str) -> int:
-        allowed = {"campaigns", "scans", "assets", "services", "evidence", "findings", "finding_evidence", "finding_correlations", "evidence_validations"}
+        allowed = {"campaigns", "scans", "assets", "services", "evidence", "findings", "finding_evidence", "finding_correlations", "evidence_validations", "users", "auth_sessions", "audit_events"}
         if table not in allowed:
             raise ValueError("unsupported table")
         return int(self.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
