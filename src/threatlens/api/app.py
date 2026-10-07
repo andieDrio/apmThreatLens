@@ -304,7 +304,9 @@ def create_app(repository=None, auth_service=None, orchestrator=None) -> FastAPI
         )
 
     @app.post("/api/v1/scans/{execution_id}/cancel", response_model=ScanControlResponse)
-    def cancel_scan(execution_id: str, current=Depends(require(Permission.ASSESS))) -> ScanControlResponse:
+    def cancel_scan(
+        execution_id: str, current=Depends(require(Permission.ASSESS))
+    ) -> ScanControlResponse:
         from uuid import UUID
 
         try:
@@ -317,7 +319,9 @@ def create_app(repository=None, auth_service=None, orchestrator=None) -> FastAPI
                 detail="invalid execution_id",
             ) from exc
         except KeyError as exc:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="scan not found") from exc
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="scan not found"
+            ) from exc
         return ScanControlResponse(
             execution_id=execution_id,
             action="CANCEL",
@@ -341,7 +345,9 @@ def create_app(repository=None, auth_service=None, orchestrator=None) -> FastAPI
                 detail="invalid execution_id",
             ) from exc
         except KeyError as exc:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="scan not found") from exc
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="scan not found"
+            ) from exc
         return ScanControlResponse(
             execution_id=execution_id,
             action="RECOVER_STALE",
