@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS scans (
 """
 
 
-class PostgresRepository:
+class PostgresRepository(PostgresFindingCorrelationMixin):
     """PostgreSQL implementation of the current persistence boundary."""
 
     def __init__(self, dsn: str) -> None:
