@@ -318,3 +318,13 @@ Execution waiting is cancellation-aware. A queued runtime execution can observe 
 Persistence transaction boundaries are hardened alongside concurrency. SQLite lifecycle read/validate/write transitions execute inside one transaction and repository lifecycle access is serialized with a re-entrant lock; the SQLite connection permits controlled cross-thread lifecycle cancellation while maintaining serialized connection use. PostgreSQL now implements the same update_scan_state contract, locks the target lifecycle row during read/validate/write transitions, and serializes scan/audit transaction access. Pre-start cancellation uses the atomic cancellation primitive rather than a separate lifecycle transition path.
 
 The persistence layer remains authoritative: provider completion, provider failure, and external cancellation still compete through atomic lifecycle operations. These changes do not broaden provider capabilities, scope, or assessment aggressiveness; they only constrain execution concurrency and strengthen persistence consistency under concurrent control paths.
+\n## 40. Architecture Gate 18 Reliability Hardening — Persistence Failure Atomicity and Recovery
+
+Lifecycle persistence is authoritative and must not be partially committed. Queue creation, lifecycle finalization, and cancellation therefore use repository-level transactions that couple the scan state mutation with the corresponding audit event. A failure in either side rolls back the complete transaction.
+
+Provider execution errors and persistence errors are distinct failure classes. The orchestrator catches provider exceptions only around provider execution; lifecycle finalization persistence failures are not converted into provider failures. This prevents a successful provider execution from being falsely recorded as FAILED when the database cannot commit the final state.
+
+After a persistence failure, the last committed lifecycle state remains authoritative. Recovery is deterministic: once the persistence fault is removed, the valid lifecycle transition may be retried against that durable state. No in-memory provider result is treated as persisted completion until the atomic lifecycle-plus-audit transaction commits.
+
+SQLite and PostgreSQL expose equivalent atomic repository operations. Both use transaction rollback on any failure, while repository locks serialize access to the underlying connection where required.
+
