@@ -44,6 +44,16 @@ class FakeRepository:
     def save_audit_event(self, event: AuditEvent):
         self.audit_events.append(event)
 
+    def dashboard_summary(self):
+        return {
+            "campaigns": 2,
+            "assets": 4,
+            "services": 7,
+            "findings": 3,
+            "findings_by_severity": {"HIGH": 2, "LOW": 1},
+            "scans_by_state": {"COMPLETED": 1, "RUNNING": 1},
+        }
+
 
 @pytest.fixture
 async def client():
@@ -115,3 +125,31 @@ async def test_invalid_credentials_fail_closed(client):
         json={"username": "analyst", "password": "wrong-password"},
     )
     assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_requires_read_permission(client):
+    response = await client.get("/api/v1/dashboard/summary")
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_is_bounded_read_model(client):
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "analyst", "password": "correct-horse-battery-123"},
+    )
+    token = login.json()["access_token"]
+    response = await client.get(
+        "/api/v1/dashboard/summary",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "campaigns": 2,
+        "assets": 4,
+        "services": 7,
+        "findings": 3,
+        "findings_by_severity": {"HIGH": 2, "LOW": 1},
+        "scans_by_state": {"COMPLETED": 1, "RUNNING": 1},
+    }
