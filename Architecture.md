@@ -419,7 +419,7 @@ PostgreSQL persists the expanded context with a foreign key from findings.servic
 
 Gate 26 does not introduce endpoint discovery, parameter fuzzing, exploitation, or automatic context inference. It only strengthens identity for evidence-backed findings already produced by authorized providers.
 
-**Validation status:** Gate 26 focused regression tests are implemented. Local pytest -q and ruff check . are required before the gate can be declared complete.
+Gate 26 is complete after explicit local validation.
 
 
 ## 50. Architecture Gate 27 — Risk Context Provenance — IMPLEMENTED
@@ -428,7 +428,7 @@ Gate 27 strengthens the explainable risk boundary by requiring explicit provenan
 
 This does not fabricate environmental telemetry or infer business impact, exposure, criticality, threat relevance, exploitability, or control coverage. Unknown values remain unknown and are excluded from the weighted calculation as before. Operator-supplied context remains supported when its source is explicitly identified.
 
-**Validation status:** Gate 27 focused regression tests are implemented. Local pytest -q and ruff check . are required before the gate can be declared complete.
+Gate 27 is complete after explicit local validation.
 
 
 ## 51. Architecture Gate 28 — Application API Boundary Foundation — IMPLEMENTED
@@ -439,7 +439,7 @@ The API factory accepts injected repository and authentication services, keeping
 
 The initial API surface deliberately does not expose arbitrary database access or assessment mutation. Campaign execution, findings, evidence, risk, attack paths, and reporting endpoints will be added behind explicit application contracts so the GUI cannot bypass authorization, scope, evidence, or orchestration boundaries.
 
-**Validation status:** Gate 28 focused API regression tests are implemented. Local pytest -q and ruff check . are required before the gate can be declared complete.
+Gate 28 is complete after explicit local validation.
 
 
 ## 52. Architecture Gate 29 — Dashboard Read Model API — COMPLETE
@@ -490,7 +490,7 @@ PostgreSQL uses fixed SQL with a maximum page size of 100 and deterministic orde
 
 The endpoint is intentionally a read model rather than a control API. Cancellation, recovery, campaign mutation, and assessment execution require separate authenticated application contracts with their own authorization and audit semantics.
 
-**Validation status:** Gate 32 focused API regression tests are implemented. Local `pytest -q` and `ruff check .` are required before the gate can be declared complete.
+Gate 32 is complete after explicit local validation.
 
 ## 54. Architecture Gate 31 — Asset & Service Read Model API — IMPLEMENTED
 
@@ -500,4 +500,4 @@ The response includes canonical asset identity, asset type/value, first/last obs
 
 The service information remains observational context. The read model does not infer vulnerabilities or exploitability and does not bypass the existing provider, evidence, correlation, or authorization boundaries.
 
-**Validation status:** Gate 31 focused API regression tests are implemented. Local pytest -q and ruff check . are required before the gate can be declared complete.
+Gate 31 is complete after explicit local validation.
