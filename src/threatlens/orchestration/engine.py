@@ -121,10 +121,10 @@ class ScanOrchestrator:
             ),
         )
 
-    def cancel(self, execution_id: UUID, principal: AuthenticatedPrincipal | None = None) -> None:
+    def cancel(self, execution_id: UUID, principal: AuthenticatedPrincipal | None = None) -> bool:
         """Cancel only a queued or running execution after authenticated authorization."""
         self.authentication.authorize(principal, Permission.ASSESS)
-        self.repository.cancel_scan_with_audit(
+        return self.repository.cancel_scan_with_audit(
             execution_id,
             AuditEvent(
                 actor_user_id=principal.user_id,
