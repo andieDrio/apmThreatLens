@@ -9,8 +9,14 @@ from uuid import UUID
 
 from threatlens.domain.models import Asset, Evidence, Finding
 from threatlens.providers.runtime import ProviderMetadata
-from threatlens.providers.vulnerability_enrichment import intelligence_evidence
-from threatlens.providers.vulnerability_intelligence import VulnerabilityIntelligenceRecord
+from threatlens.providers.vulnerability_enrichment import (
+    enrich_finding_from_intelligence,
+    intelligence_evidence,
+)
+from threatlens.providers.vulnerability_intelligence import (
+    VulnerabilityIntelligenceRecord,
+    VulnerabilityMatch,
+)
 
 
 class EvidenceFindingRepository(Protocol):
@@ -62,6 +68,7 @@ class ProviderHandoff:
         finding: Finding,
         intelligence: VulnerabilityIntelligenceRecord,
         evidence: tuple[Evidence, ...],
+        match: VulnerabilityMatch,
     ) -> Finding:
         """Persist an intelligence-enriched finding through the normal handoff."""
 
@@ -70,11 +77,12 @@ class ProviderHandoff:
             raise ValueError(
                 "intelligence-backed finding enrichment requires evidence"
             )
+        enriched = enrich_finding_from_intelligence(finding, match, intelligence)
         return self.persist_finding(
             execution_id,
             provider,
             asset,
-            finding,
+            enriched,
             tuple(dict.fromkeys((*evidence,))),
         )
 
