@@ -298,3 +298,12 @@ Authentication, logout, authorization denials, and scan queue events are persist
 Gate 18 hardens provider execution reliability without claiming capabilities Python threads cannot provide. ExecutionPolicy now defines a bounded cancellation-grace interval after a provider exceeds its execution timeout. The runtime sets the cooperative cancellation event, waits only for the configured grace interval, and explicitly records whether the provider worker is still running. A timed-out execution can never become successful.
 
 Provider telemetry collection is protected by a lock because provider work and observers may execute concurrently. Event snapshots used for metrics and returned results are therefore consistent with the runtime's concurrent execution boundary. The runtime still uses daemon threads and cooperative cancellation; it does not falsely claim to forcibly terminate arbitrary provider code. A non-cooperative provider is surfaced as an explicit reliability condition for higher orchestration/operational handling.
+
+
+## 38. Architecture Gate 18 Reliability Hardening — Lifecycle Compare-and-Set
+
+The scan lifecycle persistence boundary now exposes atomic compare-and-set finalization and an atomic cancellation operation. Completion, failure, and partial outcomes require the persisted scan to still be RUNNING; cancellation may atomically transition only QUEUED or RUNNING executions. If cancellation wins a race, a late provider completion/failure cannot overwrite the terminal CANCELLED state.
+
+SQLite implements these operations with conditional UPDATE statements inside repository transactions. PostgreSQL provides equivalent conditional UPDATE semantics. The orchestrator treats a failed compare-and-set as a storage-authoritative indication that another lifecycle transition already won and reloads the persisted state rather than forcing an invalid transition.
+
+Cancellation of an already-terminal scan is idempotent at the lifecycle boundary and is recorded as a NOOP audit outcome. This prevents race-dependent lifecycle corruption and keeps persistence authoritative under concurrent control actions.
