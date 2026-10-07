@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS finding_evidence (
 """
 
 
-class SQLiteRepository:
+class SQLiteRepository(SQLiteFindingCorrelationMixin):
     """Transactional repository for domain persistence."""
 
     def __init__(self, path: str | Path) -> None:
