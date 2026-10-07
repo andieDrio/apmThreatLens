@@ -93,10 +93,7 @@ class SQLiteFindingCorrelationMixin:
     def save_correlation(self, key: str, finding_id: UUID) -> None:
         with self.connection:
             self.connection.execute(
-                (
-                "INSERT INTO finding_correlations "
-                "(correlation_key,finding_id,created_at) VALUES (?,?,?)"
-            ),
+                "INSERT INTO finding_correlations (correlation_key,finding_id,created_at) VALUES (?,?,?)",
                 (key, str(finding_id), datetime.now(timezone.utc).isoformat()),
             )
 
@@ -159,19 +156,13 @@ class PostgresFindingCorrelationMixin:
                         [(logical.id, evidence_id) for evidence_id in logical.evidence_ids],
                     )
                     cursor.execute(
-                        (
-                        "INSERT INTO finding_correlations "
-                        "(correlation_key,finding_id,created_at) VALUES (%s,%s,%s)"
-                    ),
+                        "INSERT INTO finding_correlations (correlation_key,finding_id,created_at) VALUES (%s,%s,%s)",
                         (key, logical.id, datetime.now(timezone.utc)),
                     )
                     return logical
 
                 cursor.execute(
-                    (
-                        "SELECT evidence_id FROM finding_evidence "
-                        "WHERE finding_id=%s ORDER BY evidence_id"
-                    ),
+                    "SELECT evidence_id FROM finding_evidence WHERE finding_id=%s ORDER BY evidence_id",
                     (row[0],),
                 )
                 evidence_rows = cursor.fetchall()
@@ -184,18 +175,14 @@ class PostgresFindingCorrelationMixin:
                 )
                 merged = correlate_findings((existing, finding))[0]
                 cursor.execute(
-                    """UPDATE findings SET title=%s,state=%s,severity=%s,
-                       vulnerability_id=%s,cwe=%s,cve=%s,cvss=%s,
-                       confidence=%s,source=%s,detected_at=%s WHERE id=%s""",
+                    """UPDATE findings SET title=%s,state=%s,severity=%s,vulnerability_id=%s,cwe=%s,cve=%s,
+                       cvss=%s,confidence=%s,source=%s,detected_at=%s WHERE id=%s""",
                     (merged.title, merged.state.value, merged.severity.value, merged.vulnerability_id,
                      merged.cwe, merged.cve, merged.cvss, merged.confidence, merged.source,
                      merged.detected_at, existing.id),
                 )
                 cursor.executemany(
-                    (
-                    "INSERT INTO finding_evidence "
-                    "(finding_id,evidence_id) VALUES (%s,%s) ON CONFLICT DO NOTHING"
-                ),
+                    "INSERT INTO finding_evidence (finding_id,evidence_id) VALUES (%s,%s) ON CONFLICT DO NOTHING",
                     [(existing.id, evidence_id) for evidence_id in merged.evidence_ids],
                 )
                 return merged
@@ -241,10 +228,7 @@ class PostgresFindingCorrelationMixin:
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.execute(
-                    (
-                        "INSERT INTO finding_correlations "
-                        "(correlation_key,finding_id,created_at) VALUES (%s,%s,%s)"
-                    ),
+                    "INSERT INTO finding_correlations (correlation_key,finding_id,created_at) VALUES (%s,%s,%s)",
                     (key, finding_id, datetime.now(timezone.utc)),
                 )
 
@@ -252,9 +236,8 @@ class PostgresFindingCorrelationMixin:
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.execute(
-                    """UPDATE findings SET title=%s,state=%s,severity=%s,
-                       vulnerability_id=%s,cwe=%s,cve=%s,cvss=%s,
-                       confidence=%s,source=%s,detected_at=%s WHERE id=%s""",
+                    """UPDATE findings SET title=%s,state=%s,severity=%s,vulnerability_id=%s,cwe=%s,cve=%s,
+                       cvss=%s,confidence=%s,source=%s,detected_at=%s WHERE id=%s""",
                     (
                         finding.title, finding.state.value, finding.severity.value,
                         finding.vulnerability_id, finding.cwe, finding.cve, finding.cvss,
@@ -266,9 +249,6 @@ class PostgresFindingCorrelationMixin:
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.executemany(
-                    (
-                    "INSERT INTO finding_evidence "
-                    "(finding_id,evidence_id) VALUES (%s,%s) ON CONFLICT DO NOTHING"
-                ),
+                    "INSERT INTO finding_evidence (finding_id,evidence_id) VALUES (%s,%s) ON CONFLICT DO NOTHING",
                     [(finding_id, evidence_id) for evidence_id in evidence_ids],
                 )
