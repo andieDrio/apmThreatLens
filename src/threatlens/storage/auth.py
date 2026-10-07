@@ -159,10 +159,11 @@ class PostgresAuthMixin:
                 cursor.execute("UPDATE auth_sessions SET revoked=TRUE WHERE id=%s", (session_id,))
 
     def save_audit_event(self, event: AuditEvent) -> None:
-        with self.connection.transaction():
-            with self.connection.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-                    (event.id, event.actor_user_id, event.action, event.resource_type, event.resource_id,
-                     event.outcome, event.detail, event.created_at),
-                )
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (event.id, event.actor_user_id, event.action, event.resource_type, event.resource_id,
+                         event.outcome, event.detail, event.created_at),
+                    )
