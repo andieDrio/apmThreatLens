@@ -263,3 +263,14 @@ The weighted risk model uses technical severity (20%), exploitability (15%), exp
 Unknown environmental inputs are not treated as zero. They are excluded from the weighted calculation and reported in missing_inputs, preventing the engine from fabricating low exposure, low business impact, or effective controls. Every RiskAssessment retains factor-level scores, weights, rationale, source inputs, missing inputs, a deterministic normalized score, and a Critical/High/Medium/Low/Informational level.
 
 The engine performs no network access, scanner execution, provider calls, database writes, or unsupported threat inference. It operates only on the evidence-backed Finding contract and explicit context supplied by a higher orchestration layer. This preserves the provider, persistence, and evidence boundaries established by earlier gates while making prioritization auditable and explainable.
+
+
+## 34. Architecture Gate 15
+
+Gate 15 establishes deterministic attack-path analysis over correlated findings and explicit asset relationships. The new attack-path boundary does not discover network topology, infer trust, assume exploitability, or treat adjacent assets as reachable merely because they share a network or service attribute.
+
+AttackPathRelation requires a source asset, target asset, explicit relationship type, and at least one evidence reference. Relationships are directional and must be explicitly marked validated before the analyzer can traverse them. Relationship identity is deterministic from its endpoints, type, and evidence references. Unvalidated relationships and relationships lacking evidence are excluded or rejected rather than converted into attack-path claims.
+
+AttackPathAnalyzer accepts explicit entry assets and objective assets, walks only validated evidence-backed relationships, prevents cycles, and enforces maximum-hop and maximum-path limits. A reported path must contain at least one finding on an asset in the path. Path prioritization uses already-computed finding risk supplied by the risk-analysis layer; the analyzer does not invent additional exploitability or compromise probability. The highest associated finding risk is used as the path's deterministic risk score, and an explicit risk level may be supplied from the risk engine.
+
+This gate is intentionally network-free and persistence-independent. It creates the graph-analysis contract required for later evidence-backed attack-path persistence, remediation, and validation without allowing graph inference to bypass scope, evidence, or provider boundaries.
