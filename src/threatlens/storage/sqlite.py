@@ -203,6 +203,34 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
             raise KeyError(str(execution_id))
         return LifecycleState(row[0])
 
+    
+    def update_scan_state_if_current(
+        self, execution_id: UUID, expected: LifecycleState, target: LifecycleState, error: str | None = None
+    ) -> bool:
+        validate_lifecycle_transition(expected, target)
+        now = datetime.now(timezone.utc).isoformat()
+        started_at = now if target is LifecycleState.RUNNING else None
+        finished_at = now if target in {LifecycleState.COMPLETED, LifecycleState.FAILED, LifecycleState.CANCELLED, LifecycleState.PARTIAL} else None
+        with self.connection:
+            cursor = self.connection.execute(
+                """UPDATE scans SET state=?, started_at=COALESCE(?,started_at),
+                   finished_at=COALESCE(?,finished_at), error=?
+                   WHERE execution_id=? AND state=?""",
+                (target.value, started_at, finished_at, error, str(execution_id), expected.value),
+            )
+        return cursor.rowcount == 1
+
+    def cancel_scan(self, execution_id: UUID) -> bool:
+        now = datetime.now(timezone.utc).isoformat()
+        with self.connection:
+            cursor = self.connection.execute(
+                """UPDATE scans SET state=?, finished_at=?
+                   WHERE execution_id=? AND state IN (?,?)""",
+                (LifecycleState.CANCELLED.value, now, str(execution_id),
+                 LifecycleState.QUEUED.value, LifecycleState.RUNNING.value),
+            )
+        return cursor.rowcount == 1
+
     def save_asset(self, asset: Asset) -> None:
         with self.connection:
             self.connection.execute(
