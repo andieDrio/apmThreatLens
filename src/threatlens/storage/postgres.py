@@ -574,6 +574,58 @@ class PostgresRepository(
         ]
         return {"total": total, "limit": limit, "offset": offset, "items": items}
 
+    def assets_read_model(self, limit: int = 50, offset: int = 0) -> dict[str, object]:
+        """Return bounded asset inventory with its observed services."""
+        if not 1 <= limit <= 100:
+            raise ValueError("limit must be within 1..100")
+        if offset < 0:
+            raise ValueError("offset cannot be negative")
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM assets")
+            total = int(cursor.fetchone()[0])
+            cursor.execute(
+                """SELECT a.id, a.canonical_id, a.asset_type, a.value,
+                          a.first_seen_at, a.last_seen_at,
+                          s.id, s.protocol, s.port, s.service_name, s.version
+                   FROM assets a
+                   LEFT JOIN services s ON s.asset_id = a.id
+                   ORDER BY a.last_seen_at DESC, a.id, s.port NULLS LAST, s.id NULLS LAST
+                   LIMIT %s OFFSET %s""",
+                (limit, offset),
+            )
+            rows = cursor.fetchall()
+        grouped: dict[UUID, dict[str, object]] = {}
+        for row in rows:
+            asset_id = row[0]
+            item = grouped.setdefault(
+                asset_id,
+                {
+                    "id": str(asset_id),
+                    "canonical_id": row[1],
+                    "asset_type": row[2],
+                    "value": row[3],
+                    "first_seen_at": row[4],
+                    "last_seen_at": row[5],
+                    "services": [],
+                },
+            )
+            if row[6] is not None:
+                item["services"].append(
+                    {
+                        "id": str(row[6]),
+                        "protocol": row[7],
+                        "port": row[8],
+                        "service_name": row[9],
+                        "version": row[10],
+                    }
+                )
+        return {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "items": list(grouped.values()),
+        }
+
     def asset_id(self, canonical_id: str) -> UUID:
         with self.connection.cursor() as cursor:
             cursor.execute("SELECT id FROM assets WHERE canonical_id=%s", (canonical_id,))
