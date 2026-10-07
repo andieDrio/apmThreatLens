@@ -116,7 +116,9 @@ class APIAssessmentProvider:
                     headers=observation.headers,
                     body_excerpt=observation.body_excerpt,
                     redirect_location=observation.redirect_location,
-                    body_truncated=len(observation.body_excerpt.encode("utf-8")) >= self.policy.max_response_bytes,
+                    body_truncated=(
+                        len(observation.body_excerpt.encode("utf-8")) >= self.policy.max_response_bytes
+                    ),
                 )
                 evidence = Evidence(
                     kind="api-assessment",
@@ -163,7 +165,9 @@ class APIAssessmentProvider:
                     for address in self.destination_resolver(hostname)
                 }
         if not addresses:
-            raise ConnectionError(f"API assessment DNS resolution returned no addresses: {hostname}")
+            raise ConnectionError(
+                f"API assessment DNS resolution returned no addresses: {hostname}"
+            )
         if not self.policy.allow_private_addresses and any(
             address.is_private
             or address.is_loopback
@@ -222,7 +226,11 @@ def evaluate_api_policy(
         "",
     )
     if observation.status_code < 400 and content_type == "application/json":
-        if observation.method == "HEAD" or observation.body_truncated or not observation.body_excerpt.strip():
+        if (
+            observation.method == "HEAD"
+            or observation.body_truncated
+            or not observation.body_excerpt.strip()
+        ):
             return ()
         try:
             json.loads(observation.body_excerpt)
