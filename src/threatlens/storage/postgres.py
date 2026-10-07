@@ -145,6 +145,35 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
             cursor.execute(f"SELECT COUNT(*) FROM {table}")
             return int(cursor.fetchone()[0])
 
+    def update_scan_state_if_current(self, execution_id: UUID, expected, target, error: str | None = None) -> bool:
+        from threatlens.domain.models import LifecycleState, validate_lifecycle_transition
+        validate_lifecycle_transition(expected, target)
+        now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+        started_at = now if target is LifecycleState.RUNNING else None
+        finished_at = now if target in {LifecycleState.COMPLETED, LifecycleState.FAILED, LifecycleState.CANCELLED, LifecycleState.PARTIAL} else None
+        with self.connection.transaction():
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    """UPDATE scans SET state=%s, started_at=COALESCE(%s,started_at),
+                       finished_at=COALESCE(%s,finished_at), error=%s
+                       WHERE execution_id=%s AND state=%s""",
+                    (target.value, started_at, finished_at, error, execution_id, expected.value),
+                )
+                return cursor.rowcount == 1
+
+    def cancel_scan(self, execution_id: UUID) -> bool:
+        from threatlens.domain.models import LifecycleState
+        from datetime import datetime, timezone
+        with self.connection.transaction():
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    """UPDATE scans SET state=%s, finished_at=%s
+                       WHERE execution_id=%s AND state IN (%s,%s)""",
+                    (LifecycleState.CANCELLED.value, datetime.now(timezone.utc), execution_id,
+                     LifecycleState.QUEUED.value, LifecycleState.RUNNING.value),
+                )
+                return cursor.rowcount == 1
+
     def asset_id(self, canonical_id: str) -> UUID:
         with self.connection.cursor() as cursor:
             cursor.execute("SELECT id FROM assets WHERE canonical_id=%s", (canonical_id,))
