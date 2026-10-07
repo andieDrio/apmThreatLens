@@ -14,6 +14,8 @@ class ExecutionPolicy:
     requests_per_second: float = 5.0
     timeout_seconds: float = 30.0
     cancellation_grace_seconds: float = 0.25
+    heartbeat_interval_seconds: float = 5.0
+    stale_after_seconds: float = 30.0
 
     def __post_init__(self) -> None:
         if self.max_concurrency < 1:
@@ -24,6 +26,10 @@ class ExecutionPolicy:
             raise ValueError("timeout_seconds must be positive")
         if self.cancellation_grace_seconds < 0:
             raise ValueError("cancellation_grace_seconds cannot be negative")
+        if self.heartbeat_interval_seconds <= 0:
+            raise ValueError("heartbeat_interval_seconds must be positive")
+        if self.stale_after_seconds <= self.heartbeat_interval_seconds:
+            raise ValueError("stale_after_seconds must exceed heartbeat_interval_seconds")
 
 
 def validate_campaign_execution(campaign: Campaign, policy: ExecutionPolicy) -> None:
