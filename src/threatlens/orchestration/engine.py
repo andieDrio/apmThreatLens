@@ -96,7 +96,11 @@ class ScanOrchestrator:
         scan = self.queue(campaign, provider, principal)
 
         if event.is_set():
-            self.repository.cancel_scan_with_audit(scan.execution_id, AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED", resource_type="SCAN", resource_id=scan.execution_id, outcome="SUCCESS", detail="pre-start cancellation"))
+            self.repository.cancel_scan_with_audit(
+                scan.execution_id,
+                AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED", resource_type="SCAN", resource_id=scan.execution_id, outcome="SUCCESS", detail="pre-start cancellation"),
+                AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED", resource_type="SCAN", resource_id=scan.execution_id, outcome="NOOP", detail="scan already terminal"),
+            )
             return Scan(
                 campaign_id=scan.campaign_id,
                 provider_name=scan.provider_name,
@@ -158,7 +162,11 @@ class ScanOrchestrator:
         scan = self.queue(campaign, provider, principal)
 
         if event.is_set():
-            self.repository.cancel_scan(scan.execution_id)
+            self.repository.cancel_scan_with_audit(
+                scan.execution_id,
+                AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED", resource_type="SCAN", resource_id=scan.execution_id, outcome="SUCCESS", detail="pre-start cancellation"),
+                AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED", resource_type="SCAN", resource_id=scan.execution_id, outcome="NOOP", detail="scan already terminal"),
+            )
             return Scan(
                 campaign_id=scan.campaign_id,
                 provider_name=scan.provider_name,
