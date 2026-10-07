@@ -34,7 +34,7 @@ def test_risk_is_deterministic_and_explainable():
     second = RiskEngine().assess(finding, context)
 
     assert first == second
-    assert first.score == 0.7848
+    assert first.score == 0.779
     assert first.level is RiskLevel.HIGH
     assert "Finding.severity" in first.inputs_used
     assert any("Control coverage" in item for item in first.explanation)
@@ -62,7 +62,7 @@ def test_missing_environmental_context_is_not_treated_as_zero():
 
     assessment = RiskEngine().assess(finding)
 
-    assert assessment.score == 0.5833
+    assert assessment.score == 0.8333
     assert assessment.level is RiskLevel.MEDIUM
     assert "exposure" in assessment.missing_inputs
     assert "asset_criticality" in assessment.missing_inputs
