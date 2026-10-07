@@ -307,3 +307,14 @@ The scan lifecycle persistence boundary now exposes atomic compare-and-set final
 SQLite implements these operations with conditional UPDATE statements inside repository transactions. PostgreSQL provides equivalent conditional UPDATE semantics. The orchestrator treats a failed compare-and-set as a storage-authoritative indication that another lifecycle transition already won and reloads the persisted state rather than forcing an invalid transition.
 
 Cancellation of an already-terminal scan is idempotent at the lifecycle boundary and is recorded as a NOOP audit outcome. This prevents race-dependent lifecycle corruption and keeps persistence authoritative under concurrent control actions.
+
+
+## 39. Architecture Gate 18 Reliability Hardening — Provider Concurrency and Transaction Boundaries
+
+Provider execution concurrency is now enforced at the execution-runtime boundary from the authoritative ExecutionPolicy.max_concurrency value. ScanOrchestrator owns a shared bounded concurrency gate so parallel executions through the same orchestrator cannot exceed the configured provider-worker limit. The runtime does not release a slot merely because its orchestration timeout returned: the provider worker releases its slot only when the worker exits. This is required to prevent a non-cooperative timed-out worker from silently exceeding the configured concurrency ceiling.
+
+Execution waiting is cancellation-aware. A queued runtime execution can observe a cancellation request before acquiring a provider slot and terminate without starting provider work. The concurrency control is therefore a safety boundary, not only a throughput optimization.
+
+Persistence transaction boundaries are hardened alongside concurrency. SQLite lifecycle read/validate/write transitions execute inside one transaction and repository lifecycle access is serialized with a re-entrant lock; the SQLite connection permits controlled cross-thread lifecycle cancellation while maintaining serialized connection use. PostgreSQL now implements the same update_scan_state contract, locks the target lifecycle row during read/validate/write transitions, and serializes scan/audit transaction access. Pre-start cancellation uses the atomic cancellation primitive rather than a separate lifecycle transition path.
+
+The persistence layer remains authoritative: provider completion, provider failure, and external cancellation still compete through atomic lifecycle operations. These changes do not broaden provider capabilities, scope, or assessment aggressiveness; they only constrain execution concurrency and strengthen persistence consistency under concurrent control paths.
