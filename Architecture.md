@@ -343,6 +343,10 @@ SQLite and PostgreSQL expose equivalent heartbeat and stale-recovery operations.
 
 Gate 18 is complete after explicit local validation. The reliability boundary includes bounded cooperative cancellation grace, explicit reporting of non-cooperative workers, shared provider concurrency limits, cancellation-aware slot acquisition, compare-and-set lifecycle transitions, atomic lifecycle/audit persistence, recovery after persistence faults, durable execution heartbeats, explicit authenticated stale-lease recovery, and deterministic cleanup of heartbeat workers after provider timeout. The persistence layer remains authoritative for lifecycle state; Python threads are never represented as forcibly terminated.
 
-## 30. Architecture Gate 19 — PostgreSQL Canonical Persistence Enforcement
+## 30. Architecture Gate 19 — PostgreSQL Canonical Persistence Enforcement — COMPLETE
+
+Gate 19 is complete after local validation. PostgreSQL is the sole active development and integration-test persistence path. The shared test fixture requires an explicit PostgreSQL DSN, never silently falls back to SQLite, and isolates test state deterministically. Existing persistence, authentication, correlation, evidence-validation, orchestration, concurrency, lifecycle-CAS, and failure-atomicity tests have been migrated to PostgreSQL. The legacy SQLite adapter is retained only for compatibility and is not selected by the application runtime or active test suite.
+
+## 31. Architecture Gate 20 — PostgreSQL Transactional Concurrency and Failure-Recovery Hardening
 
 Gate 19 makes the already-declared PostgreSQL production boundary singular across active development and integration testing. Active repository tests and fixtures must use PostgreSQL, configured through an explicit test database connection such as THREATLENS_TEST_DATABASE_URL; tests must not silently fall back to SQLite. SQLite code, if retained temporarily for legacy compatibility, must not receive new production behavior and must not be selected by the application runtime. The gate is complete only after PostgreSQL-backed tests validate domain persistence, lifecycle transactions, correlation persistence, evidence-validation persistence, authentication persistence, concurrency behavior, and failure-atomicity behavior without weakening constraints or safety controls.
