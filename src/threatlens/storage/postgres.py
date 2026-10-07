@@ -6,7 +6,7 @@ import json
 from threading import RLock
 from uuid import UUID
 
-from threatlens.domain.models import Asset, Campaign, Evidence, Finding, Service
+from threatlens.domain.models import Asset, AuditEvent, Campaign, Evidence, Finding, Service
 from threatlens.storage.auth import PostgresAuthMixin
 from threatlens.storage.evidence_validation import PostgresEvidenceValidationMixin
 from threatlens.storage.finding_correlation import PostgresFindingCorrelationMixin
@@ -157,6 +157,24 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
             raise KeyError(str(execution_id))
         return LifecycleState(row[0])
 
+
+    def save_scan_with_audit(self, scan, event: AuditEvent) -> None:
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        """INSERT INTO scans
+                           (execution_id,campaign_id,provider_name,state,queued_at,started_at,finished_at,error)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        (scan.execution_id, scan.campaign_id, scan.provider_name, scan.state.value,
+                         scan.queued_at, scan.started_at, scan.finished_at, scan.error),
+                    )
+                    cursor.execute(
+                        "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (event.id, event.actor_user_id, event.action, event.resource_type, event.resource_id,
+                         event.outcome, event.detail, event.created_at),
+                    )
+
     def update_scan_state(self, execution_id: UUID, target, error: str | None = None) -> None:
         from datetime import datetime, timezone
         from threatlens.domain.models import LifecycleState, validate_lifecycle_transition
@@ -207,6 +225,52 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
                            WHERE execution_id=%s AND state IN (%s,%s)""",
                         (LifecycleState.CANCELLED.value, datetime.now(timezone.utc), execution_id,
                          LifecycleState.QUEUED.value, LifecycleState.RUNNING.value),
+                    )
+                    return cursor.rowcount == 1
+
+
+    def update_scan_state_if_current_with_audit(self, execution_id, expected, target, event: AuditEvent, error: str | None = None) -> bool:
+        from datetime import datetime, timezone
+        from threatlens.domain.models import LifecycleState, validate_lifecycle_transition
+        validate_lifecycle_transition(expected, target)
+        now = datetime.now(timezone.utc)
+        started_at = now if target is LifecycleState.RUNNING else None
+        finished_at = now if target in {LifecycleState.COMPLETED, LifecycleState.FAILED, LifecycleState.CANCELLED, LifecycleState.PARTIAL} else None
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        """UPDATE scans SET state=%s, started_at=COALESCE(%s,started_at),
+                           finished_at=COALESCE(%s,finished_at), error=%s
+                           WHERE execution_id=%s AND state=%s""",
+                        (target.value, started_at, finished_at, error, execution_id, expected.value),
+                    )
+                    if cursor.rowcount != 1:
+                        return False
+                    cursor.execute(
+                        "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (event.id, event.actor_user_id, event.action, event.resource_type, event.resource_id,
+                         event.outcome, event.detail, event.created_at),
+                    )
+                    return True
+
+    def cancel_scan_with_audit(self, execution_id, success_event: AuditEvent, noop_event: AuditEvent) -> bool:
+        from datetime import datetime, timezone
+        from threatlens.domain.models import LifecycleState
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        """UPDATE scans SET state=%s, finished_at=%s
+                           WHERE execution_id=%s AND state IN (%s,%s)""",
+                        (LifecycleState.CANCELLED.value, datetime.now(timezone.utc), execution_id,
+                         LifecycleState.QUEUED.value, LifecycleState.RUNNING.value),
+                    )
+                    event = success_event if cursor.rowcount == 1 else noop_event
+                    cursor.execute(
+                        "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (event.id, event.actor_user_id, event.action, event.resource_type, event.resource_id,
+                         event.outcome, event.detail, event.created_at),
                     )
                     return cursor.rowcount == 1
 
