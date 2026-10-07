@@ -79,6 +79,23 @@ class FindingListResponse(BaseModel):
     items: list[FindingReadModel]
 
 
+class CampaignReadModel(BaseModel):
+    id: str
+    name: str
+    authorized: bool
+    state: str
+    created_at: str
+    include: list[str]
+    exclude: list[str]
+
+
+class CampaignListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[CampaignReadModel]
+
+
 class ScanReadModel(BaseModel):
     execution_id: str
     campaign_id: str
@@ -209,6 +226,25 @@ def create_app(repository=None, auth_service=None) -> FastAPI:
             normalized["services"] = [ServiceReadModel(**service) for service in item["services"]]
             items.append(AssetReadModel(**normalized))
         return AssetListResponse(
+            total=result["total"],
+            limit=result["limit"],
+            offset=result["offset"],
+            items=items,
+        )
+
+    @app.get("/api/v1/campaigns", response_model=CampaignListResponse)
+    def campaigns(
+        current=Depends(require(Permission.READ)),
+        limit: int = Query(default=50, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+    ) -> CampaignListResponse:
+        result = context.repository.campaigns_read_model(limit=limit, offset=offset)
+        items = []
+        for item in result["items"]:
+            normalized = dict(item)
+            normalized["created_at"] = item["created_at"].isoformat()
+            items.append(CampaignReadModel(**normalized))
+        return CampaignListResponse(
             total=result["total"],
             limit=result["limit"],
             offset=result["offset"],
