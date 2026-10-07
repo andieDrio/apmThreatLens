@@ -12,7 +12,7 @@ class CorrelatedSQLiteRepository(SQLiteFindingCorrelationMixin, SQLiteRepository
 
 
 def _setup():
-    repository = CorrelatedSQLiteRepository(":memory:")
+    repository = SQLiteRepository(":memory:")
     repository.initialize()
     correlator = DurableFindingCorrelator(repository)
     asset = Asset(canonical_id="host:10.0.0.10", asset_type="ip", value="10.0.0.10")
@@ -35,7 +35,7 @@ def _finding(asset, evidence_id, source="test-provider", severity=Severity.MEDIU
 
 
 def test_duplicate_provider_findings_persist_as_one_logical_finding():
-    repository, asset, provider, handoff = _setup()
+    repository, asset, provider_a, provider_b, correlator = _setup()
     first_evidence = handoff.persist_evidence(
         uuid4(), provider, Evidence(kind="scan", content="a", source="scanner-a")
     )
@@ -64,7 +64,7 @@ def test_duplicate_provider_findings_persist_as_one_logical_finding():
 
 
 def test_durable_correlation_survives_new_correlator_instance():
-    repository, asset, provider, handoff = _setup()
+    repository, asset, provider_a, provider_b, correlator = _setup()
     evidence = handoff.persist_evidence(
         uuid4(), provider, Evidence(kind="scan", content="same", source="scanner-a")
     )
@@ -80,7 +80,7 @@ def test_durable_correlation_survives_new_correlator_instance():
         uuid4(), provider, Evidence(kind="scan", content="new", source="scanner-b")
     )
     merged = ProviderHandoff(repository, correlator=restarted).persist_finding(
-        uuid4(), provider, asset, _finding(asset, evidence2.id, "scanner-b"), (evidence2,)
+        uuid4(), provider_b, asset, _finding(asset, evidence2.id, "scanner-b"), (evidence2,)
     )
 
     assert merged.id == finding.id
