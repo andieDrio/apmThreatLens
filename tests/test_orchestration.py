@@ -251,3 +251,98 @@ def test_recent_heartbeat_is_not_recovered_as_stale(postgres_repository) -> None
     assert not orchestrator.recover_stale(scan.execution_id, principal=principal)
     assert repo.scan_state(scan.execution_id) is LifecycleState.RUNNING
     repo.close()
+
+
+def test_cross_instance_stale_recovery_has_single_winner(postgres_repository):
+    import os
+    from threading import Barrier
+    repo = postgres_repository
+    campaign = make_campaign()
+    repo.save_campaign(campaign)
+    auth = AuthenticationService(repo)
+    auth.create_user("distributed-analyst", "correct horse battery staple", Role.ANALYST)
+    principal, _ = auth.authenticate("distributed-analyst", "correct horse battery staple")
+    orchestrator = ScanOrchestrator(repo, ExecutionPolicy(), auth)
+    scan = orchestrator.queue(campaign, SuccessfulProvider(), principal=principal)
+    assert repo.update_scan_state_if_current(scan.execution_id, LifecycleState.QUEUED, LifecycleState.RUNNING)
+    repo.connection.execute("UPDATE scans SET heartbeat_at=%s WHERE execution_id=%s", ("2000-01-01T00:00:00+00:00", scan.execution_id))
+    repo.connection.commit()
+
+    dsn = os.getenv("THREATLENS_TEST_DATABASE_URL") or os.getenv("THREATLENS_DATABASE_URL")
+    assert dsn
+    repo2 = PostgresRepository(dsn)
+    repo2.initialize()
+    try:
+        auth2 = AuthenticationService(repo2)
+        principal2, _ = auth2.authenticate("distributed-analyst", "correct horse battery staple")
+        orchestrator2 = ScanOrchestrator(repo2, ExecutionPolicy(), auth2)
+        barrier = Barrier(2)
+        results = []
+        errors = []
+
+        def recover(worker):
+            try:
+                barrier.wait(timeout=5)
+                results.append(worker.recover_stale(scan.execution_id, principal=principal if worker is orchestrator else principal2))
+            except Exception as exc:
+                errors.append(exc)
+
+        t1 = Thread(target=recover, args=(orchestrator,))
+        t2 = Thread(target=recover, args=(orchestrator2,))
+        t1.start(); t2.start(); t1.join(10); t2.join(10)
+        assert not errors
+        assert sorted(results) == [False, True]
+        assert repo.scan_state(scan.execution_id) is LifecycleState.FAILED
+        assert repo.count("audit_events") == 3
+        assert repo.connection.execute("SELECT COUNT(*) FROM audit_events WHERE action='SCAN_RECOVERED_STALE'").fetchone()[0] == 1
+    finally:
+        repo2.close()
+
+
+def test_cross_instance_cancellation_and_finalization_have_single_lifecycle_winner(postgres_repository):
+    import os
+    repo = postgres_repository
+    campaign = make_campaign()
+    repo.save_campaign(campaign)
+    auth = AuthenticationService(repo)
+    auth.create_user("race-analyst", "correct horse battery staple", Role.ANALYST)
+    principal, _ = auth.authenticate("race-analyst", "correct horse battery staple")
+    orchestrator = ScanOrchestrator(repo, ExecutionPolicy(), auth)
+    scan = orchestrator.queue(campaign, SuccessfulProvider(), principal=principal)
+    assert repo.update_scan_state_if_current(scan.execution_id, LifecycleState.QUEUED, LifecycleState.RUNNING)
+
+    dsn = os.getenv("THREATLENS_TEST_DATABASE_URL") or os.getenv("THREATLENS_DATABASE_URL")
+    assert dsn
+    repo2 = PostgresRepository(dsn)
+    repo2.initialize()
+    try:
+        auth2 = AuthenticationService(repo2)
+        principal2, _ = auth2.authenticate("race-analyst", "correct horse battery staple")
+        barrier = Barrier(2)
+        outcomes = []
+
+        def cancel():
+            barrier.wait(timeout=5)
+            orchestrator2.cancel(scan.execution_id, principal=principal2)
+            outcomes.append("cancel")
+
+        def finalize():
+            barrier.wait(timeout=5)
+            won = repo.update_scan_state_if_current_with_audit(
+                scan.execution_id,
+                LifecycleState.RUNNING,
+                LifecycleState.COMPLETED,
+                AuditEvent(actor_user_id=principal.user_id, action="SCAN_FINALIZED", resource_type="SCAN", resource_id=scan.execution_id, outcome=LifecycleState.COMPLETED.value, detail="distributed finalization race"),
+            )
+            outcomes.append("finalize" if won else "lost")
+
+        orchestrator2 = ScanOrchestrator(repo2, ExecutionPolicy(), auth2)
+        t1 = Thread(target=cancel)
+        t2 = Thread(target=finalize)
+        t1.start(); t2.start(); t1.join(10); t2.join(10)
+        assert sorted(outcomes) == ["cancel", "lost"] or sorted(outcomes) == ["cancel", "finalize"]
+        assert repo.scan_state(scan.execution_id) in {LifecycleState.CANCELLED, LifecycleState.COMPLETED}
+        terminal_audits = repo.connection.execute("SELECT COUNT(*) FROM audit_events WHERE resource_id=%s AND action IN ('SCAN_CANCELLED','SCAN_FINALIZED') AND outcome IN ('SUCCESS','COMPLETED')", (scan.execution_id,)).fetchone()[0]
+        assert terminal_audits == 1
+    finally:
+        repo2.close()
