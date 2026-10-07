@@ -397,7 +397,7 @@ The matcher returns a bounded `VulnerabilityMatch` containing vulnerability iden
 
 ## Validation Status
 
-Gate 22 has been locally validated clean. Gates 23–24 have also been locally validated clean with `pytest -q` and `ruff check .`. Gate 25 remains pending local validation. Gate 26 is now complete after local validation. Gate 27 is complete after explicit local validation. Gate 28 is implemented and pending local validation.
+Gate 22 has been locally validated clean. Gates 23–24 have also been locally validated clean with `pytest -q` and `ruff check .`. Gate 25 remains pending local validation. Gate 26 is now complete after local validation. Gate 27 is complete after explicit local validation. Gate 28 is complete after explicit local validation. Gate 29 is implemented and pending local validation.
 
 
 ## 48. Architecture Gate 25 — Evidence-Backed Vulnerability Finding Enrichment — IMPLEMENTED
@@ -440,3 +440,12 @@ The API factory accepts injected repository and authentication services, keeping
 The initial API surface deliberately does not expose arbitrary database access or assessment mutation. Campaign execution, findings, evidence, risk, attack paths, and reporting endpoints will be added behind explicit application contracts so the GUI cannot bypass authorization, scope, evidence, or orchestration boundaries.
 
 **Validation status:** Gate 28 focused API regression tests are implemented. Local pytest -q and ruff check . are required before the gate can be declared complete.
+
+
+## 52. Architecture Gate 29 — Dashboard Read Model API — IMPLEMENTED
+
+Gate 29 establishes the first GUI-facing application read model. The authenticated `GET /api/v1/dashboard/summary` endpoint exposes bounded aggregate counts for campaigns, assets, services, findings, finding severity, and scan lifecycle state. It requires the existing READ permission and returns an application-level response model rather than database rows or arbitrary query parameters.
+
+The PostgreSQL repository supplies the aggregate data through fixed queries. The boundary is read-only and intentionally excludes detailed evidence, finding contents, credentials, audit records, or unrestricted database access. Future GUI detail views will receive separate least-privilege contracts.
+
+**Validation status:** Gate 29 focused API regression tests are implemented. Local pytest -q and ruff check . are required before the gate can be declared complete.
