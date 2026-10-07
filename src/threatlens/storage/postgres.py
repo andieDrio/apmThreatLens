@@ -74,6 +74,9 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
         with self.connection.cursor() as cursor:
             cursor.execute(SCHEMA)
         self.connection.commit()
+        with self.connection.cursor() as cursor:
+            cursor.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ")
+        self.connection.commit()
         self.initialize_finding_correlation()
         self.initialize_evidence_validation()
         self.initialize_auth()
@@ -147,6 +150,30 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
             cursor.execute(f"SELECT COUNT(*) FROM {table}")
             return int(cursor.fetchone()[0])
 
+    def heartbeat_scan(self, execution_id: UUID) -> bool:
+        from datetime import datetime, timezone
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute("UPDATE scans SET heartbeat_at=%s WHERE execution_id=%s AND state=%s", (datetime.now(timezone.utc), execution_id, "RUNNING"))
+                    return cursor.rowcount == 1
+
+    def recover_stale_scan(self, execution_id: UUID, stale_after_seconds: float, event: AuditEvent) -> bool:
+        from datetime import datetime, timedelta, timezone
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_after_seconds)
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute("SELECT state, COALESCE(heartbeat_at, started_at) FROM scans WHERE execution_id=%s FOR UPDATE", (execution_id,))
+                    row = cursor.fetchone()
+                    if row is None:
+                        raise KeyError(str(execution_id))
+                    if row[0] != "RUNNING" or row[1] is None or row[1] > cutoff:
+                        return False
+                    cursor.execute("UPDATE scans SET state=%s, finished_at=%s, error=%s WHERE execution_id=%s AND state=%s", ("FAILED", datetime.now(timezone.utc), "execution lease expired; provider execution could not be confirmed alive", execution_id, "RUNNING"))
+                    cursor.execute("INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)", (event.id, event.actor_user_id, event.action, event.resource_type, event.resource_id, event.outcome, event.detail, event.created_at))
+                    return True
+
     def scan_state(self, execution_id: UUID):
         from threatlens.domain.models import LifecycleState
         with self._transaction_lock:
@@ -164,7 +191,7 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
                 with self.connection.cursor() as cursor:
                     cursor.execute(
                         """INSERT INTO scans
-                           (execution_id,campaign_id,provider_name,state,queued_at,started_at,finished_at,error)
+                           (execution_id,campaign_id,provider_name,state,queued_at,started_at,finished_at,error,heartbeat_at)
                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (scan.execution_id, scan.campaign_id, scan.provider_name, scan.state.value,
                          scan.queued_at, scan.started_at, scan.finished_at, scan.error),
