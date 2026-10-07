@@ -328,3 +328,12 @@ After a persistence failure, the last committed lifecycle state remains authorit
 
 SQLite and PostgreSQL expose equivalent atomic repository operations. Both use transaction rollback on any failure, while repository locks serialize access to the underlying connection where required.
 
+
+
+## 41. Architecture Gate 18 Reliability Hardening — Execution Heartbeat and Stale Recovery
+
+A durable RUNNING lifecycle requires evidence that the execution owner is still alive. Scan persistence therefore stores heartbeat_at, refreshed by the provider runtime at the configured heartbeat interval. ExecutionPolicy defines heartbeat_interval_seconds and stale_after_seconds, with the stale threshold required to exceed the heartbeat interval.
+
+Stale recovery is explicit and authenticated. The repository may transition a scan from RUNNING to FAILED only when the heartbeat lease is expired, and the transition plus SCAN_RECOVERED_STALE audit event occur in one transaction. A recent heartbeat is never recovered. The design deliberately avoids age-only recovery because a legitimate long-running assessment may exceed arbitrary wall-clock durations.
+
+SQLite and PostgreSQL expose equivalent heartbeat and stale-recovery operations. Recovery is fail-closed: persistence errors roll back the lifecycle mutation and audit event. Provider execution is never automatically rerun as part of stale recovery.
