@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from threading import Event, Thread
+from threading import Event, Lock, Thread
 from time import monotonic
 from typing import Callable, Protocol
 from uuid import UUID
@@ -91,6 +91,7 @@ class ExecutionResult:
     success: bool
     cancelled: bool
     timed_out: bool
+    worker_still_running: bool
     error: str | None
     metrics: ExecutionMetrics
     events: tuple[ProviderEvent, ...]
@@ -136,6 +137,7 @@ class ExecutionRuntime:
     ) -> ExecutionResult:
         context = ExecutionContext(campaign.id, execution_id, metadata, self.policy, cancel_event)
         events: list[ProviderEvent] = []
+        events_lock = Lock()
         started = monotonic()
         done = Event()
         provider_error: list[str] = []
@@ -149,7 +151,8 @@ class ExecutionRuntime:
                 message=message,
                 attributes=tuple(sorted((str(k), str(v)) for k, v in attributes.items())),
             )
-            events.append(event)
+            with events_lock:
+                events.append(event)
             if observer is not None:
                 observer(event)
 
@@ -170,7 +173,10 @@ class ExecutionRuntime:
 
         if timed_out:
             cancel_event.set()
+            worker.join(self.policy.cancellation_grace_seconds)
             error = f"TimeoutError: provider exceeded {self.policy.timeout_seconds:.3f}s execution budget"
+            if worker.is_alive():
+                error += "; provider worker did not stop within cancellation grace period"
             emit(ProviderEventType.ERROR, error)
         elif error is not None:
             emit(ProviderEventType.ERROR, error)
@@ -180,13 +186,16 @@ class ExecutionRuntime:
             emit(ProviderEventType.COMPLETED)
 
         duration = monotonic() - started
-        evidence_count = sum(e.event_type is ProviderEventType.EVIDENCE for e in events)
-        finding_count = sum(e.event_type is ProviderEventType.FINDING for e in events)
+        with events_lock:
+            event_snapshot = tuple(events)
+        evidence_count = sum(e.event_type is ProviderEventType.EVIDENCE for e in event_snapshot)
+        finding_count = sum(e.event_type is ProviderEventType.FINDING for e in event_snapshot)
         return ExecutionResult(
             success=not timed_out and error is None and not cancel_event.is_set(),
             cancelled=cancel_event.is_set() and not timed_out,
             timed_out=timed_out,
+            worker_still_running=worker.is_alive(),
             error=error,
-            metrics=ExecutionMetrics(duration, len(events), evidence_count, finding_count),
-            events=tuple(events),
+            metrics=ExecutionMetrics(duration, len(event_snapshot), evidence_count, finding_count),
+            events=event_snapshot,
         )
