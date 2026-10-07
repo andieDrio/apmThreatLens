@@ -45,6 +45,32 @@ class FakeRepository:
     def save_audit_event(self, event: AuditEvent):
         self.audit_events.append(event)
 
+    def assets_read_model(self, limit=50, offset=0):
+        return {
+            "total": 1,
+            "limit": limit,
+            "offset": offset,
+            "items": [
+                {
+                    "id": "44444444-4444-4444-4444-444444444444",
+                    "canonical_id": "fqdn:example.test",
+                    "asset_type": "fqdn",
+                    "value": "example.test",
+                    "first_seen_at": datetime(2026, 10, 1, tzinfo=UTC),
+                    "last_seen_at": datetime(2026, 10, 7, tzinfo=UTC),
+                    "services": [
+                        {
+                            "id": "55555555-5555-5555-5555-555555555555",
+                            "protocol": "tcp",
+                            "port": 443,
+                            "service_name": "https",
+                            "version": "1.3",
+                        }
+                    ],
+                }
+            ],
+        }
+
     def findings_read_model(self, limit=50, offset=0):
         return {
             "total": 2,
@@ -225,6 +251,44 @@ async def test_findings_read_model_rejects_unbounded_limit(client):
     token = login.json()["access_token"]
     response = await client.get(
         "/api/v1/findings?limit=101",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_assets_read_model_requires_authentication(client):
+    response = await client.get("/api/v1/assets")
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_assets_read_model_returns_services(client):
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "analyst", "password": "correct-horse-battery-123"},
+    )
+    token = login.json()["access_token"]
+    response = await client.get(
+        "/api/v1/assets?limit=1&offset=0",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["canonical_id"] == "fqdn:example.test"
+    assert payload["items"][0]["services"][0]["port"] == 443
+
+
+@pytest.mark.anyio
+async def test_assets_read_model_rejects_unbounded_limit(client):
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "analyst", "password": "correct-horse-battery-123"},
+    )
+    token = login.json()["access_token"]
+    response = await client.get(
+        "/api/v1/assets?limit=101",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 422
