@@ -6,6 +6,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import RLock
 from uuid import UUID
 
 from threatlens.storage.auth import SQLiteAuthMixin
@@ -115,7 +116,8 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
 
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
-        self.connection = sqlite3.connect(self.path)
+        self._transaction_lock = RLock()
+        self.connection = sqlite3.connect(self.path, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys = ON")
         self.connection.execute("PRAGMA journal_mode = WAL")
@@ -167,38 +169,37 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
         target: LifecycleState,
         error: str | None = None,
     ) -> None:
-        row = self.connection.execute(
-            "SELECT state FROM scans WHERE execution_id = ?", (str(execution_id),)
-        ).fetchone()
-        if row is None:
-            raise KeyError(str(execution_id))
-        current = LifecycleState(row[0])
-        validate_lifecycle_transition(current, target)
+        with self._transaction_lock:
+            with self.connection:
+                row = self.connection.execute(
+                    "SELECT state FROM scans WHERE execution_id = ?", (str(execution_id),)
+                ).fetchone()
+                if row is None:
+                    raise KeyError(str(execution_id))
+                current = LifecycleState(row[0])
+                validate_lifecycle_transition(current, target)
 
-        now = datetime.now(timezone.utc).isoformat()
-        started_at = now if target is LifecycleState.RUNNING else None
-        finished_at = now if target in {
-            LifecycleState.COMPLETED,
-            LifecycleState.FAILED,
-            LifecycleState.CANCELLED,
-            LifecycleState.PARTIAL,
-        } else None
-
-        with self.connection:
-            self.connection.execute(
-                """UPDATE scans
-                   SET state = ?,
-                       started_at = COALESCE(?, started_at),
-                       finished_at = COALESCE(?, finished_at),
-                       error = ?
-                   WHERE execution_id = ?""",
-                (target.value, started_at, finished_at, error, str(execution_id)),
-            )
+                now = datetime.now(timezone.utc).isoformat()
+                started_at = now if target is LifecycleState.RUNNING else None
+                finished_at = now if target in {
+                    LifecycleState.COMPLETED,
+                    LifecycleState.FAILED,
+                    LifecycleState.CANCELLED,
+                    LifecycleState.PARTIAL,
+                } else None
+                self.connection.execute(
+                    """UPDATE scans
+                       SET state = ?, started_at = COALESCE(?, started_at),
+                           finished_at = COALESCE(?, finished_at), error = ?
+                       WHERE execution_id = ?""",
+                    (target.value, started_at, finished_at, error, str(execution_id)),
+                )
 
     def scan_state(self, execution_id: UUID) -> LifecycleState:
-        row = self.connection.execute(
-            "SELECT state FROM scans WHERE execution_id = ?", (str(execution_id),)
-        ).fetchone()
+        with self._transaction_lock:
+            row = self.connection.execute(
+                "SELECT state FROM scans WHERE execution_id = ?", (str(execution_id),)
+            ).fetchone()
         if row is None:
             raise KeyError(str(execution_id))
         return LifecycleState(row[0])
@@ -211,25 +212,27 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
         now = datetime.now(timezone.utc).isoformat()
         started_at = now if target is LifecycleState.RUNNING else None
         finished_at = now if target in {LifecycleState.COMPLETED, LifecycleState.FAILED, LifecycleState.CANCELLED, LifecycleState.PARTIAL} else None
-        with self.connection:
-            cursor = self.connection.execute(
-                """UPDATE scans SET state=?, started_at=COALESCE(?,started_at),
-                   finished_at=COALESCE(?,finished_at), error=?
-                   WHERE execution_id=? AND state=?""",
+        with self._transaction_lock:
+            with self.connection:
+                cursor = self.connection.execute(
+                    """UPDATE scans SET state=?, started_at=COALESCE(?,started_at),
+                       finished_at=COALESCE(?,finished_at), error=?
+                       WHERE execution_id=? AND state=?""",
                 (target.value, started_at, finished_at, error, str(execution_id), expected.value),
             )
-        return cursor.rowcount == 1
+            return cursor.rowcount == 1
 
     def cancel_scan(self, execution_id: UUID) -> bool:
         now = datetime.now(timezone.utc).isoformat()
-        with self.connection:
-            cursor = self.connection.execute(
-                """UPDATE scans SET state=?, finished_at=?
-                   WHERE execution_id=? AND state IN (?,?)""",
+        with self._transaction_lock:
+            with self.connection:
+                cursor = self.connection.execute(
+                    """UPDATE scans SET state=?, finished_at=?
+                       WHERE execution_id=? AND state IN (?,?)""",
                 (LifecycleState.CANCELLED.value, now, str(execution_id),
                  LifecycleState.QUEUED.value, LifecycleState.RUNNING.value),
             )
-        return cursor.rowcount == 1
+            return cursor.rowcount == 1
 
     def save_asset(self, asset: Asset) -> None:
         with self.connection:
