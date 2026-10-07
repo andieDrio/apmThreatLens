@@ -104,9 +104,9 @@ def test_cycles_do_not_create_infinite_paths_and_paths_are_deterministic():
     objective = uuid4()
 
     relations = (
-        AttackPathRelation(entry, middle, AttackPathRelationType.NETWORK_REACHABILITY, (uuid4(),)),
-        AttackPathRelation(middle, entry, AttackPathRelationType.NETWORK_REACHABILITY, (uuid4(),)),
-        AttackPathRelation(middle, objective, AttackPathRelationType.NETWORK_REACHABILITY, (uuid4(),)),
+        AttackPathRelation(entry, middle, AttackPathRelationType.NETWORK_REACHABILITY, (uuid4(),), validated=True),
+        AttackPathRelation(middle, entry, AttackPathRelationType.NETWORK_REACHABILITY, (uuid4(),), validated=True),
+        AttackPathRelation(middle, objective, AttackPathRelationType.NETWORK_REACHABILITY, (uuid4(),), validated=True),
     )
     finding = _finding(objective)
 
