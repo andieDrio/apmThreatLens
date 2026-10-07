@@ -150,8 +150,13 @@ class AttackPathAnalyzer:
                             risk_level=level,
                             explanation=(
                                 "Path uses only explicitly supplied validated relationships.",
-                                "Every relationship in the path has at least one evidence reference.",
-                                f"Highest associated finding risk is {score:.4f}; no additional exploitability or trust inference was added.",
+                                (
+                                    "Every relationship in the path has at least one evidence reference."
+                                ),
+                                (
+                                    f"Highest associated finding risk is {score:.4f}; "
+                                    "no additional exploitability or trust inference was added."
+                                ),
                             ),
                         )
                     )
