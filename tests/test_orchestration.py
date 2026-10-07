@@ -1,10 +1,12 @@
+import sqlite3
 from threading import Event, Thread
 from time import sleep
+from uuid import UUID
 
 import pytest
 
 from threatlens.auth import AuthenticationService, Role
-from threatlens.domain.models import Campaign, LifecycleState, Scope
+from threatlens.domain.models import AuditEvent, Campaign, LifecycleState, Scope
 from threatlens.orchestration.engine import ScanOrchestrator
 from threatlens.providers.runtime import ProviderCapability, ProviderMetadata, ProviderRegistry
 from threatlens.safety.policy import ExecutionPolicy
@@ -177,4 +179,58 @@ def test_external_cancellation_is_thread_safe_against_provider_finalization(tmp_
     assert len(results) == 1
     assert results[0].state is LifecycleState.CANCELLED
     assert repo.scan_state(results[0].execution_id) is LifecycleState.CANCELLED
+    repo.close()
+
+
+def test_queue_and_audit_are_atomic_on_audit_failure(tmp_path) -> None:
+    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
+    repo.connection.execute(
+        """CREATE TRIGGER fail_queue_audit BEFORE INSERT ON audit_events
+           WHEN NEW.action = 'SCAN_QUEUED'
+           BEGIN SELECT RAISE(ABORT, 'injected queue audit failure'); END"""
+    )
+    with pytest.raises(sqlite3.IntegrityError, match="injected queue audit failure"):
+        orchestrator.queue(campaign, SuccessfulProvider(), principal=principal)
+    assert repo.count("scans") == 0
+    repo.connection.execute("DROP TRIGGER fail_queue_audit")
+    repo.close()
+
+
+def test_successful_provider_is_not_marked_failed_when_finalization_persistence_fails(tmp_path) -> None:
+    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
+    repo.connection.execute(
+        """CREATE TRIGGER fail_finalization_audit BEFORE INSERT ON audit_events
+           WHEN NEW.action = 'SCAN_FINALIZED'
+           BEGIN SELECT RAISE(ABORT, 'injected finalization audit failure'); END"""
+    )
+    with pytest.raises(sqlite3.IntegrityError, match="injected finalization audit failure"):
+        orchestrator.run(campaign, SuccessfulProvider(), principal=principal)
+    scan_id = repo.connection.execute("SELECT execution_id FROM scans ORDER BY queued_at DESC LIMIT 1").fetchone()[0]
+    assert repo.scan_state(UUID(scan_id)) is LifecycleState.RUNNING
+    repo.connection.execute("DROP TRIGGER fail_finalization_audit")
+    repo.update_scan_state_if_current_with_audit(
+        UUID(scan_id),
+        LifecycleState.RUNNING,
+        LifecycleState.COMPLETED,
+        AuditEvent(actor_user_id=principal.user_id, action="SCAN_FINALIZED", resource_type="SCAN", resource_id=UUID(scan_id), outcome=LifecycleState.COMPLETED.value, detail="recovered after persistence failure"),
+    )
+    assert repo.scan_state(UUID(scan_id)) is LifecycleState.COMPLETED
+    assert repo.count("audit_events") >= 3
+    repo.close()
+
+
+def test_cancellation_and_audit_are_atomic_on_audit_failure(tmp_path) -> None:
+    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
+    scan = orchestrator.queue(campaign, SuccessfulProvider(), principal=principal)
+    repo.connection.execute(
+        """CREATE TRIGGER fail_cancel_audit BEFORE INSERT ON audit_events
+           WHEN NEW.action = 'SCAN_CANCELLED'
+           BEGIN SELECT RAISE(ABORT, 'injected cancel audit failure'); END"""
+    )
+    with pytest.raises(sqlite3.IntegrityError, match="injected cancel audit failure"):
+        orchestrator.cancel(scan.execution_id, principal=principal)
+    assert repo.scan_state(scan.execution_id) is LifecycleState.QUEUED
+    repo.connection.execute("DROP TRIGGER fail_cancel_audit")
+    orchestrator.cancel(scan.execution_id, principal=principal)
+    assert repo.scan_state(scan.execution_id) is LifecycleState.CANCELLED
     repo.close()
