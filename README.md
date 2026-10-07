@@ -46,10 +46,11 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 - Automated persistence, orchestration, provider-runtime, evidence-handoff, discovery, network-discovery, identification, interrogation, TLS assessment, TLS finding integration, API assessment, vulnerability-intelligence normalization/matching, finding-correlation, risk-engine, attack-path, and evidence-validation tests.
 - Trusted vulnerability-intelligence normalization with strict CVE/CWE validation, bounded metadata, provenance, and optional evidence references.
 - Deterministic vulnerability matching requiring explicit product and exact version agreement; no CVE inference or unsupported vulnerability claims.
+- Evidence-backed vulnerability finding enrichment routed through ProviderHandoff, preserving asset identity, intelligence provenance, CVE/CWE/CVSS/severity metadata, and all required evidence references.
 
 ### Current Architecture Gate
 
-Architecture Gate 24: Deterministic Vulnerability Intelligence Matching. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
+Architecture Gate 25: Evidence-Backed Vulnerability Finding Enrichment. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
 
 ### Gate 19 PostgreSQL Enforcement — COMPLETE
 
@@ -129,3 +130,12 @@ Gate 24 adds deterministic matching between normalized service observations and 
 
 
 **Validation status:** Gate 22 was locally validated clean by the development environment. Gates 23–24 include focused regression tests but require local execution of `pytest -q` and `ruff check .` before they may be declared complete.
+
+
+### Architecture Gate 25 — Evidence-Backed Vulnerability Finding Enrichment — IMPLEMENTED
+
+Gate 25 connects trusted vulnerability intelligence to an existing normalized finding without creating unsupported findings. Enrichment requires a deterministic vulnerability match and the intelligence record's evidence references must be present in the same ProviderHandoff input. The resulting finding preserves the original evidence, adds trusted intelligence evidence, applies normalized vulnerability identity/CVE/CWE/CVSS/severity metadata, and remains subject to the normal ProviderHandoff validation and durable correlation boundary.
+
+The enrichment layer is network-free and cannot fetch intelligence, infer affected versions, or bypass evidence requirements. Intelligence-backed metadata is therefore an evidence-supported augmentation of an existing finding rather than an assertion that a service is exploitable.
+
+**Validation status:** Gate 25 includes focused regression tests but requires local pytest -q and ruff check . execution before it may be declared complete.
