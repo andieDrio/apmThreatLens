@@ -62,7 +62,7 @@ class SQLiteFindingCorrelationMixin:
     def find_correlated_finding(self, correlation_key_value: str) -> Finding | None:
         row = self.connection.execute(
             """SELECT f.id,f.title,f.asset_id,f.state,f.severity,f.vulnerability_id,
-                      f.cwe,f.cve,f.cvss,f.confidence,f.source,f.detected_at
+                      f.cwe,f.cve,f.cvss,f.confidence,f.source,f.detected_at,f.service_id,f.endpoint,f.parameter,f.location,f.service_id,f.endpoint,f.parameter,f.location,f.service_id,f.endpoint,f.parameter,f.location
                FROM findings f
                JOIN finding_correlations c ON c.finding_id=f.id
                WHERE c.correlation_key=?""",
@@ -88,6 +88,10 @@ class SQLiteFindingCorrelationMixin:
             confidence=row["confidence"],
             source=row["source"],
             detected_at=datetime.fromisoformat(row["detected_at"]),
+            service_id=UUID(row["service_id"]) if row["service_id"] else None,
+            endpoint=row["endpoint"],
+            parameter=row["parameter"],
+            location=row["location"],
         )
 
     def save_correlation(self, key: str, finding_id: UUID) -> None:
@@ -101,7 +105,7 @@ class SQLiteFindingCorrelationMixin:
         with self.connection:
             self.connection.execute(
                 """UPDATE findings SET title=?,state=?,severity=?,vulnerability_id=?,cwe=?,cve=?,
-                   cvss=?,confidence=?,source=?,detected_at=? WHERE id=?""",
+                   cvss=?,confidence=?,source=?,detected_at=?,service_id=?,endpoint=?,parameter=?,location=? WHERE id=?""",
                 (
                     finding.title,
                     finding.state.value,
@@ -113,6 +117,10 @@ class SQLiteFindingCorrelationMixin:
                     finding.confidence,
                     finding.source,
                     finding.detected_at.isoformat(),
+                    str(finding.service_id) if finding.service_id else None,
+                    finding.endpoint,
+                    finding.parameter,
+                    finding.location,
                     str(finding_id),
                 ),
             )
@@ -153,7 +161,7 @@ class PostgresFindingCorrelationMixin:
                     cursor.execute(
                         """INSERT INTO findings
                            (id,title,asset_id,state,severity,vulnerability_id,cwe,cve,cvss,confidence,source,detected_at)
-                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (
                             logical.id,
                             logical.title,
@@ -198,6 +206,10 @@ class PostgresFindingCorrelationMixin:
                     confidence=row[9],
                     source=row[10],
                     detected_at=row[11],
+                    service_id=row[12],
+                    endpoint=row[13],
+                    parameter=row[14],
+                    location=row[15],
                 )
                 merged = correlate_findings((existing, finding))[0]
                 cursor.execute(
@@ -214,6 +226,10 @@ class PostgresFindingCorrelationMixin:
                         merged.confidence,
                         merged.source,
                         merged.detected_at,
+                        merged.service_id,
+                        merged.endpoint,
+                        merged.parameter,
+                        merged.location,
                         existing.id,
                     ),
                 )
@@ -266,6 +282,10 @@ class PostgresFindingCorrelationMixin:
             confidence=row[9],
             source=row[10],
             detected_at=row[11],
+            service_id=row[12],
+            endpoint=row[13],
+            parameter=row[14],
+            location=row[15],
         )
 
     def save_correlation(self, key: str, finding_id: UUID) -> None:
