@@ -5,12 +5,13 @@ import pytest
 from threatlens.domain.models import Evidence
 from threatlens.evidence.validation import EvidenceValidation, EvidenceValidationState
 from threatlens.storage.sqlite import SQLiteRepository
+from threatlens.providers.handoff import ProviderHandoff
 
 
 def test_evidence_validation_is_durable_and_requires_existing_evidence(tmp_path) -> None:
     repo = SQLiteRepository(tmp_path / "threatlens.db")
     repo.initialize()
-    evidence = Evidence(kind="banner", content="SSH-2.0-test", source="test")
+    evidence = ProviderHandoff.seal_evidence(Evidence(kind="banner", content="SSH-2.0-test", source="test"))
     repo.save_evidence(evidence)
 
     validation = EvidenceValidation(
