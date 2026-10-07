@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, UTC
-from enum import StrEnum
 from collections.abc import Mapping
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 
@@ -179,6 +179,10 @@ class Finding:
     source: str = ""
     id: UUID = field(default_factory=uuid4)
     detected_at: datetime = field(default_factory=utc_now)
+    service_id: UUID | None = None
+    endpoint: str | None = None
+    parameter: str | None = None
+    location: str | None = None
 
     def __post_init__(self) -> None:
         if not self.title.strip():
@@ -189,38 +193,7 @@ class Finding:
             raise ValueError("finding.confidence must be between 0 and 1")
         if self.cvss is not None and not 0.0 <= self.cvss <= 10.0:
             raise ValueError("finding.cvss must be between 0 and 10")
-
-
-@dataclass(frozen=True, slots=True)
-class User:
-    username: str
-    password_hash: str
-    role: str
-    active: bool = True
-    id: UUID = field(default_factory=uuid4)
-    created_at: datetime = field(default_factory=utc_now)
-
-    def __post_init__(self) -> None:
-        if not self.username.strip():
-            raise ValueError("user.username cannot be blank")
-        if not self.password_hash.strip():
-            raise ValueError("user.password_hash cannot be blank")
-        if not self.role.strip():
-            raise ValueError("user.role cannot be blank")
-
-
-@dataclass(frozen=True, slots=True)
-class AuditEvent:
-    action: str
-    resource_type: str
-    outcome: str
-    detail: str
-    actor_user_id: UUID | None = None
-    resource_id: UUID | None = None
-    id: UUID = field(default_factory=uuid4)
-    created_at: datetime = field(default_factory=utc_now)
-
-    def __post_init__(self) -> None:
-        for field_name in ("action", "resource_type", "outcome", "detail"):
-            if not getattr(self, field_name).strip():
-                raise ValueError(f"audit_event.{field_name} cannot be blank")
+        for field_name in ("endpoint", "parameter", "location"):
+            value = getattr(self, field_name)
+            if value is not None and not value.strip():
+                raise ValueError(f"finding.{field_name} cannot be blank")
