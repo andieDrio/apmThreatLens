@@ -397,7 +397,7 @@ The matcher returns a bounded `VulnerabilityMatch` containing vulnerability iden
 
 ## Validation Status
 
-Gate 22 has been locally validated clean. Gates 23–24 have also been locally validated clean with `pytest -q` and `ruff check .`. Gate 25 remains pending local validation. Gate 26 is now complete after local validation. Gate 27 is complete after explicit local validation. Gate 28 is complete after explicit local validation. Gate 29 is implemented and pending local validation.
+Gate 22 has been locally validated clean. Gates 23–24 have also been locally validated clean with `pytest -q` and `ruff check .`. Gate 25 remains pending local validation. Gate 26 is now complete after local validation. Gate 27 is complete after explicit local validation. Gate 28 is complete after explicit local validation. Gate 29 is complete after explicit local validation.
 
 
 ## 48. Architecture Gate 25 — Evidence-Backed Vulnerability Finding Enrichment — IMPLEMENTED
@@ -461,6 +461,16 @@ The API therefore gives the future GUI a usable findings table without allowing 
 
 Gate 30 is complete after explicit local validation.
 
+
+## 55. Architecture Gate 32 — Scan Read Model API — IMPLEMENTED
+
+Gate 32 establishes the authenticated application read model for scan execution state. The `GET /api/v1/scans` endpoint requires READ permission and returns bounded execution metadata: execution and campaign identity, campaign name, provider name, lifecycle state, queued/started/finished timestamps, heartbeat timestamp, and a bounded error summary.
+
+PostgreSQL uses fixed SQL with a maximum page size of 100 and deterministic ordering. The repository contract is read-only. The response excludes raw evidence, credentials, audit records, arbitrary SQL controls, and provider-internal execution details. It exposes operational state without allowing the GUI to mutate scan lifecycle state or bypass the orchestration boundary.
+
+The endpoint is intentionally a read model rather than a control API. Cancellation, recovery, campaign mutation, and assessment execution require separate authenticated application contracts with their own authorization and audit semantics.
+
+**Validation status:** Gate 32 focused API regression tests are implemented. Local `pytest -q` and `ruff check .` are required before the gate can be declared complete.
 
 ## 54. Architecture Gate 31 — Asset & Service Read Model API — IMPLEMENTED
 
