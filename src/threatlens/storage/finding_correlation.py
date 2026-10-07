@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Protocol
 from uuid import UUID
 
@@ -94,7 +94,7 @@ class SQLiteFindingCorrelationMixin:
         with self.connection:
             self.connection.execute(
                 "INSERT INTO finding_correlations (correlation_key,finding_id,created_at) VALUES (?,?,?)",
-                (key, str(finding_id), datetime.now(timezone.utc).isoformat()),
+                (key, str(finding_id), datetime.now(UTC).isoformat()),
             )
 
     def update_correlated_finding(self, finding_id: UUID, finding: Finding) -> None:
@@ -103,9 +103,16 @@ class SQLiteFindingCorrelationMixin:
                 """UPDATE findings SET title=?,state=?,severity=?,vulnerability_id=?,cwe=?,cve=?,
                    cvss=?,confidence=?,source=?,detected_at=? WHERE id=?""",
                 (
-                    finding.title, finding.state.value, finding.severity.value,
-                    finding.vulnerability_id, finding.cwe, finding.cve, finding.cvss,
-                    finding.confidence, finding.source, finding.detected_at.isoformat(),
+                    finding.title,
+                    finding.state.value,
+                    finding.severity.value,
+                    finding.vulnerability_id,
+                    finding.cwe,
+                    finding.cve,
+                    finding.cvss,
+                    finding.confidence,
+                    finding.source,
+                    finding.detected_at.isoformat(),
                     str(finding_id),
                 ),
             )
@@ -147,9 +154,20 @@ class PostgresFindingCorrelationMixin:
                         """INSERT INTO findings
                            (id,title,asset_id,state,severity,vulnerability_id,cwe,cve,cvss,confidence,source,detected_at)
                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                        (logical.id, logical.title, logical.asset_id, logical.state.value, logical.severity.value,
-                         logical.vulnerability_id, logical.cwe, logical.cve, logical.cvss, logical.confidence,
-                         logical.source, logical.detected_at),
+                        (
+                            logical.id,
+                            logical.title,
+                            logical.asset_id,
+                            logical.state.value,
+                            logical.severity.value,
+                            logical.vulnerability_id,
+                            logical.cwe,
+                            logical.cve,
+                            logical.cvss,
+                            logical.confidence,
+                            logical.source,
+                            logical.detected_at,
+                        ),
                     )
                     cursor.executemany(
                         "INSERT INTO finding_evidence (finding_id,evidence_id) VALUES (%s,%s)",
@@ -157,7 +175,7 @@ class PostgresFindingCorrelationMixin:
                     )
                     cursor.execute(
                         "INSERT INTO finding_correlations (correlation_key,finding_id,created_at) VALUES (%s,%s,%s)",
-                        (key, logical.id, datetime.now(timezone.utc)),
+                        (key, logical.id, datetime.now(UTC)),
                     )
                     return logical
 
@@ -167,19 +185,37 @@ class PostgresFindingCorrelationMixin:
                 )
                 evidence_rows = cursor.fetchall()
                 existing = Finding(
-                    id=row[0], title=row[1], asset_id=row[2],
+                    id=row[0],
+                    title=row[1],
+                    asset_id=row[2],
                     evidence_ids=tuple(item[0] for item in evidence_rows),
-                    state=FindingState(row[3]), severity=Severity(row[4]),
-                    vulnerability_id=row[5], cwe=row[6], cve=row[7], cvss=row[8],
-                    confidence=row[9], source=row[10], detected_at=row[11],
+                    state=FindingState(row[3]),
+                    severity=Severity(row[4]),
+                    vulnerability_id=row[5],
+                    cwe=row[6],
+                    cve=row[7],
+                    cvss=row[8],
+                    confidence=row[9],
+                    source=row[10],
+                    detected_at=row[11],
                 )
                 merged = correlate_findings((existing, finding))[0]
                 cursor.execute(
                     """UPDATE findings SET title=%s,state=%s,severity=%s,vulnerability_id=%s,cwe=%s,cve=%s,
                        cvss=%s,confidence=%s,source=%s,detected_at=%s WHERE id=%s""",
-                    (merged.title, merged.state.value, merged.severity.value, merged.vulnerability_id,
-                     merged.cwe, merged.cve, merged.cvss, merged.confidence, merged.source,
-                     merged.detected_at, existing.id),
+                    (
+                        merged.title,
+                        merged.state.value,
+                        merged.severity.value,
+                        merged.vulnerability_id,
+                        merged.cwe,
+                        merged.cve,
+                        merged.cvss,
+                        merged.confidence,
+                        merged.source,
+                        merged.detected_at,
+                        existing.id,
+                    ),
                 )
                 cursor.executemany(
                     "INSERT INTO finding_evidence (finding_id,evidence_id) VALUES (%s,%s) ON CONFLICT DO NOTHING",
@@ -217,11 +253,19 @@ class PostgresFindingCorrelationMixin:
             )
             evidence_rows = cursor.fetchall()
         return Finding(
-            id=row[0], title=row[1], asset_id=row[2],
+            id=row[0],
+            title=row[1],
+            asset_id=row[2],
             evidence_ids=tuple(item[0] for item in evidence_rows),
-            state=FindingState(row[3]), severity=Severity(row[4]),
-            vulnerability_id=row[5], cwe=row[6], cve=row[7], cvss=row[8],
-            confidence=row[9], source=row[10], detected_at=row[11],
+            state=FindingState(row[3]),
+            severity=Severity(row[4]),
+            vulnerability_id=row[5],
+            cwe=row[6],
+            cve=row[7],
+            cvss=row[8],
+            confidence=row[9],
+            source=row[10],
+            detected_at=row[11],
         )
 
     def save_correlation(self, key: str, finding_id: UUID) -> None:
@@ -229,7 +273,7 @@ class PostgresFindingCorrelationMixin:
             with self.connection.cursor() as cursor:
                 cursor.execute(
                     "INSERT INTO finding_correlations (correlation_key,finding_id,created_at) VALUES (%s,%s,%s)",
-                    (key, finding_id, datetime.now(timezone.utc)),
+                    (key, finding_id, datetime.now(UTC)),
                 )
 
     def update_correlated_finding(self, finding_id: UUID, finding: Finding) -> None:
@@ -239,9 +283,17 @@ class PostgresFindingCorrelationMixin:
                     """UPDATE findings SET title=%s,state=%s,severity=%s,vulnerability_id=%s,cwe=%s,cve=%s,
                        cvss=%s,confidence=%s,source=%s,detected_at=%s WHERE id=%s""",
                     (
-                        finding.title, finding.state.value, finding.severity.value,
-                        finding.vulnerability_id, finding.cwe, finding.cve, finding.cvss,
-                        finding.confidence, finding.source, finding.detected_at, finding_id,
+                        finding.title,
+                        finding.state.value,
+                        finding.severity.value,
+                        finding.vulnerability_id,
+                        finding.cwe,
+                        finding.cve,
+                        finding.cvss,
+                        finding.confidence,
+                        finding.source,
+                        finding.detected_at,
+                        finding_id,
                     ),
                 )
 

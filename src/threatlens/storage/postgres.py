@@ -10,6 +10,7 @@ from threatlens.domain.models import Asset, AuditEvent, Campaign, Evidence, Find
 from threatlens.storage.auth import PostgresAuthMixin
 from threatlens.storage.evidence_validation import PostgresEvidenceValidationMixin
 from threatlens.storage.finding_correlation import PostgresFindingCorrelationMixin
+from datetime import UTC
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS campaigns (
@@ -56,7 +57,9 @@ CREATE TABLE IF NOT EXISTS scans (
 """
 
 
-class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, PostgresEvidenceValidationMixin):
+class PostgresRepository(
+    PostgresAuthMixin, PostgresFindingCorrelationMixin, PostgresEvidenceValidationMixin
+):
     """PostgreSQL implementation of the current persistence boundary."""
 
     def __init__(self, dsn: str) -> None:
@@ -86,7 +89,13 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
             with self.connection.cursor() as cursor:
                 cursor.execute(
                     "INSERT INTO campaigns (id,name,authorized,state,created_at) VALUES (%s,%s,%s,%s,%s)",
-                    (campaign.id, campaign.name, campaign.authorized, campaign.state.value, campaign.created_at),
+                    (
+                        campaign.id,
+                        campaign.name,
+                        campaign.authorized,
+                        campaign.state.value,
+                        campaign.created_at,
+                    ),
                 )
                 cursor.execute("INSERT INTO scopes (campaign_id) VALUES (%s)", (campaign.id,))
                 cursor.executemany(
@@ -102,7 +111,14 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
                     """INSERT INTO assets (id,canonical_id,asset_type,value,first_seen_at,last_seen_at)
                        VALUES (%s,%s,%s,%s,%s,%s)
                        ON CONFLICT (canonical_id) DO UPDATE SET last_seen_at=EXCLUDED.last_seen_at""",
-                    (asset.id, asset.canonical_id, asset.asset_type, asset.value, asset.first_seen_at, asset.last_seen_at),
+                    (
+                        asset.id,
+                        asset.canonical_id,
+                        asset.asset_type,
+                        asset.value,
+                        asset.first_seen_at,
+                        asset.last_seen_at,
+                    ),
                 )
 
     def save_service(self, service: Service) -> None:
@@ -113,7 +129,14 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
                        VALUES (%s,%s,%s,%s,%s,%s)
                        ON CONFLICT (asset_id,protocol,port) DO UPDATE SET
                          service_name=EXCLUDED.service_name, version=EXCLUDED.version""",
-                    (service.id, service.asset_id, service.protocol, service.port, service.service_name, service.version),
+                    (
+                        service.id,
+                        service.asset_id,
+                        service.protocol,
+                        service.port,
+                        service.service_name,
+                        service.version,
+                    ),
                 )
 
     def save_evidence(self, evidence: Evidence) -> None:
@@ -122,8 +145,15 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
                 cursor.execute(
                     """INSERT INTO evidence (id,kind,content,source,captured_at,sha256,metadata_json)
                        VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-                    (evidence.id, evidence.kind, evidence.content, evidence.source,
-                     evidence.captured_at, evidence.sha256, json.dumps(dict(evidence.metadata), sort_keys=True)),
+                    (
+                        evidence.id,
+                        evidence.kind,
+                        evidence.content,
+                        evidence.source,
+                        evidence.captured_at,
+                        evidence.sha256,
+                        json.dumps(dict(evidence.metadata), sort_keys=True),
+                    ),
                 )
 
     def save_finding(self, finding: Finding) -> None:
@@ -133,9 +163,20 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
                     """INSERT INTO findings
                        (id,title,asset_id,state,severity,vulnerability_id,cwe,cve,cvss,confidence,source,detected_at)
                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                    (finding.id, finding.title, finding.asset_id, finding.state.value, finding.severity.value,
-                     finding.vulnerability_id, finding.cwe, finding.cve, finding.cvss, finding.confidence,
-                     finding.source, finding.detected_at),
+                    (
+                        finding.id,
+                        finding.title,
+                        finding.asset_id,
+                        finding.state.value,
+                        finding.severity.value,
+                        finding.vulnerability_id,
+                        finding.cwe,
+                        finding.cve,
+                        finding.cvss,
+                        finding.confidence,
+                        finding.source,
+                        finding.detected_at,
+                    ),
                 )
                 cursor.executemany(
                     "INSERT INTO finding_evidence (finding_id,evidence_id) VALUES (%s,%s)",
@@ -143,7 +184,20 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
                 )
 
     def count(self, table: str) -> int:
-        allowed = {"campaigns", "assets", "services", "evidence", "findings", "finding_evidence", "scans", "finding_correlations", "evidence_validations", "users", "auth_sessions", "audit_events"}
+        allowed = {
+            "campaigns",
+            "assets",
+            "services",
+            "evidence",
+            "findings",
+            "finding_evidence",
+            "scans",
+            "finding_correlations",
+            "evidence_validations",
+            "users",
+            "auth_sessions",
+            "audit_events",
+        }
         if table not in allowed:
             raise ValueError("unsupported table")
         with self.connection.cursor() as cursor:
@@ -151,31 +205,63 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
             return int(cursor.fetchone()[0])
 
     def heartbeat_scan(self, execution_id: UUID) -> bool:
-        from datetime import datetime, timezone
+        from datetime import datetime
+
         with self._transaction_lock:
             with self.connection.transaction():
                 with self.connection.cursor() as cursor:
-                    cursor.execute("UPDATE scans SET heartbeat_at=%s WHERE execution_id=%s AND state=%s", (datetime.now(timezone.utc), execution_id, "RUNNING"))
+                    cursor.execute(
+                        "UPDATE scans SET heartbeat_at=%s WHERE execution_id=%s AND state=%s",
+                        (datetime.now(UTC), execution_id, "RUNNING"),
+                    )
                     return cursor.rowcount == 1
 
-    def recover_stale_scan(self, execution_id: UUID, stale_after_seconds: float, event: AuditEvent) -> bool:
-        from datetime import datetime, timedelta, timezone
-        cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_after_seconds)
+    def recover_stale_scan(
+        self, execution_id: UUID, stale_after_seconds: float, event: AuditEvent
+    ) -> bool:
+        from datetime import datetime, timedelta
+
+        cutoff = datetime.now(UTC) - timedelta(seconds=stale_after_seconds)
         with self._transaction_lock:
             with self.connection.transaction():
                 with self.connection.cursor() as cursor:
-                    cursor.execute("SELECT state, COALESCE(heartbeat_at, started_at) FROM scans WHERE execution_id=%s FOR UPDATE", (execution_id,))
+                    cursor.execute(
+                        "SELECT state, COALESCE(heartbeat_at, started_at) FROM scans WHERE execution_id=%s FOR UPDATE",
+                        (execution_id,),
+                    )
                     row = cursor.fetchone()
                     if row is None:
                         raise KeyError(str(execution_id))
                     if row[0] != "RUNNING" or row[1] is None or row[1] > cutoff:
                         return False
-                    cursor.execute("UPDATE scans SET state=%s, finished_at=%s, error=%s WHERE execution_id=%s AND state=%s", ("FAILED", datetime.now(timezone.utc), "execution lease expired; provider execution could not be confirmed alive", execution_id, "RUNNING"))
-                    cursor.execute("INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)", (event.id, event.actor_user_id, event.action, event.resource_type, event.resource_id, event.outcome, event.detail, event.created_at))
+                    cursor.execute(
+                        "UPDATE scans SET state=%s, finished_at=%s, error=%s WHERE execution_id=%s AND state=%s",
+                        (
+                            "FAILED",
+                            datetime.now(UTC),
+                            "execution lease expired; provider execution could not be confirmed alive",
+                            execution_id,
+                            "RUNNING",
+                        ),
+                    )
+                    cursor.execute(
+                        "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (
+                            event.id,
+                            event.actor_user_id,
+                            event.action,
+                            event.resource_type,
+                            event.resource_id,
+                            event.outcome,
+                            event.detail,
+                            event.created_at,
+                        ),
+                    )
                     return True
 
     def scan_state(self, execution_id: UUID):
         from threatlens.domain.models import LifecycleState
+
         with self._transaction_lock:
             with self.connection.cursor() as cursor:
                 cursor.execute("SELECT state FROM scans WHERE execution_id=%s", (execution_id,))
@@ -183,7 +269,6 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
         if row is None:
             raise KeyError(str(execution_id))
         return LifecycleState(row[0])
-
 
     def save_scan_with_audit(self, scan, event: AuditEvent) -> None:
         with self._transaction_lock:
@@ -193,43 +278,86 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
                         """INSERT INTO scans
                            (execution_id,campaign_id,provider_name,state,queued_at,started_at,finished_at,error,heartbeat_at)
                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                        (scan.execution_id, scan.campaign_id, scan.provider_name, scan.state.value,
-                         scan.queued_at, scan.started_at, scan.finished_at, scan.error, scan.heartbeat_at),
+                        (
+                            scan.execution_id,
+                            scan.campaign_id,
+                            scan.provider_name,
+                            scan.state.value,
+                            scan.queued_at,
+                            scan.started_at,
+                            scan.finished_at,
+                            scan.error,
+                            scan.heartbeat_at,
+                        ),
                     )
                     cursor.execute(
                         "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-                        (event.id, event.actor_user_id, event.action, event.resource_type, event.resource_id,
-                         event.outcome, event.detail, event.created_at),
+                        (
+                            event.id,
+                            event.actor_user_id,
+                            event.action,
+                            event.resource_type,
+                            event.resource_id,
+                            event.outcome,
+                            event.detail,
+                            event.created_at,
+                        ),
                     )
 
     def update_scan_state(self, execution_id: UUID, target, error: str | None = None) -> None:
-        from datetime import datetime, timezone
+        from datetime import datetime
         from threatlens.domain.models import LifecycleState, validate_lifecycle_transition
+
         with self._transaction_lock:
             with self.connection.transaction():
                 with self.connection.cursor() as cursor:
-                    cursor.execute("SELECT state FROM scans WHERE execution_id=%s FOR UPDATE", (execution_id,))
+                    cursor.execute(
+                        "SELECT state FROM scans WHERE execution_id=%s FOR UPDATE", (execution_id,)
+                    )
                     row = cursor.fetchone()
                     if row is None:
                         raise KeyError(str(execution_id))
                     current = LifecycleState(row[0])
                     validate_lifecycle_transition(current, target)
-                    now = datetime.now(timezone.utc)
+                    now = datetime.now(UTC)
                     started_at = now if target is LifecycleState.RUNNING else None
-                    finished_at = now if target in {LifecycleState.COMPLETED, LifecycleState.FAILED, LifecycleState.CANCELLED, LifecycleState.PARTIAL} else None
+                    finished_at = (
+                        now
+                        if target
+                        in {
+                            LifecycleState.COMPLETED,
+                            LifecycleState.FAILED,
+                            LifecycleState.CANCELLED,
+                            LifecycleState.PARTIAL,
+                        }
+                        else None
+                    )
                     cursor.execute(
                         """UPDATE scans SET state=%s, started_at=COALESCE(%s,started_at),
                            finished_at=COALESCE(%s,finished_at), error=%s WHERE execution_id=%s""",
                         (target.value, started_at, finished_at, error, execution_id),
                     )
 
-    def update_scan_state_if_current(self, execution_id: UUID, expected, target, error: str | None = None) -> bool:
-        from datetime import datetime, timezone
+    def update_scan_state_if_current(
+        self, execution_id: UUID, expected, target, error: str | None = None
+    ) -> bool:
+        from datetime import datetime
         from threatlens.domain.models import LifecycleState, validate_lifecycle_transition
+
         validate_lifecycle_transition(expected, target)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         started_at = now if target is LifecycleState.RUNNING else None
-        finished_at = now if target in {LifecycleState.COMPLETED, LifecycleState.FAILED, LifecycleState.CANCELLED, LifecycleState.PARTIAL} else None
+        finished_at = (
+            now
+            if target
+            in {
+                LifecycleState.COMPLETED,
+                LifecycleState.FAILED,
+                LifecycleState.CANCELLED,
+                LifecycleState.PARTIAL,
+            }
+            else None
+        )
         with self._transaction_lock:
             with self.connection.transaction():
                 with self.connection.cursor() as cursor:
@@ -237,32 +365,57 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
                         """UPDATE scans SET state=%s, started_at=COALESCE(%s,started_at),
                            finished_at=COALESCE(%s,finished_at), error=%s
                            WHERE execution_id=%s AND state=%s""",
-                        (target.value, started_at, finished_at, error, execution_id, expected.value),
+                        (
+                            target.value,
+                            started_at,
+                            finished_at,
+                            error,
+                            execution_id,
+                            expected.value,
+                        ),
                     )
                     return cursor.rowcount == 1
 
     def cancel_scan(self, execution_id: UUID) -> bool:
-        from datetime import datetime, timezone
+        from datetime import datetime
         from threatlens.domain.models import LifecycleState
+
         with self._transaction_lock:
             with self.connection.transaction():
                 with self.connection.cursor() as cursor:
                     cursor.execute(
                         """UPDATE scans SET state=%s, finished_at=%s
                            WHERE execution_id=%s AND state IN (%s,%s)""",
-                        (LifecycleState.CANCELLED.value, datetime.now(timezone.utc), execution_id,
-                         LifecycleState.QUEUED.value, LifecycleState.RUNNING.value),
+                        (
+                            LifecycleState.CANCELLED.value,
+                            datetime.now(UTC),
+                            execution_id,
+                            LifecycleState.QUEUED.value,
+                            LifecycleState.RUNNING.value,
+                        ),
                     )
                     return cursor.rowcount == 1
 
-
-    def update_scan_state_if_current_with_audit(self, execution_id, expected, target, event: AuditEvent, error: str | None = None) -> bool:
-        from datetime import datetime, timezone
+    def update_scan_state_if_current_with_audit(
+        self, execution_id, expected, target, event: AuditEvent, error: str | None = None
+    ) -> bool:
+        from datetime import datetime
         from threatlens.domain.models import LifecycleState, validate_lifecycle_transition
+
         validate_lifecycle_transition(expected, target)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         started_at = now if target is LifecycleState.RUNNING else None
-        finished_at = now if target in {LifecycleState.COMPLETED, LifecycleState.FAILED, LifecycleState.CANCELLED, LifecycleState.PARTIAL} else None
+        finished_at = (
+            now
+            if target
+            in {
+                LifecycleState.COMPLETED,
+                LifecycleState.FAILED,
+                LifecycleState.CANCELLED,
+                LifecycleState.PARTIAL,
+            }
+            else None
+        )
         with self._transaction_lock:
             with self.connection.transaction():
                 with self.connection.cursor() as cursor:
@@ -270,34 +423,65 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
                         """UPDATE scans SET state=%s, started_at=COALESCE(%s,started_at),
                            finished_at=COALESCE(%s,finished_at), error=%s
                            WHERE execution_id=%s AND state=%s""",
-                        (target.value, started_at, finished_at, error, execution_id, expected.value),
+                        (
+                            target.value,
+                            started_at,
+                            finished_at,
+                            error,
+                            execution_id,
+                            expected.value,
+                        ),
                     )
                     if cursor.rowcount != 1:
                         return False
                     cursor.execute(
                         "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-                        (event.id, event.actor_user_id, event.action, event.resource_type, event.resource_id,
-                         event.outcome, event.detail, event.created_at),
+                        (
+                            event.id,
+                            event.actor_user_id,
+                            event.action,
+                            event.resource_type,
+                            event.resource_id,
+                            event.outcome,
+                            event.detail,
+                            event.created_at,
+                        ),
                     )
                     return True
 
-    def cancel_scan_with_audit(self, execution_id, success_event: AuditEvent, noop_event: AuditEvent) -> bool:
-        from datetime import datetime, timezone
+    def cancel_scan_with_audit(
+        self, execution_id, success_event: AuditEvent, noop_event: AuditEvent
+    ) -> bool:
+        from datetime import datetime
         from threatlens.domain.models import LifecycleState
+
         with self._transaction_lock:
             with self.connection.transaction():
                 with self.connection.cursor() as cursor:
                     cursor.execute(
                         """UPDATE scans SET state=%s, finished_at=%s
                            WHERE execution_id=%s AND state IN (%s,%s)""",
-                        (LifecycleState.CANCELLED.value, datetime.now(timezone.utc), execution_id,
-                         LifecycleState.QUEUED.value, LifecycleState.RUNNING.value),
+                        (
+                            LifecycleState.CANCELLED.value,
+                            datetime.now(UTC),
+                            execution_id,
+                            LifecycleState.QUEUED.value,
+                            LifecycleState.RUNNING.value,
+                        ),
                     )
                     event = success_event if cursor.rowcount == 1 else noop_event
                     cursor.execute(
                         "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-                        (event.id, event.actor_user_id, event.action, event.resource_type, event.resource_id,
-                         event.outcome, event.detail, event.created_at),
+                        (
+                            event.id,
+                            event.actor_user_id,
+                            event.action,
+                            event.resource_type,
+                            event.resource_id,
+                            event.outcome,
+                            event.detail,
+                            event.created_at,
+                        ),
                     )
                     return cursor.rowcount == 1
 

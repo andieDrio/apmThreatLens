@@ -144,7 +144,8 @@ class ActiveServiceInterrogationProvider:
             normalized = value.lower().rstrip(".")
             labels = normalized.split(".")
             if not all(
-                label and len(label) <= 63 and label[0] != "-" and label[-1] != "-" for label in labels
+                label and len(label) <= 63 and label[0] != "-" and label[-1] != "-"
+                for label in labels
             ):
                 raise ValueError(f"invalid service interrogation host: {target!r}")
             return normalized

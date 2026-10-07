@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 from threading import RLock
 from uuid import UUID
@@ -113,7 +113,9 @@ CREATE TABLE IF NOT EXISTS finding_evidence (
 """
 
 
-class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvidenceValidationMixin):
+class SQLiteRepository(
+    SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvidenceValidationMixin
+):
     """Transactional repository for domain persistence."""
 
     def __init__(self, path: str | Path) -> None:
@@ -148,11 +150,16 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
             self.connection.execute(
                 "INSERT INTO campaigns (id,name,authorized,state,created_at) VALUES (?,?,?,?,?)",
                 (
-                    str(campaign.id), campaign.name, int(campaign.authorized),
-                    campaign.state.value, campaign.created_at.isoformat(),
+                    str(campaign.id),
+                    campaign.name,
+                    int(campaign.authorized),
+                    campaign.state.value,
+                    campaign.created_at.isoformat(),
                 ),
             )
-            self.connection.execute("INSERT INTO scopes (campaign_id) VALUES (?)", (str(campaign.id),))
+            self.connection.execute(
+                "INSERT INTO scopes (campaign_id) VALUES (?)", (str(campaign.id),)
+            )
             self.connection.executemany(
                 "INSERT INTO scope_entries (campaign_id,value,included) VALUES (?,?,?)",
                 [(str(campaign.id), value, 1) for value in campaign.scope.include]
@@ -166,14 +173,17 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
                    (execution_id,campaign_id,provider_name,state,queued_at,started_at,finished_at,error,heartbeat_at)
                    VALUES (?,?,?,?,?,?,?,?)""",
                 (
-                    str(scan.execution_id), str(scan.campaign_id), scan.provider_name,
-                    scan.state.value, scan.queued_at.isoformat(),
+                    str(scan.execution_id),
+                    str(scan.campaign_id),
+                    scan.provider_name,
+                    scan.state.value,
+                    scan.queued_at.isoformat(),
                     scan.started_at.isoformat() if scan.started_at else None,
                     scan.finished_at.isoformat() if scan.finished_at else None,
-                    scan.error, scan.heartbeat_at.isoformat() if scan.heartbeat_at else None,
+                    scan.error,
+                    scan.heartbeat_at.isoformat() if scan.heartbeat_at else None,
                 ),
             )
-
 
     def save_scan_with_audit(self, scan: Scan, event: AuditEvent) -> None:
         with self._transaction_lock:
@@ -183,15 +193,30 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
                     """INSERT INTO scans
                        (execution_id,campaign_id,provider_name,state,queued_at,started_at,finished_at,error,heartbeat_at)
                        VALUES (?,?,?,?,?,?,?,?,?)""",
-                    (str(scan.execution_id), str(scan.campaign_id), scan.provider_name, scan.state.value,
-                     scan.queued_at.isoformat(), scan.started_at.isoformat() if scan.started_at else None,
-                     scan.finished_at.isoformat() if scan.finished_at else None, scan.error, scan.heartbeat_at.isoformat() if scan.heartbeat_at else None),
+                    (
+                        str(scan.execution_id),
+                        str(scan.campaign_id),
+                        scan.provider_name,
+                        scan.state.value,
+                        scan.queued_at.isoformat(),
+                        scan.started_at.isoformat() if scan.started_at else None,
+                        scan.finished_at.isoformat() if scan.finished_at else None,
+                        scan.error,
+                        scan.heartbeat_at.isoformat() if scan.heartbeat_at else None,
+                    ),
                 )
                 self.connection.execute(
                     "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?)",
-                    (str(event.id), str(event.actor_user_id) if event.actor_user_id else None,
-                     event.action, event.resource_type, str(event.resource_id) if event.resource_id else None,
-                     event.outcome, event.detail, event.created_at.isoformat()),
+                    (
+                        str(event.id),
+                        str(event.actor_user_id) if event.actor_user_id else None,
+                        event.action,
+                        event.resource_type,
+                        str(event.resource_id) if event.resource_id else None,
+                        event.outcome,
+                        event.detail,
+                        event.created_at.isoformat(),
+                    ),
                 )
                 self.connection.commit()
             except BaseException:
@@ -215,14 +240,19 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
                 current = LifecycleState(row[0])
                 validate_lifecycle_transition(current, target)
 
-                now = datetime.now(timezone.utc).isoformat()
+                now = datetime.now(UTC).isoformat()
                 started_at = now if target is LifecycleState.RUNNING else None
-                finished_at = now if target in {
-                    LifecycleState.COMPLETED,
-                    LifecycleState.FAILED,
-                    LifecycleState.CANCELLED,
-                    LifecycleState.PARTIAL,
-                } else None
+                finished_at = (
+                    now
+                    if target
+                    in {
+                        LifecycleState.COMPLETED,
+                        LifecycleState.FAILED,
+                        LifecycleState.CANCELLED,
+                        LifecycleState.PARTIAL,
+                    }
+                    else None
+                )
                 self.connection.execute(
                     """UPDATE scans
                        SET state = ?, started_at = COALESCE(?, started_at),
@@ -236,7 +266,7 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
                 raise
 
     def heartbeat_scan(self, execution_id: UUID) -> bool:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._transaction_lock:
             cursor = self.connection.execute(
                 "UPDATE scans SET heartbeat_at=? WHERE execution_id=? AND state=?",
@@ -245,21 +275,51 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
             self.connection.commit()
             return cursor.rowcount == 1
 
-    def recover_stale_scan(self, execution_id: UUID, stale_after_seconds: float, event: AuditEvent) -> bool:
-        cutoff = datetime.now(timezone.utc).timestamp() - stale_after_seconds
+    def recover_stale_scan(
+        self, execution_id: UUID, stale_after_seconds: float, event: AuditEvent
+    ) -> bool:
+        cutoff = datetime.now(UTC).timestamp() - stale_after_seconds
         with self._transaction_lock:
             self.connection.execute("BEGIN IMMEDIATE")
             try:
-                row = self.connection.execute("SELECT state, heartbeat_at, started_at FROM scans WHERE execution_id=?", (str(execution_id),)).fetchone()
+                row = self.connection.execute(
+                    "SELECT state, heartbeat_at, started_at FROM scans WHERE execution_id=?",
+                    (str(execution_id),),
+                ).fetchone()
                 if row is None:
                     raise KeyError(str(execution_id))
                 heartbeat = row["heartbeat_at"] or row["started_at"]
-                if row["state"] != LifecycleState.RUNNING.value or not heartbeat or datetime.fromisoformat(heartbeat).timestamp() > cutoff:
+                if (
+                    row["state"] != LifecycleState.RUNNING.value
+                    or not heartbeat
+                    or datetime.fromisoformat(heartbeat).timestamp() > cutoff
+                ):
                     self.connection.rollback()
                     return False
-                now = datetime.now(timezone.utc).isoformat()
-                self.connection.execute("UPDATE scans SET state=?, finished_at=?, error=? WHERE execution_id=? AND state=?", (LifecycleState.FAILED.value, now, "execution lease expired; provider execution could not be confirmed alive", str(execution_id), LifecycleState.RUNNING.value))
-                self.connection.execute("INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?)", (str(event.id), str(event.actor_user_id) if event.actor_user_id else None, event.action, event.resource_type, str(event.resource_id) if event.resource_id else None, event.outcome, event.detail, event.created_at.isoformat()))
+                now = datetime.now(UTC).isoformat()
+                self.connection.execute(
+                    "UPDATE scans SET state=?, finished_at=?, error=? WHERE execution_id=? AND state=?",
+                    (
+                        LifecycleState.FAILED.value,
+                        now,
+                        "execution lease expired; provider execution could not be confirmed alive",
+                        str(execution_id),
+                        LifecycleState.RUNNING.value,
+                    ),
+                )
+                self.connection.execute(
+                    "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                        str(event.id),
+                        str(event.actor_user_id) if event.actor_user_id else None,
+                        event.action,
+                        event.resource_type,
+                        str(event.resource_id) if event.resource_id else None,
+                        event.outcome,
+                        event.detail,
+                        event.created_at.isoformat(),
+                    ),
+                )
                 self.connection.commit()
                 return True
             except BaseException:
@@ -275,45 +335,83 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
             raise KeyError(str(execution_id))
         return LifecycleState(row[0])
 
-    
     def update_scan_state_if_current(
-        self, execution_id: UUID, expected: LifecycleState, target: LifecycleState, error: str | None = None
+        self,
+        execution_id: UUID,
+        expected: LifecycleState,
+        target: LifecycleState,
+        error: str | None = None,
     ) -> bool:
         validate_lifecycle_transition(expected, target)
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         started_at = now if target is LifecycleState.RUNNING else None
-        finished_at = now if target in {LifecycleState.COMPLETED, LifecycleState.FAILED, LifecycleState.CANCELLED, LifecycleState.PARTIAL} else None
+        finished_at = (
+            now
+            if target
+            in {
+                LifecycleState.COMPLETED,
+                LifecycleState.FAILED,
+                LifecycleState.CANCELLED,
+                LifecycleState.PARTIAL,
+            }
+            else None
+        )
         with self._transaction_lock:
             with self.connection:
                 cursor = self.connection.execute(
                     """UPDATE scans SET state=?, started_at=COALESCE(?,started_at),
                        finished_at=COALESCE(?,finished_at), error=?
                        WHERE execution_id=? AND state=?""",
-                (target.value, started_at, finished_at, error, str(execution_id), expected.value),
-            )
+                    (
+                        target.value,
+                        started_at,
+                        finished_at,
+                        error,
+                        str(execution_id),
+                        expected.value,
+                    ),
+                )
             return cursor.rowcount == 1
 
     def cancel_scan(self, execution_id: UUID) -> bool:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._transaction_lock:
             with self.connection:
                 cursor = self.connection.execute(
                     """UPDATE scans SET state=?, finished_at=?
                        WHERE execution_id=? AND state IN (?,?)""",
-                (LifecycleState.CANCELLED.value, now, str(execution_id),
-                 LifecycleState.QUEUED.value, LifecycleState.RUNNING.value),
-            )
+                    (
+                        LifecycleState.CANCELLED.value,
+                        now,
+                        str(execution_id),
+                        LifecycleState.QUEUED.value,
+                        LifecycleState.RUNNING.value,
+                    ),
+                )
             return cursor.rowcount == 1
 
-
     def update_scan_state_if_current_with_audit(
-        self, execution_id: UUID, expected: LifecycleState, target: LifecycleState,
-        event: AuditEvent, error: str | None = None
+        self,
+        execution_id: UUID,
+        expected: LifecycleState,
+        target: LifecycleState,
+        event: AuditEvent,
+        error: str | None = None,
     ) -> bool:
         validate_lifecycle_transition(expected, target)
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         started_at = now if target is LifecycleState.RUNNING else None
-        finished_at = now if target in {LifecycleState.COMPLETED, LifecycleState.FAILED, LifecycleState.CANCELLED, LifecycleState.PARTIAL} else None
+        finished_at = (
+            now
+            if target
+            in {
+                LifecycleState.COMPLETED,
+                LifecycleState.FAILED,
+                LifecycleState.CANCELLED,
+                LifecycleState.PARTIAL,
+            }
+            else None
+        )
         with self._transaction_lock:
             self.connection.execute("BEGIN IMMEDIATE")
             try:
@@ -321,16 +419,30 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
                     """UPDATE scans SET state=?, started_at=COALESCE(?,started_at),
                        finished_at=COALESCE(?,finished_at), error=?
                        WHERE execution_id=? AND state=?""",
-                    (target.value, started_at, finished_at, error, str(execution_id), expected.value),
+                    (
+                        target.value,
+                        started_at,
+                        finished_at,
+                        error,
+                        str(execution_id),
+                        expected.value,
+                    ),
                 )
                 if cursor.rowcount != 1:
                     self.connection.rollback()
                     return False
                 self.connection.execute(
                     "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?)",
-                    (str(event.id), str(event.actor_user_id) if event.actor_user_id else None,
-                     event.action, event.resource_type, str(event.resource_id) if event.resource_id else None,
-                     event.outcome, event.detail, event.created_at.isoformat()),
+                    (
+                        str(event.id),
+                        str(event.actor_user_id) if event.actor_user_id else None,
+                        event.action,
+                        event.resource_type,
+                        str(event.resource_id) if event.resource_id else None,
+                        event.outcome,
+                        event.detail,
+                        event.created_at.isoformat(),
+                    ),
                 )
                 self.connection.commit()
                 return True
@@ -338,23 +450,37 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
                 self.connection.rollback()
                 raise
 
-    def cancel_scan_with_audit(self, execution_id: UUID, success_event: AuditEvent, noop_event: AuditEvent) -> bool:
-        now = datetime.now(timezone.utc).isoformat()
+    def cancel_scan_with_audit(
+        self, execution_id: UUID, success_event: AuditEvent, noop_event: AuditEvent
+    ) -> bool:
+        now = datetime.now(UTC).isoformat()
         with self._transaction_lock:
             self.connection.execute("BEGIN IMMEDIATE")
             try:
                 cursor = self.connection.execute(
                     """UPDATE scans SET state=?, finished_at=?
                        WHERE execution_id=? AND state IN (?,?)""",
-                    (LifecycleState.CANCELLED.value, now, str(execution_id),
-                     LifecycleState.QUEUED.value, LifecycleState.RUNNING.value),
+                    (
+                        LifecycleState.CANCELLED.value,
+                        now,
+                        str(execution_id),
+                        LifecycleState.QUEUED.value,
+                        LifecycleState.RUNNING.value,
+                    ),
                 )
                 event = success_event if cursor.rowcount == 1 else noop_event
                 self.connection.execute(
                     "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?)",
-                    (str(event.id), str(event.actor_user_id) if event.actor_user_id else None,
-                     event.action, event.resource_type, str(event.resource_id) if event.resource_id else None,
-                     event.outcome, event.detail, event.created_at.isoformat()),
+                    (
+                        str(event.id),
+                        str(event.actor_user_id) if event.actor_user_id else None,
+                        event.action,
+                        event.resource_type,
+                        str(event.resource_id) if event.resource_id else None,
+                        event.outcome,
+                        event.detail,
+                        event.created_at.isoformat(),
+                    ),
                 )
                 self.connection.commit()
                 return cursor.rowcount == 1
@@ -369,8 +495,12 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
                    VALUES (?,?,?,?,?,?)
                    ON CONFLICT(canonical_id) DO UPDATE SET last_seen_at=excluded.last_seen_at""",
                 (
-                    str(asset.id), asset.canonical_id, asset.asset_type, asset.value,
-                    asset.first_seen_at.isoformat(), asset.last_seen_at.isoformat(),
+                    str(asset.id),
+                    asset.canonical_id,
+                    asset.asset_type,
+                    asset.value,
+                    asset.first_seen_at.isoformat(),
+                    asset.last_seen_at.isoformat(),
                 ),
             )
 
@@ -382,8 +512,12 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
                    ON CONFLICT(asset_id,protocol,port) DO UPDATE SET
                      service_name=excluded.service_name, version=excluded.version""",
                 (
-                    str(service.id), str(service.asset_id), service.protocol, service.port,
-                    service.service_name, service.version,
+                    str(service.id),
+                    str(service.asset_id),
+                    service.protocol,
+                    service.port,
+                    service.service_name,
+                    service.version,
                 ),
             )
 
@@ -393,8 +527,12 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
                 """INSERT INTO evidence (id,kind,content,source,captured_at,sha256,metadata_json)
                    VALUES (?,?,?,?,?,?,?)""",
                 (
-                    str(evidence.id), evidence.kind, evidence.content, evidence.source,
-                    evidence.captured_at.isoformat(), evidence.sha256,
+                    str(evidence.id),
+                    evidence.kind,
+                    evidence.content,
+                    evidence.source,
+                    evidence.captured_at.isoformat(),
+                    evidence.sha256,
                     json.dumps(dict(evidence.metadata), sort_keys=True),
                 ),
             )
@@ -406,9 +544,18 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
                    (id,title,asset_id,state,severity,vulnerability_id,cwe,cve,cvss,confidence,source,detected_at)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
-                    str(finding.id), finding.title, str(finding.asset_id), finding.state.value,
-                    finding.severity.value, finding.vulnerability_id, finding.cwe, finding.cve,
-                    finding.cvss, finding.confidence, finding.source, finding.detected_at.isoformat(),
+                    str(finding.id),
+                    finding.title,
+                    str(finding.asset_id),
+                    finding.state.value,
+                    finding.severity.value,
+                    finding.vulnerability_id,
+                    finding.cwe,
+                    finding.cve,
+                    finding.cvss,
+                    finding.confidence,
+                    finding.source,
+                    finding.detected_at.isoformat(),
                 ),
             )
             self.connection.executemany(
@@ -417,13 +564,28 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
             )
 
     def count(self, table: str) -> int:
-        allowed = {"campaigns", "scans", "assets", "services", "evidence", "findings", "finding_evidence", "finding_correlations", "evidence_validations", "users", "auth_sessions", "audit_events"}
+        allowed = {
+            "campaigns",
+            "scans",
+            "assets",
+            "services",
+            "evidence",
+            "findings",
+            "finding_evidence",
+            "finding_correlations",
+            "evidence_validations",
+            "users",
+            "auth_sessions",
+            "audit_events",
+        }
         if table not in allowed:
             raise ValueError("unsupported table")
         return int(self.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
 
     def asset_id(self, canonical_id: str) -> UUID:
-        row = self.connection.execute("SELECT id FROM assets WHERE canonical_id=?", (canonical_id,)).fetchone()
+        row = self.connection.execute(
+            "SELECT id FROM assets WHERE canonical_id=?", (canonical_id,)
+        ).fetchone()
         if row is None:
             raise KeyError(canonical_id)
         return UUID(row[0])

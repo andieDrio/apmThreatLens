@@ -153,7 +153,9 @@ class RiskEngine:
         else:
             score = base_score
             explanation = [factor.rationale for factor in factors]
-            explanation.append("Control coverage is unknown and therefore does not reduce the score.")
+            explanation.append(
+                "Control coverage is unknown and therefore does not reduce the score."
+            )
 
         score = round(max(0.0, min(1.0, score)), 4)
         level = _risk_level(score)
