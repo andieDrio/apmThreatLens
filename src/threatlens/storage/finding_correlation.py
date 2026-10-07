@@ -27,6 +27,9 @@ class DurableFindingCorrelator:
 
     def persist(self, finding: Finding) -> Finding:
         key = correlation_key(finding)
+        atomic_persist = getattr(self.repository, "persist_correlated_finding", None)
+        if atomic_persist is not None:
+            return atomic_persist(key, finding)
         existing = self.repository.find_correlated_finding(key)
         if existing is None:
             logical = correlate_findings((finding,))[0]
@@ -117,6 +120,72 @@ class SQLiteFindingCorrelationMixin:
 
 class PostgresFindingCorrelationMixin:
     """PostgreSQL equivalents of the durable correlation primitives."""
+
+    def persist_correlated_finding(self, key: str, finding: Finding) -> Finding:
+        """Atomically correlate one key across PostgreSQL instances.
+
+        A transaction-scoped advisory lock serializes all writers for the same
+        deterministic correlation key, while the finding, correlation mapping,
+        and evidence links are committed in one transaction.
+        """
+        logical = correlate_findings((finding,))[0]
+        with self.connection.transaction():
+            with self.connection.cursor() as cursor:
+                cursor.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (key,))
+                cursor.execute(
+                    """SELECT f.id,f.title,f.asset_id,f.state,f.severity,f.vulnerability_id,
+                              f.cwe,f.cve,f.cvss,f.confidence,f.source,f.detected_at
+                       FROM findings f
+                       JOIN finding_correlations c ON c.finding_id=f.id
+                       WHERE c.correlation_key=%s
+                       FOR UPDATE OF f""",
+                    (key,),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    cursor.execute(
+                        """INSERT INTO findings
+                           (id,title,asset_id,state,severity,vulnerability_id,cwe,cve,cvss,confidence,source,detected_at)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        (logical.id, logical.title, logical.asset_id, logical.state.value, logical.severity.value,
+                         logical.vulnerability_id, logical.cwe, logical.cve, logical.cvss, logical.confidence,
+                         logical.source, logical.detected_at),
+                    )
+                    cursor.executemany(
+                        "INSERT INTO finding_evidence (finding_id,evidence_id) VALUES (%s,%s)",
+                        [(logical.id, evidence_id) for evidence_id in logical.evidence_ids],
+                    )
+                    cursor.execute(
+                        "INSERT INTO finding_correlations (correlation_key,finding_id,created_at) VALUES (%s,%s,%s)",
+                        (key, logical.id, datetime.now(timezone.utc)),
+                    )
+                    return logical
+
+                cursor.execute(
+                    "SELECT evidence_id FROM finding_evidence WHERE finding_id=%s ORDER BY evidence_id",
+                    (row[0],),
+                )
+                evidence_rows = cursor.fetchall()
+                existing = Finding(
+                    id=row[0], title=row[1], asset_id=row[2],
+                    evidence_ids=tuple(item[0] for item in evidence_rows),
+                    state=FindingState(row[3]), severity=Severity(row[4]),
+                    vulnerability_id=row[5], cwe=row[6], cve=row[7], cvss=row[8],
+                    confidence=row[9], source=row[10], detected_at=row[11],
+                )
+                merged = correlate_findings((existing, finding))[0]
+                cursor.execute(
+                    """UPDATE findings SET title=%s,state=%s,severity=%s,vulnerability_id=%s,cwe=%s,cve=%s,
+                       cvss=%s,confidence=%s,source=%s,detected_at=%s WHERE id=%s""",
+                    (merged.title, merged.state.value, merged.severity.value, merged.vulnerability_id,
+                     merged.cwe, merged.cve, merged.cvss, merged.confidence, merged.source,
+                     merged.detected_at, existing.id),
+                )
+                cursor.executemany(
+                    "INSERT INTO finding_evidence (finding_id,evidence_id) VALUES (%s,%s) ON CONFLICT DO NOTHING",
+                    [(existing.id, evidence_id) for evidence_id in merged.evidence_ids],
+                )
+                return merged
 
     def initialize_finding_correlation(self) -> None:
         with self.connection.transaction():
