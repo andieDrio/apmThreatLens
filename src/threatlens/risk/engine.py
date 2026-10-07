@@ -114,7 +114,10 @@ class RiskEngine:
             derived = finding.cvss / 10.0
             values["exploitability"] = (
                 derived,
-                f"Exploitability is derived from supplied CVSS {finding.cvss:.1f}; CVSS is not used as the sole risk determinant.",
+                (
+                    f"Exploitability is derived from supplied CVSS {finding.cvss:.1f}; "
+                    "CVSS is not used as the sole risk determinant."
+                ),
                 "Finding.cvss",
             )
 
