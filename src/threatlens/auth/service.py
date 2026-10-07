@@ -77,6 +77,10 @@ class AuthenticationService:
             raise ValueError("username cannot be blank")
         if len(password) < 12:
             raise ValueError("password must be at least 12 characters")
+        try:
+            role = Role(role)
+        except ValueError as exc:
+            raise ValueError("unsupported role") from exc
         user = User(username=username, password_hash=self.create_password_hash(password), role=role.value)
         self.repository.save_user(user)
         self.repository.save_audit_event(
