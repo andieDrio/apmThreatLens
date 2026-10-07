@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from threading import Event
+from dataclasses import dataclass, field
+from threading import BoundedSemaphore, Event
 from typing import Callable, Protocol
 from uuid import UUID
 
@@ -45,6 +45,13 @@ class ScanOrchestrator:
     repository: ScanRepository
     policy: ExecutionPolicy
     authentication: AuthenticationService
+    runtime: ExecutionRuntime = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self.runtime = ExecutionRuntime(
+            self.policy,
+            concurrency_gate=BoundedSemaphore(self.policy.max_concurrency),
+        )
 
     def queue(self, campaign: Campaign, provider: ScanExecutor, principal: AuthenticatedPrincipal | None = None) -> Scan:
         """Create a persisted queued execution after authorization/scope validation."""
@@ -90,7 +97,7 @@ class ScanOrchestrator:
             )
 
         self.repository.update_scan_state(scan.execution_id, LifecycleState.RUNNING)
-        result = ExecutionRuntime(self.policy).execute(
+        result = self.runtime.execute(
             campaign,
             scan.execution_id,
             metadata,
