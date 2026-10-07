@@ -462,7 +462,7 @@ The API therefore gives the future GUI a usable findings table without allowing 
 Gate 30 is complete after explicit local validation.
 
 
-## 56. Architecture Gate 33 — Campaign & Scope Read Model API — IMPLEMENTED
+## 56. Architecture Gate 33 — Campaign & Scope Read Model API — COMPLETE
 
 Gate 33 establishes the authenticated application read model for campaign authorization boundaries. The `GET /api/v1/campaigns` endpoint requires READ permission and returns bounded campaign identity, explicit authorization state, lifecycle state, creation time, and persisted include/exclude scope entries.
 
