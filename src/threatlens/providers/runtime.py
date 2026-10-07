@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from threading import Event, Lock, Thread
+from threading import BoundedSemaphore, Event, Lock, Semaphore, Thread
 from time import monotonic
 from typing import Callable, Protocol
 from uuid import UUID
@@ -123,8 +123,9 @@ class ProviderRegistry:
 class ExecutionRuntime:
     """Runs one provider with cooperative timeout/cancellation and structured telemetry."""
 
-    def __init__(self, policy: ExecutionPolicy) -> None:
+    def __init__(self, policy: ExecutionPolicy, concurrency_gate: Semaphore | None = None) -> None:
         self.policy = policy
+        self._concurrency_gate = concurrency_gate or BoundedSemaphore(policy.max_concurrency)
 
     def execute(
         self,
@@ -156,6 +157,21 @@ class ExecutionRuntime:
             if observer is not None:
                 observer(event)
 
+        acquired = False
+        while not acquired:
+            acquired = self._concurrency_gate.acquire(timeout=0.05)
+            if not acquired and cancel_event.is_set():
+                emit(ProviderEventType.CANCELLED, "provider cancellation requested before execution slot was available")
+                return ExecutionResult(
+                    success=False,
+                    cancelled=True,
+                    timed_out=False,
+                    worker_still_running=False,
+                    error=None,
+                    metrics=ExecutionMetrics(monotonic() - started, 2, 0, 0),
+                    events=tuple(events),
+                )
+
         def invoke() -> None:
             try:
                 executor.execute(campaign, execution_id, cancel_event)
@@ -163,10 +179,15 @@ class ExecutionRuntime:
                 provider_error.append(f"{type(exc).__name__}: {exc}")
             finally:
                 done.set()
+                self._concurrency_gate.release()
 
         emit(ProviderEventType.STARTED, version=metadata.version)
         worker = Thread(target=invoke, name=f"threatlens-provider-{execution_id}", daemon=True)
-        worker.start()
+        try:
+            worker.start()
+        except BaseException:
+            self._concurrency_gate.release()
+            raise
         completed_in_time = done.wait(self.policy.timeout_seconds)
         timed_out = not completed_in_time
         error: str | None = provider_error[0] if provider_error else None
