@@ -53,9 +53,11 @@ class ScanOrchestrator:
         self.repository.save_audit_event(AuditEvent(actor_user_id=principal.user_id, action="SCAN_QUEUED", resource_type="SCAN", resource_id=scan.execution_id, outcome="SUCCESS", detail=f"provider={provider.name}"))
         return scan
 
-    def cancel(self, execution_id: UUID) -> None:
-        """Cancel only a queued or running execution; terminal scans cannot be altered."""
+    def cancel(self, execution_id: UUID, principal: AuthenticatedPrincipal | None = None) -> None:
+        """Cancel only a queued or running execution after authenticated authorization."""
+        self.authentication.authorize(principal, Permission.ASSESS)
         self.repository.update_scan_state(execution_id, LifecycleState.CANCELLED)
+        self.repository.save_audit_event(AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED", resource_type="SCAN", resource_id=execution_id, outcome="SUCCESS", detail="scan cancellation requested"))
 
     def run_registered(
         self,
