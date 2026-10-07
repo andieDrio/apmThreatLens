@@ -462,6 +462,16 @@ The API therefore gives the future GUI a usable findings table without allowing 
 Gate 30 is complete after explicit local validation.
 
 
+## 56. Architecture Gate 33 — Campaign & Scope Read Model API — IMPLEMENTED
+
+Gate 33 establishes the authenticated application read model for campaign authorization boundaries. The `GET /api/v1/campaigns` endpoint requires READ permission and returns bounded campaign identity, explicit authorization state, lifecycle state, creation time, and persisted include/exclude scope entries.
+
+The PostgreSQL repository uses fixed SQL with a maximum page size of 100 and deterministic ordering. Scope is exposed exactly as persisted authorization data; the read model does not infer new targets, expand network ranges, follow discovered assets, or turn observed destinations into authorized scope.
+
+The endpoint is strictly read-only. Campaign creation, scope mutation, authorization changes, and assessment execution remain separate control-plane operations requiring their own authenticated permissions, audit semantics, and fail-closed validation.
+
+**Validation status:** Gate 33 focused API regression tests are implemented. Local `pytest -q` and `ruff check .` are required before the gate can be declared complete.
+
 ## 55. Architecture Gate 32 — Scan Read Model API — IMPLEMENTED
 
 Gate 32 establishes the authenticated application read model for scan execution state. The `GET /api/v1/scans` endpoint requires READ permission and returns bounded execution metadata: execution and campaign identity, campaign name, provider name, lifecycle state, queued/started/finished timestamps, heartbeat timestamp, and a bounded error summary.
