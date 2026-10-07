@@ -62,7 +62,7 @@ class SQLiteFindingCorrelationMixin:
     def find_correlated_finding(self, correlation_key_value: str) -> Finding | None:
         row = self.connection.execute(
             """SELECT f.id,f.title,f.asset_id,f.state,f.severity,f.vulnerability_id,
-                      f.cwe,f.cve,f.cvss,f.confidence,f.source,f.detected_at,f.service_id,f.endpoint,f.parameter,f.location,f.service_id,f.endpoint,f.parameter,f.location,f.service_id,f.endpoint,f.parameter,f.location
+                      f.cwe,f.cve,f.cvss,f.confidence,f.source,f.detected_at,f.service_id,f.endpoint,f.parameter,f.location
                FROM findings f
                JOIN finding_correlations c ON c.finding_id=f.id
                WHERE c.correlation_key=?""",
@@ -149,7 +149,8 @@ class PostgresFindingCorrelationMixin:
                 cursor.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (key,))
                 cursor.execute(
                     """SELECT f.id,f.title,f.asset_id,f.state,f.severity,f.vulnerability_id,
-                              f.cwe,f.cve,f.cvss,f.confidence,f.source,f.detected_at
+                              f.cwe,f.cve,f.cvss,f.confidence,f.source,f.detected_at,
+                              f.service_id,f.endpoint,f.parameter,f.location
                        FROM findings f
                        JOIN finding_correlations c ON c.finding_id=f.id
                        WHERE c.correlation_key=%s
@@ -160,7 +161,7 @@ class PostgresFindingCorrelationMixin:
                 if row is None:
                     cursor.execute(
                         """INSERT INTO findings
-                           (id,title,asset_id,state,severity,vulnerability_id,cwe,cve,cvss,confidence,source,detected_at)
+                           (id,title,asset_id,state,severity,vulnerability_id,cwe,cve,cvss,confidence,source,detected_at,service_id,endpoint,parameter,location)
                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (
                             logical.id,
@@ -175,6 +176,10 @@ class PostgresFindingCorrelationMixin:
                             logical.confidence,
                             logical.source,
                             logical.detected_at,
+                            logical.service_id,
+                            logical.endpoint,
+                            logical.parameter,
+                            logical.location,
                         ),
                     )
                     cursor.executemany(
@@ -214,7 +219,7 @@ class PostgresFindingCorrelationMixin:
                 merged = correlate_findings((existing, finding))[0]
                 cursor.execute(
                     """UPDATE findings SET title=%s,state=%s,severity=%s,vulnerability_id=%s,cwe=%s,cve=%s,
-                       cvss=%s,confidence=%s,source=%s,detected_at=%s WHERE id=%s""",
+                       cvss=%s,confidence=%s,source=%s,detected_at=%s,service_id=%s,endpoint=%s,parameter=%s,location=%s WHERE id=%s""",
                     (
                         merged.title,
                         merged.state.value,
@@ -254,7 +259,8 @@ class PostgresFindingCorrelationMixin:
         with self.connection.cursor() as cursor:
             cursor.execute(
                 """SELECT f.id,f.title,f.asset_id,f.state,f.severity,f.vulnerability_id,
-                          f.cwe,f.cve,f.cvss,f.confidence,f.source,f.detected_at
+                          f.cwe,f.cve,f.cvss,f.confidence,f.source,f.detected_at,
+                          f.service_id,f.endpoint,f.parameter,f.location
                    FROM findings f
                    JOIN finding_correlations c ON c.finding_id=f.id
                    WHERE c.correlation_key=%s""",
@@ -313,6 +319,10 @@ class PostgresFindingCorrelationMixin:
                         finding.confidence,
                         finding.source,
                         finding.detected_at,
+                        finding.service_id,
+                        finding.endpoint,
+                        finding.parameter,
+                        finding.location,
                         finding_id,
                     ),
                 )
