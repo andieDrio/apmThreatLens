@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from threading import RLock
 from uuid import UUID
 
 from threatlens.domain.models import Asset, Campaign, Evidence, Finding, Service
@@ -59,6 +60,7 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
     """PostgreSQL implementation of the current persistence boundary."""
 
     def __init__(self, dsn: str) -> None:
+        self._transaction_lock = RLock()
         try:
             import psycopg
         except ImportError as exc:  # pragma: no cover - environment dependent
@@ -145,34 +147,58 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
             cursor.execute(f"SELECT COUNT(*) FROM {table}")
             return int(cursor.fetchone()[0])
 
+    def update_scan_state(self, execution_id: UUID, target, error: str | None = None) -> None:
+        from datetime import datetime, timezone
+        from threatlens.domain.models import LifecycleState, validate_lifecycle_transition
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute("SELECT state FROM scans WHERE execution_id=%s FOR UPDATE", (execution_id,))
+                    row = cursor.fetchone()
+                    if row is None:
+                        raise KeyError(str(execution_id))
+                    current = LifecycleState(row[0])
+                    validate_lifecycle_transition(current, target)
+                    now = datetime.now(timezone.utc)
+                    started_at = now if target is LifecycleState.RUNNING else None
+                    finished_at = now if target in {LifecycleState.COMPLETED, LifecycleState.FAILED, LifecycleState.CANCELLED, LifecycleState.PARTIAL} else None
+                    cursor.execute(
+                        """UPDATE scans SET state=%s, started_at=COALESCE(%s,started_at),
+                           finished_at=COALESCE(%s,finished_at), error=%s WHERE execution_id=%s""",
+                        (target.value, started_at, finished_at, error, execution_id),
+                    )
+
     def update_scan_state_if_current(self, execution_id: UUID, expected, target, error: str | None = None) -> bool:
+        from datetime import datetime, timezone
         from threatlens.domain.models import LifecycleState, validate_lifecycle_transition
         validate_lifecycle_transition(expected, target)
-        now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+        now = datetime.now(timezone.utc)
         started_at = now if target is LifecycleState.RUNNING else None
         finished_at = now if target in {LifecycleState.COMPLETED, LifecycleState.FAILED, LifecycleState.CANCELLED, LifecycleState.PARTIAL} else None
-        with self.connection.transaction():
-            with self.connection.cursor() as cursor:
-                cursor.execute(
-                    """UPDATE scans SET state=%s, started_at=COALESCE(%s,started_at),
-                       finished_at=COALESCE(%s,finished_at), error=%s
-                       WHERE execution_id=%s AND state=%s""",
-                    (target.value, started_at, finished_at, error, execution_id, expected.value),
-                )
-                return cursor.rowcount == 1
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        """UPDATE scans SET state=%s, started_at=COALESCE(%s,started_at),
+                           finished_at=COALESCE(%s,finished_at), error=%s
+                           WHERE execution_id=%s AND state=%s""",
+                        (target.value, started_at, finished_at, error, execution_id, expected.value),
+                    )
+                    return cursor.rowcount == 1
 
     def cancel_scan(self, execution_id: UUID) -> bool:
-        from threatlens.domain.models import LifecycleState
         from datetime import datetime, timezone
-        with self.connection.transaction():
-            with self.connection.cursor() as cursor:
-                cursor.execute(
-                    """UPDATE scans SET state=%s, finished_at=%s
-                       WHERE execution_id=%s AND state IN (%s,%s)""",
-                    (LifecycleState.CANCELLED.value, datetime.now(timezone.utc), execution_id,
-                     LifecycleState.QUEUED.value, LifecycleState.RUNNING.value),
-                )
-                return cursor.rowcount == 1
+        from threatlens.domain.models import LifecycleState
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        """UPDATE scans SET state=%s, finished_at=%s
+                           WHERE execution_id=%s AND state IN (%s,%s)""",
+                        (LifecycleState.CANCELLED.value, datetime.now(timezone.utc), execution_id,
+                         LifecycleState.QUEUED.value, LifecycleState.RUNNING.value),
+                    )
+                    return cursor.rowcount == 1
 
     def asset_id(self, canonical_id: str) -> UUID:
         with self.connection.cursor() as cursor:
