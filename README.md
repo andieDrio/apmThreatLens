@@ -187,7 +187,15 @@ Gate 33 establishes the authenticated GUI-facing campaign and authorization-scop
 
 PostgreSQL uses fixed SQL with a maximum page size of 100 and deterministic ordering. Scope is read directly from the persisted authorization boundary; the API does not infer targets, expand ranges, or normalize scope into newly authorized destinations. The endpoint is read-only and excludes credentials, evidence content, audit records, arbitrary SQL, and campaign mutation.
 
-**Validation status:** Gate 33 focused API regression tests are implemented. Local `pytest -q` and `ruff check .` are required before the gate can be declared complete.
+Gate 33 is complete after explicit local validation.
+
+### Architecture Gate 34 — Authenticated Scan Lifecycle Control API — IMPLEMENTED
+
+Gate 34 exposes the existing `ScanOrchestrator` lifecycle controls through the authenticated application boundary without duplicating lifecycle logic in FastAPI. `POST /api/v1/scans/{execution_id}/cancel` and `POST /api/v1/scans/{execution_id}/recover-stale` require `ASSESS` permission and route the authenticated principal into the existing orchestrator, which remains responsible for campaign/scan authorization, transactional compare-and-set lifecycle semantics, heartbeat lease recovery, and audit events.
+
+The control responses report the authoritative persisted lifecycle state and whether the requested recovery changed state. Unknown execution IDs return not-found, malformed identifiers fail validation, terminal cancellation is an explicit idempotent no-op, and no provider is invoked by these control endpoints. The API therefore cannot bypass the existing orchestration or persistence safety boundaries.
+
+**Validation status:** Gate 34 focused API regression tests are implemented. Local `pytest -q` and `ruff check .` are required before the gate can be declared complete.
 
 ### Architecture Gate 32 — Scan Read Model API — COMPLETE
 
