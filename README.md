@@ -45,11 +45,11 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 
 ### Current Architecture Gate
 
-Architecture Gate 19: PostgreSQL Canonical Persistence Enforcement. Gate 18 Reliability and Performance is complete after local validation. Running executions use durable heartbeat leases, stale recovery is explicit and authenticated, provider concurrency is bounded, lifecycle transitions are compare-and-set protected, persistence/audit mutations are atomic, and non-cooperative provider timeouts are explicitly surfaced. The next gate removes the remaining SQLite production ambiguity by making PostgreSQL the sole active development/test persistence path.
+Architecture Gate 20: PostgreSQL Transactional Concurrency and Failure-Recovery Hardening. Gate 19 PostgreSQL Canonical Persistence Enforcement is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
 
-### Gate 19 PostgreSQL Enforcement Progress
+### Gate 19 PostgreSQL Enforcement — COMPLETE
 
-A PostgreSQL-only integration-test harness is now present. It requires `THREATLENS_TEST_DATABASE_URL` or the canonical `THREATLENS_DATABASE_URL`, never falls back to SQLite, initializes the PostgreSQL schema, isolates tests with transactional `TRUNCATE ... CASCADE`, and covers domain persistence, foreign-key enforcement, authentication persistence, durable finding correlation, evidence-validation lifecycle, and scan lifecycle CAS semantics. The remaining Gate 19 work is to migrate the existing SQLite-specific persistence/orchestration tests and failure-injection fixtures to PostgreSQL before removing the legacy test dependency.
+The active persistence test suite now runs through PostgreSQL only. The shared integration fixture requires `THREATLENS_TEST_DATABASE_URL` or the canonical `THREATLENS_DATABASE_URL`, never falls back to SQLite, initializes the schema, isolates tests with `TRUNCATE ... CASCADE`, and covers domain persistence, foreign-key integrity, authentication, durable correlation, evidence validation, scan lifecycle CAS, concurrency-sensitive orchestration, and PostgreSQL trigger-based failure-atomicity scenarios. The repository contains no active test-suite imports of `SQLiteRepository`. The SQLite adapter is retained only as legacy compatibility code and receives no new production behavior.
 
 ### PostgreSQL Deployment Readiness
 
