@@ -6,6 +6,7 @@ import json
 from uuid import UUID
 
 from threatlens.domain.models import Asset, Campaign, Evidence, Finding, Service
+from threatlens.storage.auth import PostgresAuthMixin
 from threatlens.storage.evidence_validation import PostgresEvidenceValidationMixin
 from threatlens.storage.finding_correlation import PostgresFindingCorrelationMixin
 
@@ -54,7 +55,7 @@ CREATE TABLE IF NOT EXISTS scans (
 """
 
 
-class PostgresRepository(PostgresFindingCorrelationMixin, PostgresEvidenceValidationMixin):
+class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, PostgresEvidenceValidationMixin):
     """PostgreSQL implementation of the current persistence boundary."""
 
     def __init__(self, dsn: str) -> None:
@@ -73,6 +74,7 @@ class PostgresRepository(PostgresFindingCorrelationMixin, PostgresEvidenceValida
         self.connection.commit()
         self.initialize_finding_correlation()
         self.initialize_evidence_validation()
+        self.initialize_auth()
 
     def save_campaign(self, campaign: Campaign) -> None:
         with self.connection.transaction():
@@ -136,7 +138,7 @@ class PostgresRepository(PostgresFindingCorrelationMixin, PostgresEvidenceValida
                 )
 
     def count(self, table: str) -> int:
-        allowed = {"campaigns", "assets", "services", "evidence", "findings", "finding_evidence", "scans", "finding_correlations", "evidence_validations"}
+        allowed = {"campaigns", "assets", "services", "evidence", "findings", "finding_evidence", "scans", "finding_correlations", "evidence_validations", "users", "auth_sessions", "audit_events"}
         if table not in allowed:
             raise ValueError("unsupported table")
         with self.connection.cursor() as cursor:
