@@ -203,9 +203,7 @@ class TLSAssessmentProvider:
             return str(ipaddress.ip_address(value))
         except ValueError:
             if any(char.isspace() for char in value) or len(value) > 253:
-                raise ValueError(
-                    f"invalid TLS host: {target!r}"
-                ) from None from None
+                raise ValueError(f"invalid TLS host: {target!r}") from None
             normalized = value.lower().rstrip(".")
             labels = normalized.split(".")
             if not all(label and len(label) <= 63 and label[0] != "-" and label[-1] != "-" for label in labels):
