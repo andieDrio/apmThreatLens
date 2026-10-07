@@ -139,9 +139,7 @@ class NetworkDiscoveryProvider:
             return str(ip_address(value))
         except ValueError:
             if any(char.isspace() for char in value) or len(value) > 253:
-                raise ValueError(
-                    f"invalid network discovery host: {target!r}"
-                ) from None from None
+                raise ValueError(f"invalid network discovery host: {target!r}") from None
             normalized = value.lower().rstrip(".")
             labels = normalized.split(".")
             if not all(
