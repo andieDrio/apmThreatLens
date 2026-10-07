@@ -1,4 +1,5 @@
-from threading import Event
+from threading import Event, Thread
+from time import sleep
 
 import pytest
 
@@ -136,4 +137,41 @@ def test_concurrent_cancellation_wins_over_provider_completion(tmp_path) -> None
     result = orchestrator.run(campaign, provider, principal=principal)
     assert result.state is LifecycleState.CANCELLED
     assert repo.scan_state(result.execution_id) is LifecycleState.CANCELLED
+    repo.close()
+
+
+class ExternallyCancelledProvider:
+    name = "externally-cancelled-provider"
+
+    def __init__(self, started: Event) -> None:
+        self.started = started
+
+    def execute(self, campaign, execution_id, cancel_event) -> None:
+        self.started.set()
+        while not cancel_event.is_set():
+            sleep(0.005)
+
+
+def test_external_cancellation_is_thread_safe_against_provider_finalization(tmp_path) -> None:
+    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
+    started = Event()
+    cancel_event = Event()
+    provider = ExternallyCancelledProvider(started)
+    results = []
+
+    worker = Thread(
+        target=lambda: results.append(
+            orchestrator.run(campaign, provider, cancel_event, principal=principal)
+        )
+    )
+    worker.start()
+    assert started.wait(1.0)
+    orchestrator.cancel(results[0].execution_id if results else repo.connection.execute("SELECT execution_id FROM scans ORDER BY queued_at DESC LIMIT 1").fetchone()[0], principal=principal)
+    cancel_event.set()
+    worker.join(1.0)
+
+    assert not worker.is_alive()
+    assert len(results) == 1
+    assert results[0].state is LifecycleState.CANCELLED
+    assert repo.scan_state(results[0].execution_id) is LifecycleState.CANCELLED
     repo.close()
