@@ -1,4 +1,3 @@
-import sqlite3
 from threading import Event, Thread
 from time import sleep
 from uuid import UUID
@@ -10,7 +9,7 @@ from threatlens.domain.models import AuditEvent, Campaign, LifecycleState, Scope
 from threatlens.orchestration.engine import ScanOrchestrator
 from threatlens.providers.runtime import ProviderCapability, ProviderMetadata, ProviderRegistry
 from threatlens.safety.policy import ExecutionPolicy
-from threatlens.storage.sqlite import SQLiteRepository
+from threatlens.storage.postgres import PostgresRepository
 
 
 class SuccessfulProvider:
@@ -53,9 +52,8 @@ def make_campaign() -> Campaign:
     )
 
 
-def make_orchestrator(tmp_path) -> tuple[SQLiteRepository, ScanOrchestrator, Campaign, object]:
-    repo = SQLiteRepository(tmp_path / "threatlens.db")
-    repo.initialize()
+def make_orchestrator(postgres_repository) -> tuple[PostgresRepository, ScanOrchestrator, Campaign, object]:
+    repo = postgres_repository
     campaign = make_campaign()
     repo.save_campaign(campaign)
     auth = AuthenticationService(repo)
@@ -64,7 +62,7 @@ def make_orchestrator(tmp_path) -> tuple[SQLiteRepository, ScanOrchestrator, Cam
     return repo, ScanOrchestrator(repo, ExecutionPolicy(), auth), campaign, principal
 
 
-def test_successful_provider_reaches_completed(tmp_path) -> None:
+def test_successful_provider_reaches_completed(postgres_repository) -> None:
     repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
     result = orchestrator.run(campaign, SuccessfulProvider(), principal=principal)
     assert result.state is LifecycleState.COMPLETED
@@ -185,29 +183,26 @@ def test_external_cancellation_is_thread_safe_against_provider_finalization(tmp_
 def test_queue_and_audit_are_atomic_on_audit_failure(tmp_path) -> None:
     repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
     repo.connection.execute(
-        """CREATE TRIGGER fail_queue_audit BEFORE INSERT ON audit_events
-           WHEN NEW.action = 'SCAN_QUEUED'
-           BEGIN SELECT RAISE(ABORT, 'injected queue audit failure'); END"""
+        """CREATE OR REPLACE FUNCTION fail_queue_audit_fn() RETURNS trigger AS $ BEGIN IF NEW.action = 'SCAN_QUEUED' THEN RAISE EXCEPTION 'injected queue audit failure'; END IF; RETURN NEW; END; $ LANGUAGE plpgsql; CREATE TRIGGER fail_queue_audit BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION fail_queue_audit_fn()"""
     )
-    with pytest.raises(sqlite3.IntegrityError, match="injected queue audit failure"):
+    repo.connection.commit()
+    with pytest.raises(Exception, match="injected queue audit failure"):
         orchestrator.queue(campaign, SuccessfulProvider(), principal=principal)
     assert repo.count("scans") == 0
-    repo.connection.execute("DROP TRIGGER fail_queue_audit")
+    repo.connection.execute("DROP TRIGGER fail_queue_audit ON audit_events; DROP FUNCTION fail_queue_audit_fn()"); repo.connection.commit()
     repo.close()
 
 
 def test_successful_provider_is_not_marked_failed_when_finalization_persistence_fails(tmp_path) -> None:
     repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
     repo.connection.execute(
-        """CREATE TRIGGER fail_finalization_audit BEFORE INSERT ON audit_events
-           WHEN NEW.action = 'SCAN_FINALIZED'
-           BEGIN SELECT RAISE(ABORT, 'injected finalization audit failure'); END"""
+        """CREATE OR REPLACE FUNCTION fail_finalization_audit_fn() RETURNS trigger AS $ BEGIN IF NEW.action = 'SCAN_FINALIZED' THEN RAISE EXCEPTION 'injected finalization audit failure'; END IF; RETURN NEW; END; $ LANGUAGE plpgsql; CREATE TRIGGER fail_finalization_audit BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION fail_finalization_audit_fn()"""
     )
     with pytest.raises(sqlite3.IntegrityError, match="injected finalization audit failure"):
         orchestrator.run(campaign, SuccessfulProvider(), principal=principal)
     scan_id = repo.connection.execute("SELECT execution_id FROM scans ORDER BY queued_at DESC LIMIT 1").fetchone()[0]
     assert repo.scan_state(UUID(scan_id)) is LifecycleState.RUNNING
-    repo.connection.execute("DROP TRIGGER fail_finalization_audit")
+    repo.connection.execute("DROP TRIGGER fail_finalization_audit ON audit_events; DROP FUNCTION fail_finalization_audit_fn()"); repo.connection.commit()
     repo.update_scan_state_if_current_with_audit(
         UUID(scan_id),
         LifecycleState.RUNNING,
@@ -223,14 +218,12 @@ def test_cancellation_and_audit_are_atomic_on_audit_failure(tmp_path) -> None:
     repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
     scan = orchestrator.queue(campaign, SuccessfulProvider(), principal=principal)
     repo.connection.execute(
-        """CREATE TRIGGER fail_cancel_audit BEFORE INSERT ON audit_events
-           WHEN NEW.action = 'SCAN_CANCELLED'
-           BEGIN SELECT RAISE(ABORT, 'injected cancel audit failure'); END"""
+        """CREATE OR REPLACE FUNCTION fail_cancel_audit_fn() RETURNS trigger AS $ BEGIN IF NEW.action = 'SCAN_CANCELLED' THEN RAISE EXCEPTION 'injected cancel audit failure'; END IF; RETURN NEW; END; $ LANGUAGE plpgsql; CREATE TRIGGER fail_cancel_audit BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION fail_cancel_audit_fn()"""
     )
     with pytest.raises(sqlite3.IntegrityError, match="injected cancel audit failure"):
         orchestrator.cancel(scan.execution_id, principal=principal)
     assert repo.scan_state(scan.execution_id) is LifecycleState.QUEUED
-    repo.connection.execute("DROP TRIGGER fail_cancel_audit")
+    repo.connection.execute("DROP TRIGGER fail_cancel_audit ON audit_events; DROP FUNCTION fail_cancel_audit_fn()"); repo.connection.commit()
     orchestrator.cancel(scan.execution_id, principal=principal)
     assert repo.scan_state(scan.execution_id) is LifecycleState.CANCELLED
     repo.close()
@@ -240,10 +233,7 @@ def test_stale_running_scan_can_be_recovered_from_expired_heartbeat(tmp_path) ->
     repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
     scan = orchestrator.queue(campaign, SuccessfulProvider(), principal=principal)
     assert repo.update_scan_state_if_current(scan.execution_id, LifecycleState.QUEUED, LifecycleState.RUNNING)
-    repo.connection.execute(
-        "UPDATE scans SET heartbeat_at=? WHERE execution_id=?",
-        ("2000-01-01T00:00:00+00:00", str(scan.execution_id)),
-    )
+    repo.connection.execute("UPDATE scans SET heartbeat_at=%s WHERE execution_id=%s", ("2000-01-01T00:00:00+00:00", scan.execution_id))
     repo.connection.commit()
     assert orchestrator.recover_stale(scan.execution_id, principal=principal)
     assert repo.scan_state(scan.execution_id) is LifecycleState.FAILED
