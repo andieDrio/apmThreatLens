@@ -45,7 +45,7 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 
 ### Current Architecture Gate
 
-Architecture Gate 17: Authentication and Authorization. Raw evidence remains immutable and SHA-256 sealed. Validation is an explicit append-only lifecycle with PENDING → VALIDATED/REJECTED and terminal SUPERSEDED handling; validation decisions require traceability to persisted evidence and re-check stored evidence integrity before acceptance. Raw evidence is never rewritten by validation.
+Architecture Gate 18: Reliability and Performance. Raw evidence remains immutable and SHA-256 sealed. Validation is an explicit append-only lifecycle with PENDING → VALIDATED/REJECTED and terminal SUPERSEDED handling; validation decisions require traceability to persisted evidence and re-check stored evidence integrity before acceptance. Raw evidence is never rewritten by validation.
 
 ### PostgreSQL Deployment Readiness
 
@@ -61,6 +61,10 @@ Repository changes are verified through GitHub. Local pytest, lint, build, Postg
 
 Authentication is now a first-class backend boundary. Users use PBKDF2-HMAC-SHA256 password hashes, successful logins receive short-lived opaque sessions whose hashes are persisted, revoked sessions fail closed, role permissions are explicit, authentication/authorization decisions are audited, and assessment orchestration requires an authenticated principal with ASSESS permission. Viewer principals cannot execute assessments. SQLite and PostgreSQL persist users, sessions, and audit events without storing raw session tokens.
 
+## Architecture Gate 18 Status
+
+Provider execution now has a bounded cancellation-grace policy after timeout. A timeout always sets the cancellation event and never reports success. If a provider ignores cancellation beyond the grace budget, the runtime explicitly reports `worker_still_running` instead of pretending the worker was terminated. Runtime event collection is protected for concurrent provider/observer activity. This is cooperative cancellation hardening; Python threads are not forcibly killed.
+
 ## Next Architecture Direction
 
-The next priority is reliability and performance hardening of the authenticated execution boundary and persistence operations.
+The next priority is the next genuinely unfinished reliability/data-consistency boundary identified by re-inspection.
