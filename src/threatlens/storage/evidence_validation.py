@@ -62,6 +62,39 @@ class SQLiteEvidenceValidationMixin:
                  json.dumps([str(item) for item in validation.supporting_evidence_ids], sort_keys=True)),
             )
 
+    def transition_evidence_validation(self, previous_id: UUID, replacement: EvidenceValidation) -> None:
+        """Append a new lifecycle state and supersede the previous record atomically."""
+        if replacement.state is EvidenceValidationState.SUPERSEDED:
+            raise ValueError("use supersede_evidence_validation for SUPERSEDED records")
+        row = self.connection.execute(
+            "SELECT evidence_id,state FROM evidence_validations WHERE id=?", (str(previous_id),)
+        ).fetchone()
+        if row is None:
+            raise KeyError(str(previous_id))
+        current = EvidenceValidationState(row["state"])
+        validate_evidence_transition(current, replacement.state)
+        if replacement.evidence_id != UUID(row["evidence_id"]):
+            raise ValueError("validation transition cannot change evidence identity")
+        self.connection.execute("SELECT 1")
+        if replacement.supporting_evidence_ids:
+            rows = self.connection.execute(
+                "SELECT id FROM evidence WHERE id IN (" + ",".join("?" for _ in replacement.supporting_evidence_ids) + ")",
+                [str(item) for item in replacement.supporting_evidence_ids],
+            ).fetchall()
+            if len(rows) != len(replacement.supporting_evidence_ids):
+                raise KeyError("validation references missing supporting evidence")
+        import json
+        with self.connection:
+            self.connection.execute("UPDATE evidence_validations SET state=? WHERE id=?", (replacement.state.value, str(previous_id)))
+            self.connection.execute(
+                """INSERT INTO evidence_validations
+                   (id,evidence_id,state,validator,rationale,validated_at,supporting_evidence_ids_json,supersedes_id)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (str(replacement.id), str(replacement.evidence_id), replacement.state.value,
+                 replacement.validator, replacement.rationale, replacement.validated_at.isoformat(),
+                 json.dumps([str(item) for item in replacement.supporting_evidence_ids], sort_keys=True), str(previous_id)),
+            )
+
     def supersede_evidence_validation(self, previous_id: UUID, replacement: EvidenceValidation) -> None:
         if replacement.state is not EvidenceValidationState.SUPERSEDED:
             raise ValueError("replacement validation must be SUPERSEDED")
