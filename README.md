@@ -65,6 +65,10 @@ Authentication is now a first-class backend boundary. Users use PBKDF2-HMAC-SHA2
 
 Provider execution now has a bounded cancellation-grace policy after timeout. A timeout always sets the cancellation event and never reports success. If a provider ignores cancellation beyond the grace budget, the runtime explicitly reports `worker_still_running` instead of pretending the worker was terminated. Runtime event collection is protected for concurrent provider/observer activity. This is cooperative cancellation hardening; Python threads are not forcibly killed.
 
+## Gate 18 Reliability Hardening Update
+
+Scan lifecycle finalization now uses atomic repository compare-and-set transitions. External cancellation can atomically win over provider completion/failure, and late completion attempts observe the already-terminal state instead of overwriting it. SQLite and PostgreSQL expose the same race-safe lifecycle primitives. Cancellation of an already-terminal scan is an explicit no-op and is audited as such.
+
 ## Next Architecture Direction
 
-The next priority is the next genuinely unfinished reliability/data-consistency boundary identified by re-inspection.
+Continue reliability/performance hardening with provider execution concurrency limits and persistence transaction-boundary review.
