@@ -397,7 +397,7 @@ The matcher returns a bounded `VulnerabilityMatch` containing vulnerability iden
 
 ## Validation Status
 
-Gate 22 has been locally validated clean. Gates 23–24 have also been locally validated clean with `pytest -q` and `ruff check .`. Gate 25 remains pending local validation. Gate 26 is now implemented and pending local validation.
+Gate 22 has been locally validated clean. Gates 23–24 have also been locally validated clean with `pytest -q` and `ruff check .`. Gate 25 remains pending local validation. Gate 26 is now complete after local validation. Gate 27 is implemented and pending local validation.
 
 
 ## 48. Architecture Gate 25 — Evidence-Backed Vulnerability Finding Enrichment — IMPLEMENTED
@@ -420,3 +420,12 @@ PostgreSQL persists the expanded context with a foreign key from findings.servic
 Gate 26 does not introduce endpoint discovery, parameter fuzzing, exploitation, or automatic context inference. It only strengthens identity for evidence-backed findings already produced by authorized providers.
 
 **Validation status:** Gate 26 focused regression tests are implemented. Local pytest -q and ruff check . are required before the gate can be declared complete.
+
+
+## 50. Architecture Gate 27 — Risk Context Provenance — IMPLEMENTED
+
+Gate 27 strengthens the explainable risk boundary by requiring explicit provenance whenever environmental risk context is supplied. RiskContext now accepts a source identifier and rejects supplied context with no declared source. RiskAssessment retains the context source so downstream API, GUI, and reporting layers can show where environmental risk inputs originated.
+
+This does not fabricate environmental telemetry or infer business impact, exposure, criticality, threat relevance, exploitability, or control coverage. Unknown values remain unknown and are excluded from the weighted calculation as before. Operator-supplied context remains supported when its source is explicitly identified.
+
+**Validation status:** Gate 27 focused regression tests are implemented. Local pytest -q and ruff check . are required before the gate can be declared complete.
