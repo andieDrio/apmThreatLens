@@ -44,18 +44,18 @@ def test_concurrent_instances_persist_one_logical_finding(postgres_repository):
     results = []
     errors = []
 
-    def worker(worker_repo, metadata, evidence_id):
+    def worker(worker_repo, metadata, evidence):
         try:
             correlator = DurableFindingCorrelator(worker_repo)
             handoff = ProviderHandoff(worker_repo, correlator=correlator)
             barrier.wait(timeout=5)
-            results.append(handoff.persist_finding(uuid4(), metadata, asset, finding(asset, evidence_id), ()))
+            results.append(handoff.persist_finding(uuid4(), metadata, asset, finding(asset, evidence.id), (evidence,)))
         except Exception as exc:
             errors.append(exc)
 
     # Evidence is already durable; each worker uses its own PostgreSQL connection.
-    t1 = Thread(target=worker, args=(repo, a, ea.id))
-    t2 = Thread(target=worker, args=(repo2, b, eb.id))
+    t1 = Thread(target=worker, args=(repo, a, ea))
+    t2 = Thread(target=worker, args=(repo2, b, eb))
     t1.start(); t2.start(); t1.join(10); t2.join(10)
     try:
         assert not errors
