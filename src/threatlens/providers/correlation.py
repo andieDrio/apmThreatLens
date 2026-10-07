@@ -32,20 +32,26 @@ _STATE_RANK: dict[FindingState, int] = {
 
 
 def correlation_key(finding: Finding) -> str:
-    """Return a deterministic logical identity without using provider-specific IDs."""
+    """Return a deterministic logical identity including explicit assessment context."""
     if finding.vulnerability_id:
         identity = f"vuln:{_normalize(finding.vulnerability_id)}"
     else:
         identity = f"title:{_normalize(finding.title)}|cwe:{_normalize(finding.cwe or '')}"
-    return f"asset:{finding.asset_id}|{identity}"
+    context = (
+        f"service:{_uuid_or_empty(finding.service_id)}"
+        f"|endpoint:{_normalize_optional(finding.endpoint)}"
+        f"|parameter:{_normalize_optional(finding.parameter)}"
+        f"|location:{_normalize_optional(finding.location)}"
+    )
+    return f"asset:{finding.asset_id}|{identity}|{context}"
 
 
 def correlate_findings(findings: tuple[Finding, ...] | list[Finding]) -> tuple[Finding, ...]:
     """Merge equivalent findings while retaining every unique evidence reference.
 
-    Correlation is intentionally conservative: the current Finding contract has no
-    endpoint/parameter/service-location fields, so the engine never guesses those
-    dimensions. Findings with different asset IDs cannot correlate.
+    Correlation is conservative: explicit service, endpoint, parameter, and location
+    context is part of identity, and missing context never matches supplied context.
+    Findings with different asset IDs cannot correlate.
     """
     groups: dict[str, list[Finding]] = defaultdict(list)
     for finding in findings:
@@ -84,3 +90,11 @@ def correlate_findings(findings: tuple[Finding, ...] | list[Finding]) -> tuple[F
 
 def _normalize(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip().casefold())
+
+
+def _normalize_optional(value: str | None) -> str:
+    return _normalize(value) if value is not None else ""
+
+
+def _uuid_or_empty(value) -> str:
+    return str(value) if value is not None else ""
