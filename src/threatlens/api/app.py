@@ -23,6 +23,31 @@ class LoginResponse(BaseModel):
     expires_in: int
 
 
+class ServiceReadModel(BaseModel):
+    id: str
+    protocol: str
+    port: int
+    service_name: str | None = None
+    version: str | None = None
+
+
+class AssetReadModel(BaseModel):
+    id: str
+    canonical_id: str
+    asset_type: str
+    value: str
+    first_seen_at: str
+    last_seen_at: str
+    services: list[ServiceReadModel]
+
+
+class AssetListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[AssetReadModel]
+
+
 class FindingReadModel(BaseModel):
     id: str
     title: str
@@ -148,6 +173,27 @@ def create_app(repository=None, auth_service=None) -> FastAPI:
     def dashboard_summary(current=Depends(require(Permission.READ))) -> DashboardSummary:
         summary = context.repository.dashboard_summary()
         return DashboardSummary(**summary)
+
+    @app.get("/api/v1/assets", response_model=AssetListResponse)
+    def assets(
+        current=Depends(require(Permission.READ)),
+        limit: int = Query(default=50, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+    ) -> AssetListResponse:
+        result = context.repository.assets_read_model(limit=limit, offset=offset)
+        items = []
+        for item in result["items"]:
+            normalized = dict(item)
+            normalized["first_seen_at"] = item["first_seen_at"].isoformat()
+            normalized["last_seen_at"] = item["last_seen_at"].isoformat()
+            normalized["services"] = [ServiceReadModel(**service) for service in item["services"]]
+            items.append(AssetReadModel(**normalized))
+        return AssetListResponse(
+            total=result["total"],
+            limit=result["limit"],
+            offset=result["offset"],
+            items=items,
+        )
 
     @app.get("/api/v1/findings", response_model=FindingListResponse)
     def findings(
