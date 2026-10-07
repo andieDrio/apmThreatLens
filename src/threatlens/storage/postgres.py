@@ -6,6 +6,7 @@ import json
 from uuid import UUID
 
 from threatlens.domain.models import Asset, Campaign, Evidence, Finding, Service
+from threatlens.storage.evidence_validation import PostgresEvidenceValidationMixin
 from threatlens.storage.finding_correlation import PostgresFindingCorrelationMixin
 
 SCHEMA = """
@@ -53,7 +54,7 @@ CREATE TABLE IF NOT EXISTS scans (
 """
 
 
-class PostgresRepository(PostgresFindingCorrelationMixin):
+class PostgresRepository(PostgresFindingCorrelationMixin, PostgresEvidenceValidationMixin):
     """PostgreSQL implementation of the current persistence boundary."""
 
     def __init__(self, dsn: str) -> None:
@@ -135,7 +136,7 @@ class PostgresRepository(PostgresFindingCorrelationMixin):
                 )
 
     def count(self, table: str) -> int:
-        allowed = {"campaigns", "assets", "services", "evidence", "findings", "finding_evidence", "scans"}
+        allowed = {"campaigns", "assets", "services", "evidence", "findings", "finding_evidence", "scans", "finding_correlations", "evidence_validations"}
         if table not in allowed:
             raise ValueError("unsupported table")
         with self.connection.cursor() as cursor:
