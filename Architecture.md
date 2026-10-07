@@ -398,3 +398,12 @@ The matcher returns a bounded `VulnerabilityMatch` containing vulnerability iden
 ## Validation Status
 
 Gate 22 has been locally validated clean. Gates 23–24 are implemented with focused regression coverage but remain pending local `pytest -q` and `ruff check .` execution; they must not be treated as complete until that validation is successful.
+
+
+## 48. Architecture Gate 25 — Evidence-Backed Vulnerability Finding Enrichment — IMPLEMENTED
+
+Gate 25 establishes the controlled bridge from trusted vulnerability intelligence to an existing normalized finding. Enrichment requires an explicit deterministic VulnerabilityMatch and the intelligence record must reference evidence supplied in the same ProviderHandoff input. The enrichment result preserves the finding's existing evidence, unions trusted intelligence evidence, applies normalized vulnerability identity, CVE/CWE, CVSS, confidence, severity, and source provenance, and then routes the enriched finding through the existing ProviderHandoff and optional durable correlator.
+
+The boundary is network-free and fail-closed. It does not fetch feeds, infer affected versions, invent CVEs, assert exploitability, or bypass asset/evidence validation. Intelligence metadata is treated as supporting evidence for an existing finding, not as an independent vulnerability claim.
+
+Validation remains pending local execution of pytest -q and ruff check .; Gate 25 must not be declared complete until those checks succeed.
