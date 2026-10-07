@@ -80,12 +80,20 @@ class SQLiteAuthMixin:
         if lock is None:
             with self.connection:
                 self.connection.execute(
-                "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?)",
-                (str(event.id), str(event.actor_user_id) if event.actor_user_id else None, event.action,
-                 event.resource_type, str(event.resource_id) if event.resource_id else None,
-                 event.outcome, event.detail, event.created_at.isoformat()),
-            )
-
+                    "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (str(event.id), str(event.actor_user_id) if event.actor_user_id else None, event.action,
+                     event.resource_type, str(event.resource_id) if event.resource_id else None,
+                     event.outcome, event.detail, event.created_at.isoformat()),
+                )
+            return
+        with lock:
+            with self.connection:
+                self.connection.execute(
+                    "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (str(event.id), str(event.actor_user_id) if event.actor_user_id else None, event.action,
+                     event.resource_type, str(event.resource_id) if event.resource_id else None,
+                     event.outcome, event.detail, event.created_at.isoformat()),
+                )
 
 class PostgresAuthMixin:
     def initialize_auth(self) -> None:
