@@ -45,7 +45,7 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 
 ### Current Architecture Gate
 
-Architecture Gate 16: Evidence Management and Validation. Raw evidence remains immutable and SHA-256 sealed. Validation is an explicit append-only lifecycle with PENDING → VALIDATED/REJECTED and terminal SUPERSEDED handling; validation decisions require traceability to persisted evidence and re-check stored evidence integrity before acceptance. Raw evidence is never rewritten by validation.
+Architecture Gate 17: Authentication and Authorization. Raw evidence remains immutable and SHA-256 sealed. Validation is an explicit append-only lifecycle with PENDING → VALIDATED/REJECTED and terminal SUPERSEDED handling; validation decisions require traceability to persisted evidence and re-check stored evidence integrity before acceptance. Raw evidence is never rewritten by validation.
 
 ### PostgreSQL Deployment Readiness
 
@@ -57,6 +57,10 @@ For local development, install the Python dependencies after pulling the reposit
 
 Repository changes are verified through GitHub. Local pytest, lint, build, PostgreSQL connectivity, and runtime execution must be performed in the development environment; no result is claimed here unless actually executed.
 
+## Architecture Gate 17 Status
+
+Authentication is now a first-class backend boundary. Users use PBKDF2-HMAC-SHA256 password hashes, successful logins receive short-lived opaque sessions whose hashes are persisted, revoked sessions fail closed, role permissions are explicit, authentication/authorization decisions are audited, and assessment orchestration requires an authenticated principal with ASSESS permission. Viewer principals cannot execute assessments. SQLite and PostgreSQL persist users, sessions, and audit events without storing raw session tokens.
+
 ## Next Architecture Direction
 
-The next priority is Authentication and Authorization: enforce authenticated access, role-aware authorization, and fail-closed control boundaries before exposing higher-level assessment and remediation workflows.
+The next priority is reliability and performance hardening of the authenticated execution boundary and persistence operations.
