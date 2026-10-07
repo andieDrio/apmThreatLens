@@ -8,6 +8,7 @@ send credentials, fuzz parameters, or follow redirects.
 from __future__ import annotations
 
 import ipaddress
+import json
 from dataclasses import dataclass
 from threading import Event
 from typing import Callable
@@ -29,6 +30,7 @@ class APIObservation:
     headers: tuple[tuple[str, str], ...]
     body_excerpt: str
     redirect_location: str | None = None
+    body_truncated: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,7 +60,7 @@ class APIAssessmentProvider:
     metadata = ProviderMetadata(
         name=name,
         version="1.0.0",
-        capabilities=frozenset({ProviderCapability.WEB, ProviderCapability.EVIDENCE}),
+        capabilities=frozenset({ProviderCapability.API, ProviderCapability.EVIDENCE}),
         safe_by_default=True,
     )
 
@@ -114,6 +116,7 @@ class APIAssessmentProvider:
                     headers=observation.headers,
                     body_excerpt=observation.body_excerpt,
                     redirect_location=observation.redirect_location,
+                    body_truncated=len(observation.body_excerpt.encode("utf-8")) >= self.policy.max_response_bytes,
                 )
                 evidence = Evidence(
                     kind="api-assessment",
@@ -159,6 +162,8 @@ class APIAssessmentProvider:
                     ipaddress.ip_address(address)
                     for address in self.destination_resolver(hostname)
                 }
+        if not addresses:
+            raise ConnectionError(f"API assessment DNS resolution returned no addresses: {hostname}")
         if not self.policy.allow_private_addresses and any(
             address.is_private
             or address.is_loopback
@@ -217,9 +222,8 @@ def evaluate_api_policy(
         "",
     )
     if observation.status_code < 400 and content_type == "application/json":
-        if observation.method == "HEAD" or not observation.body_excerpt.strip():
+        if observation.method == "HEAD" or observation.body_truncated or not observation.body_excerpt.strip():
             return ()
-        import json
         try:
             json.loads(observation.body_excerpt)
         except json.JSONDecodeError:
