@@ -86,7 +86,6 @@ class SQLiteEvidenceValidationMixin:
                 raise KeyError("validation references missing supporting evidence")
         import json
         with self.connection:
-            self.connection.execute("UPDATE evidence_validations SET state=? WHERE id=?", (replacement.state.value, str(previous_id)))
             self.connection.execute(
                 """INSERT INTO evidence_validations
                    (id,evidence_id,state,validator,rationale,validated_at,supporting_evidence_ids_json,supersedes_id)
@@ -145,9 +144,12 @@ class PostgresEvidenceValidationMixin:
 
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
-                cursor.execute("SELECT 1 FROM evidence WHERE id=%s", (validation.evidence_id,))
-                if cursor.fetchone() is None:
+                cursor.execute("SELECT content,sha256 FROM evidence WHERE id=%s", (validation.evidence_id,))
+                evidence_row = cursor.fetchone()
+                if evidence_row is None:
                     raise KeyError(str(validation.evidence_id))
+                if not evidence_row[1] or evidence_row[1] != sha256(evidence_row[0].encode("utf-8")).hexdigest():
+                    raise ValueError("target evidence failed integrity validation")
                 if validation.state is EvidenceValidationState.SUPERSEDED:
                     raise ValueError("superseded validation records must be created by supersede_evidence_validation")
                 if validation.supporting_evidence_ids:
@@ -190,7 +192,6 @@ class PostgresEvidenceValidationMixin:
                     rows = cursor.fetchall()
                     if len(rows) != len(replacement.supporting_evidence_ids):
                         raise KeyError("validation references missing supporting evidence")
-                cursor.execute("UPDATE evidence_validations SET state=%s WHERE id=%s", (replacement.state.value, previous_id))
                 cursor.execute(
                     """INSERT INTO evidence_validations
                        (id,evidence_id,state,validator,rationale,validated_at,supporting_evidence_ids_json,supersedes_id)
