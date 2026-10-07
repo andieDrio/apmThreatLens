@@ -51,7 +51,7 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 
 ### Current Architecture Gate
 
-Architecture Gate 27: Risk Context Provenance. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
+Architecture Gate 28: Application API Boundary Foundation. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
 
 ### Gate 19 PostgreSQL Enforcement — COMPLETE
 
@@ -69,11 +69,11 @@ Gate 26 expands deterministic finding identity beyond asset and vulnerability id
 
 **Validation status:** Gate 26 focused regression tests are implemented but require local `pytest -q` and `ruff check .` execution before completion.
 
-### Architecture Gate 27 — Risk Context Provenance — IMPLEMENTED
+### Architecture Gate 27 — Risk Context Provenance — COMPLETE
 
 Gate 27 requires explicit provenance for supplied environmental risk context. Risk assessments now retain the source of environmental inputs, and supplied context without a declared source is rejected rather than treated as anonymous telemetry. This keeps risk scoring explainable and prepares the risk layer for auditable GUI drill-downs.
 
-**Validation status:** Gate 27 focused regression tests are implemented but require local `pytest -q` and `ruff check .` execution before completion.
+Gate 27 is complete after explicit local validation.
 
 ### Validation Limitation
 
@@ -152,3 +152,12 @@ Gate 25 connects trusted vulnerability intelligence to an existing normalized fi
 The enrichment layer is network-free and cannot fetch intelligence, infer affected versions, or bypass evidence requirements. Intelligence-backed metadata is therefore an evidence-supported augmentation of an existing finding rather than an assertion that a service is exploitable.
 
 **Validation status:** Gate 25 includes focused regression tests but requires local pytest -q and ruff check . execution before it may be declared complete.
+
+
+### Architecture Gate 28 — Application API Boundary Foundation — IMPLEMENTED
+
+Gate 28 establishes the authenticated HTTP control-plane boundary required by the future GUI. The application exposes a public health endpoint plus versioned authentication endpoints for login, logout, and the authenticated current-principal view. Session tokens remain opaque to the client-side domain layer, are validated through AuthenticationService, and are never persisted in raw form. Authorization remains enforced through the existing permission model.
+
+The API uses dependency injection for repository and authentication services, so HTTP transport does not bypass domain or persistence boundaries. The initial surface is intentionally read/control oriented; assessment execution, campaign mutation, findings, evidence, risk, attack-path, and reporting endpoints will be added only after their corresponding application contracts are defined.
+
+**Validation status:** Gate 28 focused API regression tests are implemented and require local pytest -q and ruff check . execution before completion.
