@@ -20,8 +20,9 @@ class EvidenceFindingRepository(Protocol):
 class ProviderHandoff:
     """Validates and persists provider output without conflating raw evidence and findings."""
 
-    def __init__(self, repository: EvidenceFindingRepository) -> None:
+    def __init__(self, repository: EvidenceFindingRepository, correlator=None) -> None:
         self.repository = repository
+        self.correlator = correlator
 
     @staticmethod
     def seal_evidence(evidence: Evidence) -> Evidence:
@@ -66,5 +67,7 @@ class ProviderHandoff:
             finding,
             source=provider.name,
         )
+        if self.correlator is not None:
+            return self.correlator.persist(normalized)
         self.repository.save_finding(normalized)
         return normalized
