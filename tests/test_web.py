@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import pytest
 
-from threatlens.domain.models import Campaign, Evidence, Scope
+from threatlens.domain.models import Campaign, Scope
 from threatlens.providers.handoff import ProviderHandoff
 from threatlens.providers.web import (
     HTTPObservation,
