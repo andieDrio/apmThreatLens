@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
-from threatlens.domain.models import (
+from threatlens.storage.finding_correlation import SQLiteFindingCorrelationMixin\n\nfrom threatlens.domain.models import (
     Asset,
     Campaign,
     Evidence,
