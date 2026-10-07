@@ -70,6 +70,8 @@ class PostgresRepository(PostgresFindingCorrelationMixin):
         with self.connection.cursor() as cursor:
             cursor.execute(SCHEMA)
         self.connection.commit()
+        self.initialize_finding_correlation()
+        self.initialize_evidence_validation()
 
     def save_campaign(self, campaign: Campaign) -> None:
         with self.connection.transaction():
