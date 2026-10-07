@@ -49,8 +49,7 @@ CREATE TABLE IF NOT EXISTS finding_evidence (
     evidence_id UUID NOT NULL REFERENCES evidence(id), PRIMARY KEY (finding_id, evidence_id)
 );
 CREATE TABLE IF NOT EXISTS scans (
-    execution_id UUID PRIMARY KEY,
-    campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    execution_id UUID PRIMARY KEY, campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
     provider_name TEXT NOT NULL, state TEXT NOT NULL, queued_at TIMESTAMPTZ NOT NULL,
     started_at TIMESTAMPTZ, finished_at TIMESTAMPTZ, error TEXT
 );
@@ -86,10 +85,7 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.execute(
-                    (
-                        "INSERT INTO campaigns "
-                        "(id,name,authorized,state,created_at) VALUES (%s,%s,%s,%s,%s)"
-                    ),
+                    "INSERT INTO campaigns (id,name,authorized,state,created_at) VALUES (%s,%s,%s,%s,%s)",
                     (campaign.id, campaign.name, campaign.authorized, campaign.state.value, campaign.created_at),
                 )
                 cursor.execute("INSERT INTO scopes (campaign_id) VALUES (%s)", (campaign.id,))
@@ -103,10 +99,9 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.execute(
-                    """INSERT INTO assets (
-                       id,canonical_id,asset_type,value,first_seen_at,last_seen_at
-                    ) VALUES (%s,%s,%s,%s,%s,%s)
-                    ON CONFLICT (canonical_id) DO UPDATE SET last_seen_at=EXCLUDED.last_seen_at""",
+                    """INSERT INTO assets (id,canonical_id,asset_type,value,first_seen_at,last_seen_at)
+                       VALUES (%s,%s,%s,%s,%s,%s)
+                       ON CONFLICT (canonical_id) DO UPDATE SET last_seen_at=EXCLUDED.last_seen_at""",
                     (asset.id, asset.canonical_id, asset.asset_type, asset.value, asset.first_seen_at, asset.last_seen_at),
                 )
 
@@ -125,9 +120,8 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.execute(
-                    """INSERT INTO evidence (
-                       id,kind,content,source,captured_at,sha256,metadata_json
-                    ) VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                    """INSERT INTO evidence (id,kind,content,source,captured_at,sha256,metadata_json)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                     (evidence.id, evidence.kind, evidence.content, evidence.source,
                      evidence.captured_at, evidence.sha256, json.dumps(dict(evidence.metadata), sort_keys=True)),
                 )
@@ -170,27 +164,14 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
         with self._transaction_lock:
             with self.connection.transaction():
                 with self.connection.cursor() as cursor:
-                    cursor.execute((
-                        "SELECT state, COALESCE(heartbeat_at, started_at) "
-                        "FROM scans WHERE execution_id=%s FOR UPDATE"
-                    ), (execution_id,))
+                    cursor.execute("SELECT state, COALESCE(heartbeat_at, started_at) FROM scans WHERE execution_id=%s FOR UPDATE", (execution_id,))
                     row = cursor.fetchone()
                     if row is None:
                         raise KeyError(str(execution_id))
                     if row[0] != "RUNNING" or row[1] is None or row[1] > cutoff:
                         return False
-                    cursor.execute((
-                        "UPDATE scans SET state=%s, finished_at=%s, error=%s "
-                        "WHERE execution_id=%s AND state=%s"
-                    ), ("FAILED", datetime.now(timezone.utc), (
-                            "execution lease expired; provider execution could not "
-                            "be confirmed alive"
-                        ), execution_id, "RUNNING"))
-                    cursor.execute((
-                        "INSERT INTO audit_events "
-                        "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
-                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)"
-                    ), (event.id, event.actor_user_id, event.action, event.resource_type, event.resource_id, event.outcome, event.detail, event.created_at))
+                    cursor.execute("UPDATE scans SET state=%s, finished_at=%s, error=%s WHERE execution_id=%s AND state=%s", ("FAILED", datetime.now(timezone.utc), "execution lease expired; provider execution could not be confirmed alive", execution_id, "RUNNING"))
+                    cursor.execute("INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)", (event.id, event.actor_user_id, event.action, event.resource_type, event.resource_id, event.outcome, event.detail, event.created_at))
                     return True
 
     def scan_state(self, execution_id: UUID):
@@ -216,11 +197,7 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
                          scan.queued_at, scan.started_at, scan.finished_at, scan.error, scan.heartbeat_at),
                     )
                     cursor.execute(
-                        (
-                        "INSERT INTO audit_events "
-                        "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
-                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)"
-                    ),
+                        "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                         (event.id, event.actor_user_id, event.action, event.resource_type, event.resource_id,
                          event.outcome, event.detail, event.created_at),
                     )
@@ -298,11 +275,7 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
                     if cursor.rowcount != 1:
                         return False
                     cursor.execute(
-                        (
-                        "INSERT INTO audit_events "
-                        "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
-                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)"
-                    ),
+                        "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                         (event.id, event.actor_user_id, event.action, event.resource_type, event.resource_id,
                          event.outcome, event.detail, event.created_at),
                     )
@@ -322,11 +295,7 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
                     )
                     event = success_event if cursor.rowcount == 1 else noop_event
                     cursor.execute(
-                        (
-                        "INSERT INTO audit_events "
-                        "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
-                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)"
-                    ),
+                        "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                         (event.id, event.actor_user_id, event.action, event.resource_type, event.resource_id,
                          event.outcome, event.detail, event.created_at),
                     )
