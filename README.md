@@ -51,7 +51,7 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 
 ### Current Architecture Gate
 
-Architecture Gate 28: Application API Boundary Foundation. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
+Architecture Gate 29: Dashboard Read Model API. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
 
 ### Gate 19 PostgreSQL Enforcement — COMPLETE
 
@@ -154,10 +154,19 @@ The enrichment layer is network-free and cannot fetch intelligence, infer affect
 **Validation status:** Gate 25 includes focused regression tests but requires local pytest -q and ruff check . execution before it may be declared complete.
 
 
-### Architecture Gate 28 — Application API Boundary Foundation — IMPLEMENTED
+### Architecture Gate 28 — Application API Boundary Foundation — COMPLETE
 
 Gate 28 establishes the authenticated HTTP control-plane boundary required by the future GUI. The application exposes a public health endpoint plus versioned authentication endpoints for login, logout, and the authenticated current-principal view. Session tokens remain opaque to the client-side domain layer, are validated through AuthenticationService, and are never persisted in raw form. Authorization remains enforced through the existing permission model.
 
 The API uses dependency injection for repository and authentication services, so HTTP transport does not bypass domain or persistence boundaries. The initial surface is intentionally read/control oriented; assessment execution, campaign mutation, findings, evidence, risk, attack-path, and reporting endpoints will be added only after their corresponding application contracts are defined.
 
-**Validation status:** Gate 28 focused API regression tests are implemented and require local pytest -q and ruff check . execution before completion.
+Gate 28 is complete after explicit local validation.
+
+
+### Architecture Gate 29 — Dashboard Read Model API — IMPLEMENTED
+
+Gate 29 adds the first authenticated GUI-facing read model: a bounded dashboard summary containing campaign, asset, service, finding, severity, and scan-state aggregates. The API exposes this only through the existing READ permission boundary; the frontend receives an application-level view model rather than arbitrary SQL or database rows.
+
+The summary is PostgreSQL-backed, read-only, deterministic, and intentionally aggregate-only. Detailed findings, evidence, risk, and attack-path endpoints will remain separate contracts so authorization and data exposure can be controlled independently.
+
+**Validation status:** Gate 29 focused API regression tests are implemented and require local pytest -q and ruff check . execution before completion.
