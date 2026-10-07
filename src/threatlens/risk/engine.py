@@ -37,8 +37,24 @@ class RiskContext:
     business_impact: float | None = None
     threat_relevance: float | None = None
     control_coverage: float | None = None
+    source: str | None = None
 
     def __post_init__(self) -> None:
+        supplied_context = any(
+            getattr(self, name) is not None
+            for name in (
+                "exploitability",
+                "exposure",
+                "asset_criticality",
+                "business_impact",
+                "threat_relevance",
+                "control_coverage",
+            )
+        )
+        if supplied_context and (self.source is None or not self.source.strip()):
+            raise ValueError("risk context source is required when context is supplied")
+        if self.source is not None and not self.source.strip():
+            raise ValueError("risk context source cannot be blank")
         for name in (
             "exploitability",
             "exposure",
@@ -74,6 +90,7 @@ class RiskAssessment:
     explanation: tuple[str, ...]
     inputs_used: tuple[str, ...]
     missing_inputs: tuple[str, ...]
+    context_source: str | None = None
 
 
 class RiskEngine:
@@ -187,6 +204,7 @@ class RiskEngine:
             explanation=tuple(explanation),
             inputs_used=tuple(factor.source for factor in factors),
             missing_inputs=missing,
+            context_source=context.source,
         )
 
 
