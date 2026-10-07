@@ -291,3 +291,10 @@ Gate 17 establishes the authentication and authorization boundary before higher-
 Role-based permissions are explicit: ADMIN has all permissions, ANALYST can READ/ASSESS/VALIDATE/REMEDIATE, and VIEWER can only READ. The assessment orchestration boundary requires an authenticated principal with ASSESS permission; campaign authorization remains a separate required safety control. Missing principals and insufficient permissions are rejected before provider execution.
 
 Authentication, logout, authorization denials, and scan queue events are persisted as audit events. SQLite and PostgreSQL implement equivalent user/session/audit persistence. Raw passwords and raw session tokens are never persisted. This gate establishes backend security primitives without coupling the domain to a particular HTTP framework; HTTP/API authentication adapters can be layered later without weakening the core boundary.
+
+
+## 37. Architecture Gate 18
+
+Gate 18 hardens provider execution reliability without claiming capabilities Python threads cannot provide. ExecutionPolicy now defines a bounded cancellation-grace interval after a provider exceeds its execution timeout. The runtime sets the cooperative cancellation event, waits only for the configured grace interval, and explicitly records whether the provider worker is still running. A timed-out execution can never become successful.
+
+Provider telemetry collection is protected by a lock because provider work and observers may execute concurrently. Event snapshots used for metrics and returned results are therefore consistent with the runtime's concurrent execution boundary. The runtime still uses daemon threads and cooperative cancellation; it does not falsely claim to forcibly terminate arbitrary provider code. A non-cooperative provider is surfaced as an explicit reliability condition for higher orchestration/operational handling.
