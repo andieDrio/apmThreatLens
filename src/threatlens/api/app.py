@@ -1,0 +1,113 @@
+"""HTTP application boundary for the ThreatLens control plane."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+
+from fastapi import Depends, FastAPI, Header, HTTPException, status
+from pydantic import BaseModel, Field
+
+from threatlens.auth.service import AuthenticationService, Permission
+from threatlens.storage.postgres import PostgresRepository
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=128)
+    password: str = Field(min_length=1, max_length=1024)
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "Bearer"
+    expires_in: int
+
+
+class PrincipalResponse(BaseModel):
+    user_id: str
+    username: str
+    role: str
+    session_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class APIContext:
+    repository: object
+    auth: AuthenticationService
+
+
+def create_app(repository=None, auth_service=None) -> FastAPI:
+    """Create the API with injected persistence/auth dependencies."""
+    if repository is None:
+        dsn = os.getenv("THREATLENS_DATABASE_URL")
+        if not dsn:
+            raise RuntimeError("THREATLENS_DATABASE_URL is required")
+        repository = PostgresRepository(dsn)
+        repository.initialize()
+    if auth_service is None:
+        auth_service = AuthenticationService(repository)
+    context = APIContext(repository=repository, auth=auth_service)
+
+    app = FastAPI(
+        title="APM ThreatLens API",
+        version="0.1.0",
+        docs_url="/docs",
+        redoc_url="/redoc",
+    )
+    app.state.context = context
+
+    @app.get("/health")
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    def principal(
+        authorization: str | None = Header(default=None),
+    ):
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="authentication required",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        token = authorization[7:].strip()
+        try:
+            return context.auth.authenticate_session(token)
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="session is invalid or expired",
+                headers={"WWW-Authenticate": "Bearer"},
+            ) from exc
+
+    def require(permission: Permission):
+        def dependency(current=Depends(principal)):
+            try:
+                context.auth.authorize(current, permission)
+            except PermissionError as exc:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+            return current
+
+        return dependency
+
+    @app.post("/api/v1/auth/login", response_model=LoginResponse)
+    def login(request: LoginRequest) -> LoginResponse:
+        try:
+            _, token = context.auth.authenticate(request.username, request.password)
+        except PermissionError as exc:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+        return LoginResponse(access_token=token, expires_in=int(context.auth.session_ttl.total_seconds()))
+
+    @app.post("/api/v1/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+    def logout(current=Depends(principal)) -> None:
+        context.auth.logout(current)
+
+    @app.get("/api/v1/me", response_model=PrincipalResponse)
+    def me(current=Depends(require(Permission.READ))) -> PrincipalResponse:
+        return PrincipalResponse(
+            user_id=str(current.user_id),
+            username=current.username,
+            role=current.role.value,
+            session_id=str(current.session_id),
+        )
+
+    return app
