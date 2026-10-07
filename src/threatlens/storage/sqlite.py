@@ -124,6 +124,8 @@ class SQLiteRepository(SQLiteFindingCorrelationMixin):
     def initialize(self) -> None:
         self.connection.executescript(SCHEMA)
         self.connection.commit()
+        self.initialize_finding_correlation()
+        self.initialize_evidence_validation()
 
     def save_campaign(self, campaign: Campaign) -> None:
         with self.connection:
