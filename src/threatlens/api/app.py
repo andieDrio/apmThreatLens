@@ -9,6 +9,8 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from threatlens.auth.service import AuthenticationService, Permission
+from threatlens.orchestration.engine import ScanOrchestrator
+from threatlens.safety.policy import ExecutionPolicy
 from threatlens.storage.postgres import PostgresRepository
 
 
@@ -132,13 +134,21 @@ class PrincipalResponse(BaseModel):
     session_id: str
 
 
+class ScanControlResponse(BaseModel):
+    execution_id: str
+    action: str
+    state: str
+    changed: bool
+
+
 @dataclass(frozen=True, slots=True)
 class APIContext:
     repository: object
     auth: AuthenticationService
+    orchestrator: ScanOrchestrator
 
 
-def create_app(repository=None, auth_service=None) -> FastAPI:
+def create_app(repository=None, auth_service=None, orchestrator=None) -> FastAPI:
     """Create the API with injected persistence/auth dependencies."""
     if repository is None:
         dsn = os.getenv("THREATLENS_DATABASE_URL")
@@ -148,7 +158,9 @@ def create_app(repository=None, auth_service=None) -> FastAPI:
         repository.initialize()
     if auth_service is None:
         auth_service = AuthenticationService(repository)
-    context = APIContext(repository=repository, auth=auth_service)
+    if orchestrator is None:
+        orchestrator = ScanOrchestrator(repository, ExecutionPolicy(), auth_service)
+    context = APIContext(repository=repository, auth=auth_service, orchestrator=orchestrator)
 
     app = FastAPI(
         title="APM ThreatLens API",
@@ -289,6 +301,52 @@ def create_app(repository=None, auth_service=None) -> FastAPI:
             limit=result["limit"],
             offset=result["offset"],
             items=items,
+        )
+
+    @app.post("/api/v1/scans/{execution_id}/cancel", response_model=ScanControlResponse)
+    def cancel_scan(execution_id: str, current=Depends(require(Permission.ASSESS))) -> ScanControlResponse:
+        from uuid import UUID
+
+        try:
+            parsed_execution_id = UUID(execution_id)
+            context.orchestrator.cancel(parsed_execution_id, principal=current)
+            state = context.repository.scan_state(parsed_execution_id)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="invalid execution_id",
+            ) from exc
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="scan not found") from exc
+        return ScanControlResponse(
+            execution_id=execution_id,
+            action="CANCEL",
+            state=state.value,
+            changed=state.value == "CANCELLED",
+        )
+
+    @app.post("/api/v1/scans/{execution_id}/recover-stale", response_model=ScanControlResponse)
+    def recover_stale_scan(
+        execution_id: str, current=Depends(require(Permission.ASSESS))
+    ) -> ScanControlResponse:
+        from uuid import UUID
+
+        try:
+            parsed_execution_id = UUID(execution_id)
+            changed = context.orchestrator.recover_stale(parsed_execution_id, principal=current)
+            state = context.repository.scan_state(parsed_execution_id)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="invalid execution_id",
+            ) from exc
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="scan not found") from exc
+        return ScanControlResponse(
+            execution_id=execution_id,
+            action="RECOVER_STALE",
+            state=state.value,
+            changed=changed,
         )
 
     @app.get("/api/v1/me", response_model=PrincipalResponse)
