@@ -6,7 +6,7 @@ import re
 from collections import defaultdict
 from dataclasses import replace
 from enum import IntEnum
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from threatlens.domain.models import Finding, FindingState
 
@@ -96,5 +96,5 @@ def _normalize_optional(value: str | None) -> str:
     return _normalize(value) if value is not None else ""
 
 
-def _uuid_or_empty(value) -> str:
+def _uuid_or_empty(value: UUID | None) -> str:
     return str(value) if value is not None else ""
