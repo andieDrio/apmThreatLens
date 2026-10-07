@@ -173,7 +173,7 @@ class PostgresEvidenceValidationMixin:
             raise ValueError("use supersede_evidence_validation for SUPERSEDED records")
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
-                cursor.execute("SELECT state,evidence_id FROM evidence_validations WHERE id=%s", (previous_id,))
+                cursor.execute("SELECT state,evidence_id FROM evidence_validations WHERE id=%s FOR UPDATE", (previous_id,))
                 row = cursor.fetchone()
                 if row is None:
                     raise KeyError(str(previous_id))
@@ -206,7 +206,7 @@ class PostgresEvidenceValidationMixin:
             raise ValueError("replacement validation must be SUPERSEDED")
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
-                cursor.execute("SELECT state FROM evidence_validations WHERE id=%s", (previous_id,))
+                cursor.execute("SELECT state FROM evidence_validations WHERE id=%s FOR UPDATE", (previous_id,))
                 row = cursor.fetchone()
                 if row is None:
                     raise KeyError(str(previous_id))
