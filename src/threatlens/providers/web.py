@@ -18,7 +18,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import UUID
 from urllib.parse import urlparse
 
-from threatlens.domain.models import Asset, Campaign, Evidence, Finding, FindingState, Severity
+from threatlens.domain.models import Campaign, Evidence, Finding, FindingState, Severity
 from threatlens.providers.handoff import ProviderHandoff
 from threatlens.providers.runtime import ProviderCapability, ProviderMetadata
 
