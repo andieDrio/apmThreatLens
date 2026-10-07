@@ -31,7 +31,10 @@ class SQLiteAuthMixin:
     def save_user(self, user: User) -> None:
         with self.connection:
             self.connection.execute(
-                "INSERT INTO users (id,username,password_hash,role,active,created_at) VALUES (?,?,?,?,?,?)",
+                (
+                    "INSERT INTO users (id,username,password_hash,role,active,created_at) "
+                    "VALUES (?,?,?,?,?,?)"
+                ),
                 (str(user.id), user.username, user.password_hash, user.role, int(user.active), user.created_at.isoformat()),
             )
 
@@ -57,7 +60,11 @@ class SQLiteAuthMixin:
         session_id = uuid.uuid4()
         with self.connection:
             self.connection.execute(
-                "INSERT INTO auth_sessions (id,user_id,token_hash,expires_at,revoked,created_at) VALUES (?,?,?,?,?,?)",
+                (
+                    "INSERT INTO auth_sessions "
+                    "(id,user_id,token_hash,expires_at,revoked,created_at) "
+                    "VALUES (?,?,?,?,?,?)"
+                ),
                 (str(session_id), str(user_id), token_hash, expires_at.isoformat(), 0, datetime.now(timezone.utc).isoformat()),
             )
         return session_id
@@ -80,7 +87,11 @@ class SQLiteAuthMixin:
         if lock is None:
             with self.connection:
                 self.connection.execute(
-                    "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                        "INSERT INTO audit_events "
+                        "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
+                        "VALUES (?,?,?,?,?,?,?,?)"
+                    ),
                     (str(event.id), str(event.actor_user_id) if event.actor_user_id else None, event.action,
                      event.resource_type, str(event.resource_id) if event.resource_id else None,
                      event.outcome, event.detail, event.created_at.isoformat()),
@@ -118,13 +129,19 @@ class PostgresAuthMixin:
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.execute(
-                    "INSERT INTO users (id,username,password_hash,role,active,created_at) VALUES (%s,%s,%s,%s,%s,%s)",
+                    (
+                    "INSERT INTO users (id,username,password_hash,role,active,created_at) "
+                    "VALUES (%s,%s,%s,%s,%s,%s)"
+                ),
                     (user.id, user.username, user.password_hash, user.role, user.active, user.created_at),
                 )
 
     def user_by_username(self, username: str):
         with self.connection.cursor() as cursor:
-            cursor.execute("SELECT id,username,password_hash,role,active,created_at FROM users WHERE username=%s", (username,))
+            cursor.execute((
+                "SELECT id,username,password_hash,role,active,created_at "
+                "FROM users WHERE username=%s"
+            ), (username,))
             row = cursor.fetchone()
         return None if row is None else User(id=row[0], username=row[1], password_hash=row[2],
                                              role=row[3], active=row[4], created_at=row[5])
@@ -141,7 +158,11 @@ class PostgresAuthMixin:
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.execute(
-                    "INSERT INTO auth_sessions (id,user_id,token_hash,expires_at,revoked,created_at) VALUES (%s,%s,%s,%s,%s,%s)",
+                    (
+                    "INSERT INTO auth_sessions "
+                    "(id,user_id,token_hash,expires_at,revoked,created_at) "
+                    "VALUES (%s,%s,%s,%s,%s,%s)"
+                ),
                     (session_id, user_id, token_hash, expires_at, False, datetime.now(timezone.utc)),
                 )
         return session_id
@@ -163,7 +184,9 @@ class PostgresAuthMixin:
             with self.connection.transaction():
                 with self.connection.cursor() as cursor:
                     cursor.execute(
-                        "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                        "INSERT INTO audit_events "
+                    "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                         (event.id, event.actor_user_id, event.action, event.resource_type, event.resource_id,
                          event.outcome, event.detail, event.created_at),
                     )
