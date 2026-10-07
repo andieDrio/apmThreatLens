@@ -100,7 +100,9 @@ class SQLiteAuthMixin:
         with lock:
             with self.connection:
                 self.connection.execute(
-                    "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                    "INSERT INTO audit_events "
+                    "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
+                    "VALUES (?,?,?,?,?,?,?,?)",
                     (str(event.id), str(event.actor_user_id) if event.actor_user_id else None, event.action,
                      event.resource_type, str(event.resource_id) if event.resource_id else None,
                      event.outcome, event.detail, event.created_at.isoformat()),
@@ -115,7 +117,8 @@ class PostgresAuthMixin:
                     role TEXT NOT NULL, active BOOLEAN NOT NULL, created_at TIMESTAMPTZ NOT NULL
                 )""")
                 cursor.execute("""CREATE TABLE IF NOT EXISTS auth_sessions (
-                    id UUID PRIMARY KEY, user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    id UUID PRIMARY KEY,
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                     token_hash TEXT NOT NULL UNIQUE, expires_at TIMESTAMPTZ NOT NULL,
                     revoked BOOLEAN NOT NULL, created_at TIMESTAMPTZ NOT NULL
                 )""")
@@ -148,7 +151,11 @@ class PostgresAuthMixin:
 
     def user_by_id(self, user_id: UUID):
         with self.connection.cursor() as cursor:
-            cursor.execute("SELECT id,username,password_hash,role,active,created_at FROM users WHERE id=%s", (user_id,))
+            cursor.execute(
+                "SELECT id,username,password_hash,role,active,created_at "
+                "FROM users WHERE id=%s",
+                (user_id,),
+            )
             row = cursor.fetchone()
         return None if row is None else User(id=row[0], username=row[1], password_hash=row[2],
                                              role=row[3], active=row[4], created_at=row[5])
@@ -169,7 +176,11 @@ class PostgresAuthMixin:
 
     def session_by_token_hash(self, token_hash: str):
         with self.connection.cursor() as cursor:
-            cursor.execute("SELECT id,user_id,expires_at,revoked FROM auth_sessions WHERE token_hash=%s", (token_hash,))
+            cursor.execute(
+                "SELECT id,user_id,expires_at,revoked "
+                "FROM auth_sessions WHERE token_hash=%s",
+                (token_hash,),
+            )
             row = cursor.fetchone()
         return None if row is None else {"id": str(row[0]), "user_id": str(row[1]),
                                          "expires_at": row[2], "revoked": row[3]}
