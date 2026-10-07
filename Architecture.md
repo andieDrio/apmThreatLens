@@ -382,13 +382,13 @@ Gate 22 does not discover endpoints from response bodies, expand OpenAPI/Swagger
 
 Gate 22 establishes a bounded API assessment provider for explicitly authorized HTTP(S) API targets. It supports only bounded read-only HEAD/GET requests, disables redirects, applies destination safety validation, honors campaign exclusions and cancellation, persists complete observations as sealed evidence before policy evaluation, and produces only the conservative malformed-JSON policy finding defined by the gate. Authenticated workflows, schema expansion, parameter fuzzing, mutation, SSRF exploitation, and authorization-bypass testing remain outside the foundation.
 
-## 46. Architecture Gate 23 — Vulnerability Intelligence Foundation — IMPLEMENTED
+## 46. Architecture Gate 23 — Vulnerability Intelligence Foundation — COMPLETE
 
 Gate 23 establishes a trusted, provider-independent vulnerability-intelligence normalization boundary. `VulnerabilityIntelligenceRecord` represents explicitly supplied vulnerability metadata including normalized vulnerability identity, severity, optional CVE/CWE, affected product/version metadata, optional fixed version, CVSS, confidence, references, source provenance, and optional evidence references.
 
 The normalization function is network-free and fail-closed. CVE and CWE identifiers are syntax-validated, confidence and CVSS are range-validated, blank metadata is rejected, and source/evidence provenance is preserved. The platform does not fetch external feeds in this gate, infer identifiers from service banners, or transform intelligence metadata into vulnerability findings by itself.
 
-## 47. Architecture Gate 24 — Deterministic Vulnerability Matching — IMPLEMENTED
+## 47. Architecture Gate 24 — Deterministic Vulnerability Matching — COMPLETE
 
 Gate 24 establishes a conservative matching layer between normalized service observations and trusted vulnerability intelligence. A vulnerability match requires all of the following: the service belongs to the explicitly supplied authorized asset, the intelligence record identifies a product, the service has an explicit service name and version, the product and service name agree case-insensitively, and the observed version exactly matches an affected version supplied by trusted intelligence.
 
@@ -397,7 +397,7 @@ The matcher returns a bounded `VulnerabilityMatch` containing vulnerability iden
 
 ## Validation Status
 
-Gate 22 has been locally validated clean. Gates 23–24 are implemented with focused regression coverage but remain pending local `pytest -q` and `ruff check .` execution; they must not be treated as complete until that validation is successful.
+Gate 22 has been locally validated clean. Gates 23–24 have also been locally validated clean with `pytest -q` and `ruff check .`. Gate 25 remains pending local validation.
 
 
 ## 48. Architecture Gate 25 — Evidence-Backed Vulnerability Finding Enrichment — IMPLEMENTED
