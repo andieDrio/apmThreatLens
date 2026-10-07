@@ -35,6 +35,10 @@ class ScanRepository(Protocol):
 
     def scan_state(self, execution_id: UUID) -> LifecycleState: ...
 
+    def update_scan_state_if_current(self, execution_id: UUID, expected: LifecycleState, target: LifecycleState, error: str | None = None) -> bool: ...
+
+    def cancel_scan(self, execution_id: UUID) -> bool: ...
+
 
 @dataclass(slots=True)
 class ScanOrchestrator:
@@ -56,8 +60,8 @@ class ScanOrchestrator:
     def cancel(self, execution_id: UUID, principal: AuthenticatedPrincipal | None = None) -> None:
         """Cancel only a queued or running execution after authenticated authorization."""
         self.authentication.authorize(principal, Permission.ASSESS)
-        self.repository.update_scan_state(execution_id, LifecycleState.CANCELLED)
-        self.repository.save_audit_event(AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED", resource_type="SCAN", resource_id=execution_id, outcome="SUCCESS", detail="scan cancellation requested"))
+        cancelled = self.repository.cancel_scan(execution_id)
+        self.repository.save_audit_event(AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED", resource_type="SCAN", resource_id=execution_id, outcome="SUCCESS" if cancelled else "NOOP", detail="scan cancellation requested" if cancelled else "scan already terminal"))
 
     def run_registered(
         self,
@@ -104,7 +108,8 @@ class ScanOrchestrator:
         else:
             final_state = LifecycleState.FAILED
             error = result.error or "provider execution failed"
-        self.repository.update_scan_state(scan.execution_id, final_state, error=error)
+        if not self.repository.update_scan_state_if_current(scan.execution_id, LifecycleState.RUNNING, final_state, error=error):
+            final_state = self.repository.scan_state(scan.execution_id)
 
         return Scan(
             campaign_id=scan.campaign_id,
@@ -141,7 +146,8 @@ class ScanOrchestrator:
         try:
             provider.execute(campaign, scan.execution_id, event)
             final_state = LifecycleState.CANCELLED if event.is_set() else LifecycleState.COMPLETED
-            self.repository.update_scan_state(scan.execution_id, final_state)
+            if not self.repository.update_scan_state_if_current(scan.execution_id, LifecycleState.RUNNING, final_state):
+                final_state = self.repository.scan_state(scan.execution_id)
         except Exception as exc:
             self.repository.update_scan_state(
                 scan.execution_id,
