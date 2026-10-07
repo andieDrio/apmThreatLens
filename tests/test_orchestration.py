@@ -40,7 +40,7 @@ def make_campaign() -> Campaign:
     )
 
 
-def make_orchestrator(tmp_path) -> tuple[SQLiteRepository, ScanOrchestrator, Campaign]:
+def make_orchestrator(tmp_path) -> tuple[SQLiteRepository, ScanOrchestrator, Campaign, object]:
     repo = SQLiteRepository(tmp_path / "threatlens.db")
     repo.initialize()
     campaign = make_campaign()
@@ -52,7 +52,7 @@ def make_orchestrator(tmp_path) -> tuple[SQLiteRepository, ScanOrchestrator, Cam
 
 
 def test_successful_provider_reaches_completed(tmp_path) -> None:
-    repo, orchestrator, campaign, principal
+    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
     result = orchestrator.run(campaign, SuccessfulProvider(), principal=principal)
     assert result.state is LifecycleState.COMPLETED
     assert repo.scan_state(result.execution_id) is LifecycleState.COMPLETED
@@ -60,7 +60,7 @@ def test_successful_provider_reaches_completed(tmp_path) -> None:
 
 
 def test_registered_provider_path_uses_runtime_and_observer(tmp_path) -> None:
-    repo, orchestrator, campaign = make_orchestrator(tmp_path)
+    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
     registry = ProviderRegistry()
     registry.register(
         ProviderMetadata(
@@ -78,7 +78,7 @@ def test_registered_provider_path_uses_runtime_and_observer(tmp_path) -> None:
 
 
 def test_provider_failure_is_persisted_and_does_not_escape_as_success(tmp_path) -> None:
-    repo, orchestrator, campaign = make_orchestrator(tmp_path)
+    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
     result = orchestrator.run(campaign, FailingProvider(), principal=principal)
     assert result.state is LifecycleState.FAILED
     assert repo.scan_state(result.execution_id) is LifecycleState.FAILED
@@ -86,7 +86,7 @@ def test_provider_failure_is_persisted_and_does_not_escape_as_success(tmp_path) 
 
 
 def test_pre_cancelled_execution_never_enters_provider(tmp_path) -> None:
-    repo, orchestrator, campaign = make_orchestrator(tmp_path)
+    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
     event = Event()
     event.set()
     result = orchestrator.run(campaign, CancelAwareProvider(), event, principal=principal)
@@ -96,7 +96,7 @@ def test_pre_cancelled_execution_never_enters_provider(tmp_path) -> None:
 
 
 def test_terminal_scan_cannot_transition_again(tmp_path) -> None:
-    repo, orchestrator, campaign = make_orchestrator(tmp_path)
+    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
     result = orchestrator.run(campaign, SuccessfulProvider(), principal=principal)
     with pytest.raises(ValueError, match="invalid lifecycle transition"):
         repo.update_scan_state(result.execution_id, LifecycleState.FAILED)
