@@ -35,22 +35,16 @@ def test_analyzer_follows_only_validated_evidence_backed_relationships():
             target_asset_id=middle,
             relationship_type=AttackPathRelationType.NETWORK_REACHABILITY,
             evidence_ids=(evidence_a,),
+            validated=True,
         ),
         AttackPathRelation(
             source_asset_id=middle,
             target_asset_id=objective,
             relationship_type=AttackPathRelationType.AUTHENTICATED_ACCESS,
             evidence_ids=(evidence_b,),
+            validated=True,
         ),
     ]
-
-    result = AttackPathAnalyzer().analyze(
-        entry_asset_ids=(entry,),
-        objective_asset_ids=(objective,),
-        relations=relations,
-        findings=(_finding(objective),),
-        max_hops=4,
-    )
 
     finding = _finding(objective)
     result = AttackPathAnalyzer().analyze(
