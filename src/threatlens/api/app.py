@@ -156,13 +156,11 @@ def create_app(repository=None, auth_service=None) -> FastAPI:
         offset: int = Query(default=0, ge=0),
     ) -> FindingListResponse:
         result = context.repository.findings_read_model(limit=limit, offset=offset)
-        items = [
-            FindingReadModel(
-                **item,
-                detected_at=item["detected_at"].isoformat(),
-            )
-            for item in result["items"]
-        ]
+        items = []
+        for item in result["items"]:
+            normalized = dict(item)
+            normalized["detected_at"] = item["detected_at"].isoformat()
+            items.append(FindingReadModel(**normalized))
         return FindingListResponse(
             total=result["total"],
             limit=result["limit"],
