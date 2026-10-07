@@ -358,7 +358,7 @@ Gate 20 closes the PostgreSQL concurrency hardening boundary. Durable finding co
 
 These controls rely on PostgreSQL transactional semantics rather than process-local Python locks for cross-instance correctness. Persistence failures remain fail-closed and do not permit an in-memory provider result to masquerade as a committed lifecycle state.
 
-## 43. Architecture Gate 21 — Controlled Web Assessment Foundation
+## 43. Architecture Gate 21 — Controlled Web Assessment Foundation — COMPLETE
 
 Gate 21 establishes the first bounded HTTP assessment provider for explicitly authorized HTTP(S) URL targets. The provider accepts only absolute HTTP(S) URLs without userinfo or fragments, honors campaign exclusions and cancellation, bounds target count, request timeout, response size, and HTTP methods, and disables automatic redirect following. Redirect destinations are never treated as newly authorized scope.
 
@@ -367,3 +367,12 @@ The safe default method is HEAD. GET is available only when explicitly configure
 Each HTTP response is serialized into immutable, SHA-256-sealed evidence with execution/provider provenance before any policy finding is generated. The current deterministic policy layer evaluates only evidence-backed response-header controls: missing HSTS on successful HTTPS responses and missing X-Content-Type-Options. Findings reference the exact persisted evidence and cross the ProviderHandoff boundary.
 
 Gate 21 deliberately excludes authenticated API workflows, state-changing requests, parameter fuzzing, schema-driven API discovery, credential testing, SSRF exploitation, redirect traversal, and intrusive web testing. API-specific assessment will require a separate architecture gate with explicit authorization, execution, evidence, and safety contracts.
+
+
+## 44. Architecture Gate 22 — Controlled API Assessment Foundation
+
+Gate 22 establishes a separate bounded API assessment provider for explicitly authorized HTTP(S) API URL targets. The provider accepts only absolute HTTP(S) URLs without userinfo or fragments, honors campaign exclusions and cancellation, bounds target count, request timeout, response size, and HTTP methods, and disables automatic redirect following. The safe default method is HEAD; GET is available only when explicitly configured. Destination validation reuses the same conservative SSRF boundary as web assessment and rejects private, loopback, link-local, or reserved destinations unless private addressing is explicitly enabled for an authorized environment.
+
+API responses are normalized into API-specific observations and persisted as immutable, SHA-256-sealed evidence through ProviderHandoff before any finding is generated. The initial deterministic API policy is intentionally narrow: a successful response explicitly labeled application/json may produce a LOW/SUSPECTED finding only when its captured body is malformed JSON and the capture is complete. Truncated captures, HEAD responses, non-JSON responses, and redirects do not create this finding because incomplete evidence must not be treated as malformed application output.
+
+Gate 22 does not discover endpoints from response bodies, expand OpenAPI/Swagger schemas, follow API links, send credentials, test authentication bypasses, fuzz parameters, perform state-changing methods, exploit SSRF, or infer authorization weaknesses. API assessment remains explicitly scoped and evidence-first. Later authenticated/API-schema gates must introduce their own authorization, secret-handling, mutation, rate-limit, and evidence contracts rather than weakening this foundation.
