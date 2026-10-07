@@ -42,6 +42,30 @@ def test_validation_rejects_missing_supporting_evidence(tmp_path) -> None:
     repo.close()
 
 
+def test_pending_validation_transitions_append_only(tmp_path) -> None:
+    repo = SQLiteRepository(tmp_path / "threatlens.db")
+    repo.initialize()
+    evidence = Evidence(kind="banner", content="SSH-2.0-test", source="test")
+    repo.save_evidence(evidence)
+    pending = EvidenceValidation(
+        evidence_id=evidence.id,
+        state=EvidenceValidationState.PENDING,
+        validator="analyst",
+        rationale="Awaiting independent review.",
+    )
+    repo.save_evidence_validation(pending)
+    validated = EvidenceValidation(
+        evidence_id=evidence.id,
+        state=EvidenceValidationState.VALIDATED,
+        validator="reviewer",
+        rationale="Independently confirmed.",
+        supporting_evidence_ids=(evidence.id,),
+    )
+    repo.transition_evidence_validation(pending.id, validated)
+    assert repo.count("evidence_validations") == 2
+    repo.close()
+
+
 def test_validation_cannot_be_rewritten_without_supersession(tmp_path) -> None:
     repo = SQLiteRepository(tmp_path / "threatlens.db")
     repo.initialize()
