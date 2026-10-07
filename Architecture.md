@@ -442,10 +442,21 @@ The initial API surface deliberately does not expose arbitrary database access o
 **Validation status:** Gate 28 focused API regression tests are implemented. Local pytest -q and ruff check . are required before the gate can be declared complete.
 
 
-## 52. Architecture Gate 29 — Dashboard Read Model API — IMPLEMENTED
+## 52. Architecture Gate 29 — Dashboard Read Model API — COMPLETE
 
 Gate 29 establishes the first GUI-facing application read model. The authenticated `GET /api/v1/dashboard/summary` endpoint exposes bounded aggregate counts for campaigns, assets, services, findings, finding severity, and scan lifecycle state. It requires the existing READ permission and returns an application-level response model rather than database rows or arbitrary query parameters.
 
 The PostgreSQL repository supplies the aggregate data through fixed queries. The boundary is read-only and intentionally excludes detailed evidence, finding contents, credentials, audit records, or unrestricted database access. Future GUI detail views will receive separate least-privilege contracts.
 
-**Validation status:** Gate 29 focused API regression tests are implemented. Local pytest -q and ruff check . are required before the gate can be declared complete.
+Gate 29 is complete after explicit local validation.
+
+
+## 53. Architecture Gate 30 — Findings Read Model API — IMPLEMENTED
+
+Gate 30 establishes the authenticated application read model for finding inventory. `GET /api/v1/findings` requires READ permission and returns a bounded page containing finding identity, lifecycle state, severity, vulnerability metadata, confidence, source, detection time, asset canonical identity, and explicit service/endpoint/parameter/location context.
+
+The repository contract is deliberately read-only and bounded. PostgreSQL uses fixed SQL with deterministic ordering and a maximum page size of 100. The response never exposes raw evidence content, evidence metadata, audit records, or arbitrary query/database controls. Evidence detail and future remediation/validation workflows require separate least-privilege application contracts.
+
+The API therefore gives the future GUI a usable findings table without allowing the presentation layer to bypass the domain, authorization, evidence, or persistence boundaries.
+
+**Validation status:** Gate 30 focused API regression tests are implemented. Local pytest -q and ruff check . are required before the gate can be declared complete.
