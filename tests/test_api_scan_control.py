@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC
 from uuid import UUID, uuid4
 
 import httpx
@@ -143,7 +143,7 @@ async def test_cancel_terminal_scan_is_idempotent_control_operation():
             headers={"Authorization": f"Bearer {token}"},
         )
     assert response.status_code == 200
-    assert response.json()["changed"] is True
+    assert response.json()["changed"] is False
     assert response.json()["state"] == "COMPLETED"
     assert orchestrator.cancel_principals
 
@@ -161,7 +161,7 @@ async def test_recover_stale_requires_assess_permission():
 
 
 @pytest.mark.anyio
-async def test_recover_stale_returns_false_when_lease_is_not_stale():
+async def test_recover_stale_transitions_running_scan_and_returns_changed():
     client, repository, orchestrator = await make_client()
     repository.states[EXECUTION_ID] = LifecycleState.RUNNING
     async with client:
