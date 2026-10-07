@@ -23,6 +23,15 @@ class LoginResponse(BaseModel):
     expires_in: int
 
 
+class DashboardSummary(BaseModel):
+    campaigns: int
+    assets: int
+    services: int
+    findings: int
+    findings_by_severity: dict[str, int]
+    scans_by_state: dict[str, int]
+
+
 class PrincipalResponse(BaseModel):
     user_id: str
     username: str
@@ -103,6 +112,11 @@ def create_app(repository=None, auth_service=None) -> FastAPI:
     @app.post("/api/v1/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
     def logout(current=Depends(principal)) -> None:
         context.auth.logout(current)
+
+    @app.get("/api/v1/dashboard/summary", response_model=DashboardSummary)
+    def dashboard_summary(current=Depends(require(Permission.READ))) -> DashboardSummary:
+        summary = context.repository.dashboard_summary()
+        return DashboardSummary(**summary)
 
     @app.get("/api/v1/me", response_model=PrincipalResponse)
     def me(current=Depends(require(Permission.READ))) -> PrincipalResponse:
