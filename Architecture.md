@@ -107,7 +107,7 @@ Risk must be explainable and must not depend exclusively on CVSS. Environmental 
 
 Use explicit identifiers, lifecycle states, timestamps, provenance, and database/application constraints appropriate to the selected persistence technology. Correlation must remain deterministic and auditable.
 
-SQLite remains the dependency-light local test persistence implementation. PostgreSQL is now a first-class deployment persistence target through `PostgresRepository`, using the same domain repository methods and equivalent integrity constraints. PostgreSQL connection details are deployment configuration; the application does not auto-start or auto-create a database server.
+PostgreSQL is the canonical and permanent persistence implementation through `PostgresRepository`, using the domain repository methods and production integrity constraints. SQLite is not a production persistence backend; any retained SQLite code exists only for legacy/unit-test compatibility and must not define production behavior or introduce a second runtime persistence path. PostgreSQL connection details are deployment configuration; the application does not auto-start or auto-create a database server.
 
 ## 9. Campaign / Scan Orchestration
 
@@ -183,7 +183,7 @@ The integration is deliberately fail-closed when finding generation is enabled b
 
 ## 18. PostgreSQL Deployment Boundary
 
-PostgreSQL is a supported production persistence backend through `PostgresRepository`. The schema mirrors the current domain integrity requirements: foreign keys, unique canonical asset identity, service uniqueness per asset/protocol/port, finding/evidence relationships, scan execution identity, and bounded CVSS/confidence values.
+PostgreSQL is the permanent production persistence backend through `PostgresRepository`. The schema mirrors the current domain integrity requirements: foreign keys, unique canonical asset identity, service uniqueness per asset/protocol/port, finding/evidence relationships, scan execution identity, and bounded CVSS/confidence values.
 
 The repository contains `.env.example` with a non-secret `THREATLENS_DATABASE_URL` template. Real credentials must remain outside version control. Local PostgreSQL installation, service lifecycle, database creation, and credential provisioning are deployment responsibilities and must not be silently automated by the application.
 
