@@ -102,3 +102,20 @@ def test_runtime_cancels_cooperatively_on_timeout() -> None:
     assert cancel_event.is_set()
     assert result.error == "TimeoutError: provider exceeded 0.010s execution budget"
     assert result.events[-1].event_type is ProviderEventType.ERROR
+
+
+class StubbornProvider:
+    name = "stubborn"
+
+    def execute(self, campaign, execution_id, cancel_event) -> None:
+        sleep(0.15)
+
+
+def test_runtime_marks_non_cooperative_timeout_worker(tmp_path) -> None:
+    runtime = ExecutionRuntime(ExecutionPolicy(timeout_seconds=0.01, cancellation_grace_seconds=0.001))
+    provider = StubbornProvider()
+    result = runtime.execute(campaign(), uuid4(), metadata(provider.name), provider, Event())
+    assert result.timed_out
+    assert result.worker_still_running
+    assert "cancellation grace period" in result.error
+    sleep(0.2)
