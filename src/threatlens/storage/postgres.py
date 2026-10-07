@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from uuid import UUID
 
-from threatlens.domain.models import Asset, Campaign, Evidence, Finding, Service
+from threatlens.domain.models import Asset, Campaign, Evidence, Finding, Service\nfrom threatlens.storage.finding_correlation import PostgresFindingCorrelationMixin
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS campaigns (
