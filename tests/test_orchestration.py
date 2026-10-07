@@ -1,4 +1,4 @@
-from threading import Event, Thread
+from threading import Barrier, Event, Thread
 from time import sleep
 from uuid import UUID
 
@@ -191,7 +191,20 @@ def test_external_cancellation_is_thread_safe_against_provider_finalization(
 def test_queue_and_audit_are_atomic_on_audit_failure(postgres_repository) -> None:
     repo, orchestrator, campaign, principal = make_orchestrator(postgres_repository)
     repo.connection.execute(
-        """CREATE OR REPLACE FUNCTION fail_queue_audit_fn() RETURNS trigger AS $ BEGIN IF NEW.action = 'SCAN_QUEUED' THEN RAISE EXCEPTION 'injected queue audit failure'; END IF; RETURN NEW; END; $ LANGUAGE plpgsql; CREATE TRIGGER fail_queue_audit BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION fail_queue_audit_fn()"""
+        """
+        CREATE OR REPLACE FUNCTION fail_queue_audit_fn()
+        RETURNS trigger AS $
+        BEGIN
+            IF NEW.action = 'SCAN_QUEUED' THEN
+                RAISE EXCEPTION 'injected queue audit failure';
+            END IF;
+            RETURN NEW;
+        END;
+        $ LANGUAGE plpgsql;
+        CREATE TRIGGER fail_queue_audit
+        BEFORE INSERT ON audit_events
+        FOR EACH ROW EXECUTE FUNCTION fail_queue_audit_fn()
+        """
     )
     repo.connection.commit()
     with pytest.raises(Exception, match="injected queue audit failure"):
@@ -209,7 +222,20 @@ def test_successful_provider_is_not_marked_failed_when_finalization_persistence_
 ) -> None:
     repo, orchestrator, campaign, principal = make_orchestrator(postgres_repository)
     repo.connection.execute(
-        """CREATE OR REPLACE FUNCTION fail_finalization_audit_fn() RETURNS trigger AS $ BEGIN IF NEW.action = 'SCAN_FINALIZED' THEN RAISE EXCEPTION 'injected finalization audit failure'; END IF; RETURN NEW; END; $ LANGUAGE plpgsql; CREATE TRIGGER fail_finalization_audit BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION fail_finalization_audit_fn()"""
+        """
+        CREATE OR REPLACE FUNCTION fail_finalization_audit_fn()
+        RETURNS trigger AS $
+        BEGIN
+            IF NEW.action = 'SCAN_FINALIZED' THEN
+                RAISE EXCEPTION 'injected finalization audit failure';
+            END IF;
+            RETURN NEW;
+        END;
+        $ LANGUAGE plpgsql;
+        CREATE TRIGGER fail_finalization_audit
+        BEFORE INSERT ON audit_events
+        FOR EACH ROW EXECUTE FUNCTION fail_finalization_audit_fn()
+        """
     )
     with pytest.raises(Exception, match="injected finalization audit failure"):
         orchestrator.run(campaign, SuccessfulProvider(), principal=principal)
@@ -218,7 +244,8 @@ def test_successful_provider_is_not_marked_failed_when_finalization_persistence_
     ).fetchone()[0]
     assert repo.scan_state(UUID(scan_id)) is LifecycleState.RUNNING
     repo.connection.execute(
-        "DROP TRIGGER fail_finalization_audit ON audit_events; DROP FUNCTION fail_finalization_audit_fn()"
+        "DROP TRIGGER fail_finalization_audit ON audit_events; "
+        "DROP FUNCTION fail_finalization_audit_fn()"
     )
     repo.connection.commit()
     repo.update_scan_state_if_current_with_audit(
@@ -243,7 +270,20 @@ def test_cancellation_and_audit_are_atomic_on_audit_failure(postgres_repository)
     repo, orchestrator, campaign, principal = make_orchestrator(postgres_repository)
     scan = orchestrator.queue(campaign, SuccessfulProvider(), principal=principal)
     repo.connection.execute(
-        """CREATE OR REPLACE FUNCTION fail_cancel_audit_fn() RETURNS trigger AS $ BEGIN IF NEW.action = 'SCAN_CANCELLED' THEN RAISE EXCEPTION 'injected cancel audit failure'; END IF; RETURN NEW; END; $ LANGUAGE plpgsql; CREATE TRIGGER fail_cancel_audit BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION fail_cancel_audit_fn()"""
+        """
+        CREATE OR REPLACE FUNCTION fail_cancel_audit_fn()
+        RETURNS trigger AS $
+        BEGIN
+            IF NEW.action = 'SCAN_CANCELLED' THEN
+                RAISE EXCEPTION 'injected cancel audit failure';
+            END IF;
+            RETURN NEW;
+        END;
+        $ LANGUAGE plpgsql;
+        CREATE TRIGGER fail_cancel_audit
+        BEFORE INSERT ON audit_events
+        FOR EACH ROW EXECUTE FUNCTION fail_cancel_audit_fn()
+        """
     )
     with pytest.raises(Exception, match="injected cancel audit failure"):
         orchestrator.cancel(scan.execution_id, principal=principal)
@@ -417,7 +457,10 @@ def test_cross_instance_cancellation_and_finalization_have_single_lifecycle_winn
             LifecycleState.COMPLETED,
         }
         terminal_audits = repo.connection.execute(
-            "SELECT COUNT(*) FROM audit_events WHERE resource_id=%s AND action IN ('SCAN_CANCELLED','SCAN_FINALIZED') AND outcome IN ('SUCCESS','COMPLETED')",
+            "SELECT COUNT(*) FROM audit_events "
+            "WHERE resource_id=%s "
+            "AND action IN ('SCAN_CANCELLED','SCAN_FINALIZED') "
+            "AND outcome IN ('SUCCESS','COMPLETED')",
             (scan.execution_id,),
         ).fetchone()[0]
         assert terminal_audits == 1
