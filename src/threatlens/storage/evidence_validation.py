@@ -47,10 +47,7 @@ class SQLiteEvidenceValidationMixin:
         if not evidence_row["sha256"] or evidence_row["sha256"] != sha256(evidence_row["content"].encode("utf-8")).hexdigest():
             raise ValueError("target evidence failed integrity validation")
         if validation.state is EvidenceValidationState.SUPERSEDED:
-            raise ValueError((
-                        "superseded validation records must be created by "
-                        "supersede_evidence_validation"
-                    ))
+            raise ValueError("superseded validation records must be created by supersede_evidence_validation")
         supporting = [(str(item_id),) for item_id in validation.supporting_evidence_ids]
         if supporting:
             rows = self.connection.execute(
