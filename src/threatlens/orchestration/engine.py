@@ -40,6 +40,9 @@ class ScanRepository(Protocol):
 
     def update_scan_state_if_current_with_audit(self, execution_id: UUID, expected: LifecycleState, target: LifecycleState, event: AuditEvent, error: str | None = None) -> bool: ...
 
+    def heartbeat_scan(self, execution_id: UUID) -> bool: ...
+    def recover_stale_scan(self, execution_id: UUID, stale_after_seconds: float, event: AuditEvent) -> bool: ...
+
     def cancel_scan(self, execution_id: UUID) -> bool: ...
 
     def cancel_scan_with_audit(self, execution_id: UUID, success_event: AuditEvent, noop_event: AuditEvent) -> bool: ...
@@ -70,6 +73,14 @@ class ScanOrchestrator:
             AuditEvent(actor_user_id=principal.user_id, action="SCAN_QUEUED", resource_type="SCAN", resource_id=scan.execution_id, outcome="SUCCESS", detail=f"provider={provider.name}"),
         )
         return scan
+
+    def recover_stale(self, execution_id: UUID, principal: AuthenticatedPrincipal | None = None) -> bool:
+        self.authentication.authorize(principal, Permission.ASSESS)
+        return self.repository.recover_stale_scan(
+            execution_id,
+            self.policy.stale_after_seconds,
+            AuditEvent(actor_user_id=principal.user_id, action="SCAN_RECOVERED_STALE", resource_type="SCAN", resource_id=execution_id, outcome="SUCCESS", detail="execution heartbeat lease expired"),
+        )
 
     def cancel(self, execution_id: UUID, principal: AuthenticatedPrincipal | None = None) -> None:
         """Cancel only a queued or running execution after authenticated authorization."""
@@ -127,6 +138,7 @@ class ScanOrchestrator:
             provider,
             event,
             observer,
+            heartbeat=lambda: self.repository.heartbeat_scan(scan.execution_id),
         )
 
         if result.cancelled:
