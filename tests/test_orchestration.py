@@ -63,15 +63,15 @@ def make_orchestrator(postgres_repository) -> tuple[PostgresRepository, ScanOrch
 
 
 def test_successful_provider_reaches_completed(postgres_repository) -> None:
-    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
+    repo, orchestrator, campaign, principal = make_orchestrator(postgres_repository)
     result = orchestrator.run(campaign, SuccessfulProvider(), principal=principal)
     assert result.state is LifecycleState.COMPLETED
     assert repo.scan_state(result.execution_id) is LifecycleState.COMPLETED
     repo.close()
 
 
-def test_registered_provider_path_uses_runtime_and_observer(tmp_path) -> None:
-    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
+def test_registered_provider_path_uses_runtime_and_observer(postgres_repository) -> None:
+    repo, orchestrator, campaign, principal = make_orchestrator(postgres_repository)
     registry = ProviderRegistry()
     registry.register(
         ProviderMetadata(
@@ -88,16 +88,16 @@ def test_registered_provider_path_uses_runtime_and_observer(tmp_path) -> None:
     repo.close()
 
 
-def test_provider_failure_is_persisted_and_does_not_escape_as_success(tmp_path) -> None:
-    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
+def test_provider_failure_is_persisted_and_does_not_escape_as_success(postgres_repository) -> None:
+    repo, orchestrator, campaign, principal = make_orchestrator(postgres_repository)
     result = orchestrator.run(campaign, FailingProvider(), principal=principal)
     assert result.state is LifecycleState.FAILED
     assert repo.scan_state(result.execution_id) is LifecycleState.FAILED
     repo.close()
 
 
-def test_pre_cancelled_execution_never_enters_provider(tmp_path) -> None:
-    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
+def test_pre_cancelled_execution_never_enters_provider(postgres_repository) -> None:
+    repo, orchestrator, campaign, principal = make_orchestrator(postgres_repository)
     event = Event()
     event.set()
     result = orchestrator.run(campaign, CancelAwareProvider(), event, principal=principal)
@@ -106,23 +106,23 @@ def test_pre_cancelled_execution_never_enters_provider(tmp_path) -> None:
     repo.close()
 
 
-def test_terminal_scan_cannot_transition_again(tmp_path) -> None:
-    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
+def test_terminal_scan_cannot_transition_again(postgres_repository) -> None:
+    repo, orchestrator, campaign, principal = make_orchestrator(postgres_repository)
     result = orchestrator.run(campaign, SuccessfulProvider(), principal=principal)
     with pytest.raises(ValueError, match="invalid lifecycle transition"):
         repo.update_scan_state(result.execution_id, LifecycleState.FAILED)
     repo.close()
 
 
-def test_scan_requires_authenticated_principal(tmp_path):
-    repo, orchestrator, campaign, _ = make_orchestrator(tmp_path)
+def test_scan_requires_authenticated_principal(postgres_repository):
+    repo, orchestrator, campaign, _ = make_orchestrator(postgres_repository)
     with pytest.raises(PermissionError, match="authentication required"):
         orchestrator.run(campaign, SuccessfulProvider())
     repo.close()
 
 
-def test_scan_cancellation_requires_authenticated_principal(tmp_path):
-    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
+def test_scan_cancellation_requires_authenticated_principal(postgres_repository):
+    repo, orchestrator, campaign, principal = make_orchestrator(postgres_repository)
     scan = orchestrator.queue(campaign, SuccessfulProvider(), principal=principal)
     with pytest.raises(PermissionError, match="authentication required"):
         orchestrator.cancel(scan.execution_id)
@@ -131,8 +131,8 @@ def test_scan_cancellation_requires_authenticated_principal(tmp_path):
     repo.close()
 
 
-def test_concurrent_cancellation_wins_over_provider_completion(tmp_path) -> None:
-    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
+def test_concurrent_cancellation_wins_over_provider_completion(postgres_repository) -> None:
+    repo, orchestrator, campaign, principal = make_orchestrator(postgres_repository)
     provider = CancelDuringExecutionProvider(lambda execution_id: orchestrator.cancel(execution_id, principal))
     result = orchestrator.run(campaign, provider, principal=principal)
     assert result.state is LifecycleState.CANCELLED
@@ -154,8 +154,8 @@ class ExternallyCancelledProvider:
             sleep(0.005)
 
 
-def test_external_cancellation_is_thread_safe_against_provider_finalization(tmp_path) -> None:
-    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
+def test_external_cancellation_is_thread_safe_against_provider_finalization(postgres_repository) -> None:
+    repo, orchestrator, campaign, principal = make_orchestrator(postgres_repository)
     started = Event()
     cancel_event = Event()
     provider = ExternallyCancelledProvider(started)
@@ -180,8 +180,8 @@ def test_external_cancellation_is_thread_safe_against_provider_finalization(tmp_
     repo.close()
 
 
-def test_queue_and_audit_are_atomic_on_audit_failure(tmp_path) -> None:
-    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
+def test_queue_and_audit_are_atomic_on_audit_failure(postgres_repository) -> None:
+    repo, orchestrator, campaign, principal = make_orchestrator(postgres_repository)
     repo.connection.execute(
         """CREATE OR REPLACE FUNCTION fail_queue_audit_fn() RETURNS trigger AS $ BEGIN IF NEW.action = 'SCAN_QUEUED' THEN RAISE EXCEPTION 'injected queue audit failure'; END IF; RETURN NEW; END; $ LANGUAGE plpgsql; CREATE TRIGGER fail_queue_audit BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION fail_queue_audit_fn()"""
     )
@@ -193,12 +193,12 @@ def test_queue_and_audit_are_atomic_on_audit_failure(tmp_path) -> None:
     repo.close()
 
 
-def test_successful_provider_is_not_marked_failed_when_finalization_persistence_fails(tmp_path) -> None:
-    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
+def test_successful_provider_is_not_marked_failed_when_finalization_persistence_fails(postgres_repository) -> None:
+    repo, orchestrator, campaign, principal = make_orchestrator(postgres_repository)
     repo.connection.execute(
         """CREATE OR REPLACE FUNCTION fail_finalization_audit_fn() RETURNS trigger AS $ BEGIN IF NEW.action = 'SCAN_FINALIZED' THEN RAISE EXCEPTION 'injected finalization audit failure'; END IF; RETURN NEW; END; $ LANGUAGE plpgsql; CREATE TRIGGER fail_finalization_audit BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION fail_finalization_audit_fn()"""
     )
-    with pytest.raises(sqlite3.IntegrityError, match="injected finalization audit failure"):
+    with pytest.raises(Exception, match="injected finalization audit failure"):
         orchestrator.run(campaign, SuccessfulProvider(), principal=principal)
     scan_id = repo.connection.execute("SELECT execution_id FROM scans ORDER BY queued_at DESC LIMIT 1").fetchone()[0]
     assert repo.scan_state(UUID(scan_id)) is LifecycleState.RUNNING
@@ -214,13 +214,13 @@ def test_successful_provider_is_not_marked_failed_when_finalization_persistence_
     repo.close()
 
 
-def test_cancellation_and_audit_are_atomic_on_audit_failure(tmp_path) -> None:
-    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
+def test_cancellation_and_audit_are_atomic_on_audit_failure(postgres_repository) -> None:
+    repo, orchestrator, campaign, principal = make_orchestrator(postgres_repository)
     scan = orchestrator.queue(campaign, SuccessfulProvider(), principal=principal)
     repo.connection.execute(
         """CREATE OR REPLACE FUNCTION fail_cancel_audit_fn() RETURNS trigger AS $ BEGIN IF NEW.action = 'SCAN_CANCELLED' THEN RAISE EXCEPTION 'injected cancel audit failure'; END IF; RETURN NEW; END; $ LANGUAGE plpgsql; CREATE TRIGGER fail_cancel_audit BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION fail_cancel_audit_fn()"""
     )
-    with pytest.raises(sqlite3.IntegrityError, match="injected cancel audit failure"):
+    with pytest.raises(Exception, match="injected cancel audit failure"):
         orchestrator.cancel(scan.execution_id, principal=principal)
     assert repo.scan_state(scan.execution_id) is LifecycleState.QUEUED
     repo.connection.execute("DROP TRIGGER fail_cancel_audit ON audit_events; DROP FUNCTION fail_cancel_audit_fn()"); repo.connection.commit()
@@ -229,8 +229,8 @@ def test_cancellation_and_audit_are_atomic_on_audit_failure(tmp_path) -> None:
     repo.close()
 
 
-def test_stale_running_scan_can_be_recovered_from_expired_heartbeat(tmp_path) -> None:
-    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
+def test_stale_running_scan_can_be_recovered_from_expired_heartbeat(postgres_repository) -> None:
+    repo, orchestrator, campaign, principal = make_orchestrator(postgres_repository)
     scan = orchestrator.queue(campaign, SuccessfulProvider(), principal=principal)
     assert repo.update_scan_state_if_current(scan.execution_id, LifecycleState.QUEUED, LifecycleState.RUNNING)
     repo.connection.execute("UPDATE scans SET heartbeat_at=%s WHERE execution_id=%s", ("2000-01-01T00:00:00+00:00", scan.execution_id))
@@ -243,8 +243,8 @@ def test_stale_running_scan_can_be_recovered_from_expired_heartbeat(tmp_path) ->
     repo.close()
 
 
-def test_recent_heartbeat_is_not_recovered_as_stale(tmp_path) -> None:
-    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
+def test_recent_heartbeat_is_not_recovered_as_stale(postgres_repository) -> None:
+    repo, orchestrator, campaign, principal = make_orchestrator(postgres_repository)
     scan = orchestrator.queue(campaign, SuccessfulProvider(), principal=principal)
     assert repo.update_scan_state_if_current(scan.execution_id, LifecycleState.QUEUED, LifecycleState.RUNNING)
     repo.heartbeat_scan(scan.execution_id)
