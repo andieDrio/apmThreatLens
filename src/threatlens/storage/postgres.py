@@ -587,10 +587,14 @@ class PostgresRepository(
                 """SELECT a.id, a.canonical_id, a.asset_type, a.value,
                           a.first_seen_at, a.last_seen_at,
                           s.id, s.protocol, s.port, s.service_name, s.version
-                   FROM assets a
+                   FROM (
+                       SELECT id, canonical_id, asset_type, value, first_seen_at, last_seen_at
+                       FROM assets
+                       ORDER BY last_seen_at DESC, id
+                       LIMIT %s OFFSET %s
+                   ) a
                    LEFT JOIN services s ON s.asset_id = a.id
-                   ORDER BY a.last_seen_at DESC, a.id, s.port NULLS LAST, s.id NULLS LAST
-                   LIMIT %s OFFSET %s""",
+                   ORDER BY a.last_seen_at DESC, a.id, s.port NULLS LAST, s.id NULLS LAST""",
                 (limit, offset),
             )
             rows = cursor.fetchall()
