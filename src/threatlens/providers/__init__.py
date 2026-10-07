@@ -6,6 +6,10 @@ from threatlens.providers.vulnerability_intelligence import (
     normalize_vulnerability_record,
     match_vulnerability,
 )
+from threatlens.providers.vulnerability_enrichment import (
+    enrich_finding_from_intelligence,
+    intelligence_evidence,
+)
 from threatlens.providers.api import (
     APIAssessmentPolicy,
     APIAssessmentProvider,
@@ -20,6 +24,8 @@ from threatlens.providers.web import (
 )
 
 __all__ = [
+    "enrich_finding_from_intelligence",
+    "intelligence_evidence",
     "VulnerabilityIntelligenceRecord",
     "VulnerabilityMatch",
     "normalize_vulnerability_record",
