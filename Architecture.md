@@ -282,3 +282,12 @@ Gate 16 establishes the evidence management and validation lifecycle. Raw Eviden
 Evidence validation states are explicit: PENDING may transition to VALIDATED or REJECTED; final decisions may only become SUPERSEDED through an append-only replacement record. Validation records require a validator and rationale, and final decisions require supporting evidence references. Persistence rejects validation against missing evidence and re-checks the stored SHA-256 content digest before accepting a decision.
 
 SQLite and PostgreSQL persist validation records behind the repository boundary with foreign keys to evidence and optional supersession links. This makes validation auditable across restarts and prevents a mutable status field from erasing prior decisions. The boundary does not claim that validation itself proves exploitability, remediation, or compromise; those conclusions require later evidence-backed workflows.
+
+
+## 36. Architecture Gate 17
+
+Gate 17 establishes the authentication and authorization boundary before higher-level assessment/remediation exposure. User credentials are represented by a dedicated User contract and password material is stored only as a PBKDF2-HMAC-SHA256 derived value with a per-user random salt. Successful authentication creates a short-lived opaque session token; only its SHA-256 hash is persisted. Sessions are revocable and expire fail-closed.
+
+Role-based permissions are explicit: ADMIN has all permissions, ANALYST can READ/ASSESS/VALIDATE/REMEDIATE, and VIEWER can only READ. The assessment orchestration boundary requires an authenticated principal with ASSESS permission; campaign authorization remains a separate required safety control. Missing principals and insufficient permissions are rejected before provider execution.
+
+Authentication, logout, authorization denials, and scan queue events are persisted as audit events. SQLite and PostgreSQL implement equivalent user/session/audit persistence. Raw passwords and raw session tokens are never persisted. This gate establishes backend security primitives without coupling the domain to a particular HTTP framework; HTTP/API authentication adapters can be layered later without weakening the core boundary.
