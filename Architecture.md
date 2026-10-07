@@ -237,9 +237,9 @@ Establish deterministic TLS security-policy evaluation and end-to-end finding in
 
 ## 31. Architecture Gate 12
 
-Establish deterministic cross-provider finding correlation and deduplication before later risk aggregation. `correlation_key()` must derive logical identity from asset identity plus vulnerability identity, or normalized title/CWE when no vulnerability identifier exists; provider-specific IDs and evidence IDs must never determine logical identity. `correlate_findings()` must collapse equivalent findings into one stable UUIDv5 logical finding, preserve every unique evidence reference, retain contributing provider sources, and select the strongest supported severity/state/confidence without fabricating technical context.
+Establish deterministic cross-provider finding correlation and deduplication before later risk aggregation. correlation_key() derives logical identity from asset identity plus vulnerability ID, or normalized title/CWE when no vulnerability identifier exists. correlate_findings() collapses equivalent findings into one stable UUIDv5 logical finding, preserves every unique evidence reference, retains contributing provider sources, and selects the strongest supported severity/state/confidence without fabricating technical context.
 
-Correlation is deliberately conservative because the current `Finding` domain contract does not yet model endpoint, parameter, or service-location identity. The engine must therefore never infer equivalence across different assets or across unsupported location dimensions. This gate is a pure normalization layer and must not perform network access or write directly to persistence.
+Correlation is deliberately conservative because the current Finding domain contract does not yet model endpoint, parameter, or service-location identity. The engine never infers equivalence across different assets or unsupported location dimensions, and the pure correlation layer performs no network access or persistence.
 
 ## 31. Architecture Gate 12
 
