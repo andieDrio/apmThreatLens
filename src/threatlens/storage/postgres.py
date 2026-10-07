@@ -524,6 +524,53 @@ class PostgresRepository(
             "scans_by_state": scans_by_state,
         }
 
+    def campaigns_read_model(self, limit: int = 50, offset: int = 0) -> dict[str, object]:
+        """Return bounded authorized campaign metadata and explicit scope entries."""
+        if not 1 <= limit <= 100:
+            raise ValueError("limit must be within 1..100")
+        if offset < 0:
+            raise ValueError("offset cannot be negative")
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM campaigns")
+            total = int(cursor.fetchone()[0])
+            cursor.execute(
+                """SELECT c.id, c.name, c.authorized, c.state, c.created_at,
+                          COALESCE(
+                              array_agg(se.value ORDER BY se.included DESC, se.value)
+                              FILTER (WHERE se.included),
+                              ARRAY[]::TEXT[]
+                          ),
+                          COALESCE(
+                              array_agg(se.value ORDER BY se.value)
+                              FILTER (WHERE NOT se.included),
+                              ARRAY[]::TEXT[]
+                          )
+                   FROM campaigns c
+                   LEFT JOIN scope_entries se ON se.campaign_id = c.id
+                   GROUP BY c.id, c.name, c.authorized, c.state, c.created_at
+                   ORDER BY c.created_at DESC, c.id DESC
+                   LIMIT %s OFFSET %s""",
+                (limit, offset),
+            )
+            rows = cursor.fetchall()
+        return {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "items": [
+                {
+                    "id": str(row[0]),
+                    "name": row[1],
+                    "authorized": row[2],
+                    "state": str(row[3]),
+                    "created_at": row[4],
+                    "include": list(row[5] or []),
+                    "exclude": list(row[6] or []),
+                }
+                for row in rows
+            ],
+        }
+
     def scans_read_model(self, limit: int = 50, offset: int = 0) -> dict[str, object]:
         """Return bounded scan execution state for the authenticated application layer."""
         if not 1 <= limit <= 100:
