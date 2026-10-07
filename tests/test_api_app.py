@@ -1,5 +1,4 @@
-from datetime import UTC, datetime
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -47,26 +46,30 @@ class FakeRepository:
 
 
 @pytest.fixture
-def client():
+async def client():
     repository = FakeRepository()
     auth = AuthenticationService(repository)
     auth.create_user("analyst", "correct-horse-battery-123", Role.ANALYST)
     app = create_app(repository=repository, auth_service=auth)
-    return httpx.Client(transport=httpx.ASGITransport(app=app), base_url="http://test")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        yield client
 
 
-def test_health_is_public(client):
+@pytest.mark.anyio
+async def test_health_is_public(client):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 
 
-def test_me_requires_authentication(client):
+@pytest.mark.anyio
+async def test_me_requires_authentication(client):
     response = client.get("/api/v1/me")
     assert response.status_code == 401
 
 
-def test_login_and_me_return_authenticated_principal(client):
+@pytest.mark.anyio
+async def test_login_and_me_return_authenticated_principal(client):
     response = client.post(
         "/api/v1/auth/login",
         json={"username": "analyst", "password": "correct-horse-battery-123"},
@@ -84,7 +87,8 @@ def test_login_and_me_return_authenticated_principal(client):
     assert response.json()["role"] == "ANALYST"
 
 
-def test_logout_revokes_session(client):
+@pytest.mark.anyio
+async def test_logout_revokes_session(client):
     response = client.post(
         "/api/v1/auth/login",
         json={"username": "analyst", "password": "correct-horse-battery-123"},
@@ -104,7 +108,8 @@ def test_logout_revokes_session(client):
     assert response.status_code == 401
 
 
-def test_invalid_credentials_fail_closed(client):
+@pytest.mark.anyio
+async def test_invalid_credentials_fail_closed(client):
     response = client.post(
         "/api/v1/auth/login",
         json={"username": "analyst", "password": "wrong-password"},
