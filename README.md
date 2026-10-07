@@ -63,7 +63,7 @@ PostgreSQL is the permanent and canonical deployment persistence target. The rep
 
 For local development, install the Python dependencies after pulling the repository and configure `THREATLENS_DATABASE_URL` from `.env.example` without committing secrets.
 
-### Architecture Gate 26 — Vulnerability Correlation Context Expansion — IMPLEMENTED
+### Architecture Gate 26 — Vulnerability Correlation Context Expansion — COMPLETE
 
 Gate 26 expands deterministic finding identity beyond asset and vulnerability identity. Findings may now carry explicit service, endpoint, parameter, and location context. Correlation includes every supplied context dimension, normalizes textual context deterministically, and refuses to merge context-bearing findings with context-free findings. PostgreSQL and legacy SQLite persistence retain the context fields so durable correlation uses the same identity as in-memory correlation.
 
@@ -145,13 +145,13 @@ Gate 24 adds deterministic matching between normalized service observations and 
 **Validation status:** Gate 22 was locally validated clean by the development environment. Gates 23–24 include focused regression tests but require local execution of `pytest -q` and `ruff check .` before they may be declared complete.
 
 
-### Architecture Gate 25 — Evidence-Backed Vulnerability Finding Enrichment — IMPLEMENTED
+### Architecture Gate 25 — Evidence-Backed Vulnerability Finding Enrichment — COMPLETE
 
 Gate 25 connects trusted vulnerability intelligence to an existing normalized finding without creating unsupported findings. Enrichment requires a deterministic vulnerability match and the intelligence record's evidence references must be present in the same ProviderHandoff input. The resulting finding preserves the original evidence, adds trusted intelligence evidence, applies normalized vulnerability identity/CVE/CWE/CVSS/severity metadata, and remains subject to the normal ProviderHandoff validation and durable correlation boundary.
 
 The enrichment layer is network-free and cannot fetch intelligence, infer affected versions, or bypass evidence requirements. Intelligence-backed metadata is therefore an evidence-supported augmentation of an existing finding rather than an assertion that a service is exploitable.
 
-**Validation status:** Gate 25 includes focused regression tests but requires local pytest -q and ruff check . execution before it may be declared complete.
+Gate 25 is complete after explicit local validation.
 
 
 ### Architecture Gate 28 — Application API Boundary Foundation — COMPLETE
@@ -203,7 +203,7 @@ Gate 32 establishes the authenticated GUI-facing scan execution read model at `G
 
 PostgreSQL uses fixed SQL with a maximum page size of 100 and deterministic ordering. The endpoint is read-only and excludes raw evidence, credentials, audit records, arbitrary SQL, and provider-internal execution details. It exposes operational state only; it does not mutate scan lifecycle state or bypass orchestration authorization.
 
-**Validation status:** Gate 32 focused API regression tests are implemented. Local `pytest -q` and `ruff check .` are required before the gate can be declared complete.
+Gate 32 is complete after explicit local validation.
 
 ### Architecture Gate 31 — Asset & Service Read Model API — COMPLETE
 
