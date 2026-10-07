@@ -309,7 +309,7 @@ def create_app(repository=None, auth_service=None, orchestrator=None) -> FastAPI
         execution_id: UUID, current=Depends(require(Permission.ASSESS))
     ) -> ScanControlResponse:
         try:
-            context.orchestrator.cancel(execution_id, principal=current)
+            changed = context.orchestrator.cancel(execution_id, principal=current)
             state = context.repository.scan_state(execution_id)
         except KeyError as exc:
             raise HTTPException(
@@ -319,7 +319,7 @@ def create_app(repository=None, auth_service=None, orchestrator=None) -> FastAPI
             execution_id=str(execution_id),
             action="CANCEL",
             state=state.value,
-            changed=state.value == "CANCELLED",
+            changed=changed,
         )
 
     @app.post("/api/v1/scans/{execution_id}/recover-stale", response_model=ScanControlResponse)
