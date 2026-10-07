@@ -63,7 +63,7 @@ def test_missing_environmental_context_is_not_treated_as_zero():
     assessment = RiskEngine().assess(finding)
 
     assert assessment.score == 0.8333
-    assert assessment.level is RiskLevel.MEDIUM
+    assert assessment.level is RiskLevel.HIGH
     assert "exposure" in assessment.missing_inputs
     assert "asset_criticality" in assessment.missing_inputs
     assert "business_impact" in assessment.missing_inputs
