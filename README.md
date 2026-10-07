@@ -47,6 +47,10 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 
 Architecture Gate 19: PostgreSQL Canonical Persistence Enforcement. Gate 18 Reliability and Performance is complete after local validation. Running executions use durable heartbeat leases, stale recovery is explicit and authenticated, provider concurrency is bounded, lifecycle transitions are compare-and-set protected, persistence/audit mutations are atomic, and non-cooperative provider timeouts are explicitly surfaced. The next gate removes the remaining SQLite production ambiguity by making PostgreSQL the sole active development/test persistence path.
 
+### Gate 19 PostgreSQL Enforcement Progress
+
+A PostgreSQL-only integration-test harness is now present. It requires `THREATLENS_TEST_DATABASE_URL` or the canonical `THREATLENS_DATABASE_URL`, never falls back to SQLite, initializes the PostgreSQL schema, isolates tests with transactional `TRUNCATE ... CASCADE`, and covers domain persistence, foreign-key enforcement, authentication persistence, durable finding correlation, evidence-validation lifecycle, and scan lifecycle CAS semantics. The remaining Gate 19 work is to migrate the existing SQLite-specific persistence/orchestration tests and failure-injection fixtures to PostgreSQL before removing the legacy test dependency.
+
 ### PostgreSQL Deployment Readiness
 
 PostgreSQL is the permanent and canonical deployment persistence target. The repository includes a PostgreSQL adapter and `.env.example`; local database installation and credentials remain deployment-environment responsibilities. The application does not auto-start or auto-create a database server.
