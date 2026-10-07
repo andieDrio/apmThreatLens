@@ -524,6 +524,56 @@ class PostgresRepository(
             "scans_by_state": scans_by_state,
         }
 
+    def findings_read_model(self, limit: int = 50, offset: int = 0) -> dict[str, object]:
+        """Return a bounded finding list without exposing raw evidence or arbitrary SQL."""
+        if not 1 <= limit <= 100:
+            raise ValueError("limit must be within 1..100")
+        if offset < 0:
+            raise ValueError("offset cannot be negative")
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM findings")
+            total = int(cursor.fetchone()[0])
+            cursor.execute(
+                """SELECT f.id, f.title, f.asset_id, a.canonical_id, f.state, f.severity,
+                          f.vulnerability_id, f.cwe, f.cve, f.cvss, f.confidence, f.source,
+                          f.detected_at, f.service_id, s.protocol, s.port, s.service_name,
+                          s.version, f.endpoint, f.parameter, f.location
+                   FROM findings f
+                   JOIN assets a ON a.id = f.asset_id
+                   LEFT JOIN services s ON s.id = f.service_id
+                   ORDER BY f.detected_at DESC, f.id DESC
+                   LIMIT %s OFFSET %s""",
+                (limit, offset),
+            )
+            rows = cursor.fetchall()
+        items = [
+            {
+                "id": str(row[0]),
+                "title": row[1],
+                "asset_id": str(row[2]),
+                "asset_canonical_id": row[3],
+                "state": str(row[4]),
+                "severity": str(row[5]),
+                "vulnerability_id": row[6],
+                "cwe": row[7],
+                "cve": row[8],
+                "cvss": row[9],
+                "confidence": row[10],
+                "source": row[11],
+                "detected_at": row[12],
+                "service_id": str(row[13]) if row[13] is not None else None,
+                "service_protocol": row[14],
+                "service_port": row[15],
+                "service_name": row[16],
+                "service_version": row[17],
+                "endpoint": row[18],
+                "parameter": row[19],
+                "location": row[20],
+            }
+            for row in rows
+        ]
+        return {"total": total, "limit": limit, "offset": offset, "items": items}
+
     def asset_id(self, canonical_id: str) -> UUID:
         with self.connection.cursor() as cursor:
             cursor.execute("SELECT id FROM assets WHERE canonical_id=%s", (canonical_id,))
