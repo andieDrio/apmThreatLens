@@ -139,7 +139,7 @@ class ScanOrchestrator:
         scan = self.queue(campaign, provider, principal)
 
         if event.is_set():
-            self.repository.update_scan_state(scan.execution_id, LifecycleState.CANCELLED)
+            self.repository.cancel_scan(scan.execution_id)
             return Scan(
                 campaign_id=scan.campaign_id,
                 provider_name=scan.provider_name,
