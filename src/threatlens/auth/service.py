@@ -54,7 +54,7 @@ class AuthenticationService:
         if not password:
             raise ValueError("password cannot be blank")
         digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
-        return f"pbkdf2_sha256$\{iterations}$\{salt.hex()}$\{digest.hex()}"
+        return f"pbkdf2_sha256${iterations}${salt.hex()}${digest.hex()}"
 
     @classmethod
     def create_password_hash(cls, password: str) -> str:
