@@ -13,6 +13,8 @@ from threatlens.evidence.validation import EvidenceValidation, EvidenceValidatio
 class EvidenceValidationPersistence(Protocol):
     def save_evidence_validation(self, validation: EvidenceValidation) -> None: ...
 
+    def transition_evidence_validation(self, previous_id: UUID, replacement: EvidenceValidation) -> None: ...
+
 
 class SQLiteEvidenceValidationMixin:
     """Append-only evidence validation records with foreign-key traceability."""
@@ -75,7 +77,6 @@ class SQLiteEvidenceValidationMixin:
         validate_evidence_transition(current, replacement.state)
         if replacement.evidence_id != UUID(row["evidence_id"]):
             raise ValueError("validation transition cannot change evidence identity")
-        self.connection.execute("SELECT 1")
         if replacement.supporting_evidence_ids:
             rows = self.connection.execute(
                 "SELECT id FROM evidence WHERE id IN (" + ",".join("?" for _ in replacement.supporting_evidence_ids) + ")",
@@ -163,6 +164,40 @@ class PostgresEvidenceValidationMixin:
                     (validation.id, validation.evidence_id, validation.state.value, validation.validator,
                      validation.rationale, validation.validated_at,
                      json.dumps([str(item) for item in validation.supporting_evidence_ids], sort_keys=True)),
+                )
+
+    def transition_evidence_validation(self, previous_id: UUID, replacement: EvidenceValidation) -> None:
+        import json
+
+        if replacement.state is EvidenceValidationState.SUPERSEDED:
+            raise ValueError("use supersede_evidence_validation for SUPERSEDED records")
+        with self.connection.transaction():
+            with self.connection.cursor() as cursor:
+                cursor.execute("SELECT state,evidence_id FROM evidence_validations WHERE id=%s", (previous_id,))
+                row = cursor.fetchone()
+                if row is None:
+                    raise KeyError(str(previous_id))
+                current = EvidenceValidationState(row[0])
+                validate_evidence_transition(current, replacement.state)
+                if replacement.evidence_id != row[1]:
+                    raise ValueError("validation transition cannot change evidence identity")
+                cursor.execute("SELECT content,sha256 FROM evidence WHERE id=%s", (row[1],))
+                target = cursor.fetchone()
+                if target is None or not target[1] or target[1] != sha256(target[0].encode("utf-8")).hexdigest():
+                    raise ValueError("target evidence failed integrity validation")
+                if replacement.supporting_evidence_ids:
+                    cursor.execute("SELECT id FROM evidence WHERE id = ANY(%s)", ([str(item) for item in replacement.supporting_evidence_ids],))
+                    rows = cursor.fetchall()
+                    if len(rows) != len(replacement.supporting_evidence_ids):
+                        raise KeyError("validation references missing supporting evidence")
+                cursor.execute("UPDATE evidence_validations SET state=%s WHERE id=%s", (replacement.state.value, previous_id))
+                cursor.execute(
+                    """INSERT INTO evidence_validations
+                       (id,evidence_id,state,validator,rationale,validated_at,supporting_evidence_ids_json,supersedes_id)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (replacement.id, replacement.evidence_id, replacement.state.value, replacement.validator,
+                     replacement.rationale, replacement.validated_at,
+                     json.dumps([str(item) for item in replacement.supporting_evidence_ids], sort_keys=True), previous_id),
                 )
 
     def supersede_evidence_validation(self, previous_id: UUID, replacement: EvidenceValidation) -> None:
