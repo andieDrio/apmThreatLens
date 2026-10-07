@@ -1,3 +1,7 @@
+import os
+from threading import Barrier, Thread
+from uuid import uuid4
+
 from uuid import uuid4
 from threatlens.domain.models import Asset, Evidence, Finding, FindingState, Severity
 from threatlens.providers.handoff import ProviderHandoff
@@ -25,3 +29,40 @@ def test_durable_correlation_survives_new_correlator_instance(postgres_repositor
     restarted=DurableFindingCorrelator(repo); e2=ProviderHandoff(repo,correlator=restarted).persist_evidence(uuid4(),b,Evidence(kind="scan",content="new",source="scanner-b"))
     merged=ProviderHandoff(repo,correlator=restarted).persist_finding(uuid4(),b,asset,finding(asset,e2.id),(e2,))
     assert merged.id==original.id; assert repo.count("findings")==1; assert repo.count("finding_evidence")==2
+
+
+def test_concurrent_instances_persist_one_logical_finding(postgres_repository):
+    repo = postgres_repository
+    asset, a, b, _ = setup_repo(repo)
+    ea = ProviderHandoff(repo).persist_evidence(uuid4(), a, Evidence(kind="scan", content="a", source="scanner-a"))
+    eb = ProviderHandoff(repo).persist_evidence(uuid4(), b, Evidence(kind="scan", content="b", source="scanner-b"))
+    dsn = os.getenv("THREATLENS_TEST_DATABASE_URL") or os.getenv("THREATLENS_DATABASE_URL")
+    assert dsn
+    repo2 = type(repo)(dsn)
+    repo2.initialize()
+    barrier = Barrier(2)
+    results = []
+    errors = []
+
+    def worker(worker_repo, metadata, evidence_id):
+        try:
+            correlator = DurableFindingCorrelator(worker_repo)
+            handoff = ProviderHandoff(worker_repo, correlator=correlator)
+            barrier.wait(timeout=5)
+            results.append(handoff.persist_finding(uuid4(), metadata, asset, finding(asset, evidence_id), ()))
+        except Exception as exc:
+            errors.append(exc)
+
+    # Evidence is already durable; each worker uses its own PostgreSQL connection.
+    t1 = Thread(target=worker, args=(repo, a, ea.id))
+    t2 = Thread(target=worker, args=(repo2, b, eb.id))
+    t1.start(); t2.start(); t1.join(10); t2.join(10)
+    try:
+        assert not errors
+        assert len(results) == 2
+        assert results[0].id == results[1].id
+        assert repo.count("findings") == 1
+        assert repo.count("finding_evidence") == 2
+        assert repo.count("finding_correlations") == 1
+    finally:
+        repo2.close()
