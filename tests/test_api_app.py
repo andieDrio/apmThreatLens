@@ -103,6 +103,27 @@ class FakeRepository:
             ],
         }
 
+    def scans_read_model(self, limit=50, offset=0):
+        return {
+            "total": 2,
+            "limit": limit,
+            "offset": offset,
+            "items": [
+                {
+                    "execution_id": "66666666-6666-6666-6666-666666666666",
+                    "campaign_id": "77777777-7777-7777-7777-777777777777",
+                    "campaign_name": "authorized-test",
+                    "provider_name": "network-discovery",
+                    "state": "RUNNING",
+                    "queued_at": datetime(2026, 10, 7, 7, 0, tzinfo=UTC),
+                    "started_at": datetime(2026, 10, 7, 7, 1, tzinfo=UTC),
+                    "finished_at": None,
+                    "heartbeat_at": datetime(2026, 10, 7, 7, 5, tzinfo=UTC),
+                    "error": None,
+                }
+            ],
+        }
+
     def dashboard_summary(self):
         return {
             "campaigns": 2,
@@ -251,6 +272,46 @@ async def test_findings_read_model_rejects_unbounded_limit(client):
     token = login.json()["access_token"]
     response = await client.get(
         "/api/v1/findings?limit=101",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_scans_read_model_requires_authentication(client):
+    response = await client.get("/api/v1/scans")
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_scans_read_model_returns_execution_state(client):
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "analyst", "password": "correct-horse-battery-123"},
+    )
+    token = login.json()["access_token"]
+    response = await client.get(
+        "/api/v1/scans?limit=1&offset=0",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 2
+    assert payload["items"][0]["state"] == "RUNNING"
+    assert payload["items"][0]["provider_name"] == "network-discovery"
+    assert payload["items"][0]["heartbeat_at"] is not None
+    assert "evidence" not in payload["items"][0]
+
+
+@pytest.mark.anyio
+async def test_scans_read_model_rejects_unbounded_limit(client):
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "analyst", "password": "correct-horse-battery-123"},
+    )
+    token = login.json()["access_token"]
+    response = await client.get(
+        "/api/v1/scans?limit=101",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 422
