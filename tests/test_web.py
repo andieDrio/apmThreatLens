@@ -84,6 +84,7 @@ def test_web_provider_persists_evidence_and_policy_findings() -> None:
         WebAssessmentPolicy(allow_private_addresses=True),
         probe=probe,
         asset_resolver=lambda canonical_id: asset if canonical_id == asset.canonical_id else None,
+        destination_resolver=lambda hostname: ("93.184.216.34",),
     )
     campaign = Campaign(
         name="web-assessment",
@@ -129,6 +130,7 @@ def test_web_provider_supports_explicit_bounded_get() -> None:
         ProviderHandoff(repository),
         WebAssessmentPolicy(methods=("GET",), allow_private_addresses=True),
         probe=probe,
+        destination_resolver=lambda hostname: ("93.184.216.34",),
     )
     campaign = Campaign(
         name="bounded-get",
