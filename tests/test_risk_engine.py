@@ -87,6 +87,7 @@ def test_full_context_can_reach_critical():
         business_impact=1.0,
         threat_relevance=1.0,
         control_coverage=0.0,
+        source="assessment-context",
     )
 
     assessment = RiskEngine().assess(finding, context)
