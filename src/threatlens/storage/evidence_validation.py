@@ -106,10 +106,6 @@ class SQLiteEvidenceValidationMixin:
         validate_evidence_transition(EvidenceValidationState(row[0]), EvidenceValidationState.SUPERSEDED)
         with self.connection:
             self.connection.execute(
-                "UPDATE evidence_validations SET state=? WHERE id=?",
-                (EvidenceValidationState.SUPERSEDED.value, str(previous_id)),
-            )
-            self.connection.execute(
                 """INSERT INTO evidence_validations
                    (id,evidence_id,state,validator,rationale,validated_at,supporting_evidence_ids_json,supersedes_id)
                    VALUES (?,?,?,?,?,?,?,?)""",
@@ -213,10 +209,6 @@ class PostgresEvidenceValidationMixin:
                 if row is None:
                     raise KeyError(str(previous_id))
                 validate_evidence_transition(EvidenceValidationState(row[0]), EvidenceValidationState.SUPERSEDED)
-                cursor.execute(
-                    "UPDATE evidence_validations SET state=%s WHERE id=%s",
-                    (EvidenceValidationState.SUPERSEDED.value, previous_id),
-                )
                 cursor.execute(
                     """INSERT INTO evidence_validations
                        (id,evidence_id,state,validator,rationale,validated_at,supporting_evidence_ids_json,supersedes_id)
