@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 from threading import BoundedSemaphore, Event, Lock, Semaphore, Thread
-from time import monotonic, sleep
+from time import monotonic
 from typing import Callable, Protocol
 from uuid import UUID
 
@@ -142,7 +142,9 @@ class ExecutionRuntime:
         events_lock = Lock()
         started = monotonic()
         done = Event()
+        heartbeat_stop = Event()
         provider_error: list[str] = []
+        heartbeat_error: list[str] = []
 
         def emit(event_type: ProviderEventType, message: str = "", **attributes: str) -> None:
             event = ProviderEvent(
@@ -174,9 +176,15 @@ class ExecutionRuntime:
                 )
 
         def heartbeat_loop() -> None:
-            while not done.wait(self.policy.heartbeat_interval_seconds):
-                if heartbeat is not None:
+            while not heartbeat_stop.wait(self.policy.heartbeat_interval_seconds):
+                if heartbeat is None:
+                    continue
+                try:
                     heartbeat()
+                except Exception as exc:
+                    heartbeat_error.append(f"{type(exc).__name__}: {exc}")
+                    emit(ProviderEventType.WARNING, "execution heartbeat update failed", error=heartbeat_error[-1])
+                    heartbeat_stop.set()
 
         def invoke() -> None:
             try:
@@ -202,8 +210,9 @@ class ExecutionRuntime:
 
         if timed_out:
             cancel_event.set()
+            heartbeat_stop.set()
             worker.join(self.policy.cancellation_grace_seconds)
-            heartbeat_worker.join(0)
+            heartbeat_worker.join(0.1)
             error = f"TimeoutError: provider exceeded {self.policy.timeout_seconds:.3f}s execution budget"
             if worker.is_alive():
                 error += "; provider worker did not stop within cancellation grace period"
