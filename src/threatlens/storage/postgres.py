@@ -478,7 +478,8 @@ class PostgresRepository(
                             LifecycleState.RUNNING.value,
                         ),
                     )
-                    event = success_event if cursor.rowcount == 1 else noop_event
+                    changed = cursor.rowcount == 1
+                    event = success_event if changed else noop_event
                     cursor.execute(
                         "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                         (
@@ -492,7 +493,7 @@ class PostgresRepository(
                             event.created_at,
                         ),
                     )
-                    return cursor.rowcount == 1
+                    return changed
 
     def dashboard_summary(self) -> dict[str, object]:
         """Return bounded read-only aggregate data for the authenticated dashboard."""
