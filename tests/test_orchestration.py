@@ -234,3 +234,30 @@ def test_cancellation_and_audit_are_atomic_on_audit_failure(tmp_path) -> None:
     orchestrator.cancel(scan.execution_id, principal=principal)
     assert repo.scan_state(scan.execution_id) is LifecycleState.CANCELLED
     repo.close()
+
+
+def test_stale_running_scan_can_be_recovered_from_expired_heartbeat(tmp_path) -> None:
+    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
+    scan = orchestrator.queue(campaign, SuccessfulProvider(), principal=principal)
+    assert repo.update_scan_state_if_current(scan.execution_id, LifecycleState.QUEUED, LifecycleState.RUNNING)
+    repo.connection.execute(
+        "UPDATE scans SET heartbeat_at=? WHERE execution_id=?",
+        ("2000-01-01T00:00:00+00:00", str(scan.execution_id)),
+    )
+    repo.connection.commit()
+    assert orchestrator.recover_stale(scan.execution_id, principal=principal)
+    assert repo.scan_state(scan.execution_id) is LifecycleState.FAILED
+    assert repo.connection.execute(
+        "SELECT COUNT(*) FROM audit_events WHERE action='SCAN_RECOVERED_STALE'"
+    ).fetchone()[0] == 1
+    repo.close()
+
+
+def test_recent_heartbeat_is_not_recovered_as_stale(tmp_path) -> None:
+    repo, orchestrator, campaign, principal = make_orchestrator(tmp_path)
+    scan = orchestrator.queue(campaign, SuccessfulProvider(), principal=principal)
+    assert repo.update_scan_state_if_current(scan.execution_id, LifecycleState.QUEUED, LifecycleState.RUNNING)
+    repo.heartbeat_scan(scan.execution_id)
+    assert not orchestrator.recover_stale(scan.execution_id, principal=principal)
+    assert repo.scan_state(scan.execution_id) is LifecycleState.RUNNING
+    repo.close()
