@@ -350,3 +350,20 @@ Gate 19 is complete after local validation. PostgreSQL is the sole active develo
 ## 31. Architecture Gate 20 — PostgreSQL Transactional Concurrency and Failure-Recovery Hardening
 
 Gate 19 makes the already-declared PostgreSQL production boundary singular across active development and integration testing. Active repository tests and fixtures must use PostgreSQL, configured through an explicit test database connection such as THREATLENS_TEST_DATABASE_URL; tests must not silently fall back to SQLite. SQLite code, if retained temporarily for legacy compatibility, must not receive new production behavior and must not be selected by the application runtime. The gate is complete only after PostgreSQL-backed tests validate domain persistence, lifecycle transactions, correlation persistence, evidence-validation persistence, authentication persistence, concurrency behavior, and failure-atomicity behavior without weakening constraints or safety controls.
+
+
+## 42. Architecture Gate 20 — PostgreSQL Transactional Concurrency and Failure-Recovery Hardening — COMPLETE
+
+Gate 20 closes the PostgreSQL concurrency hardening boundary. Durable finding correlation uses a transaction-scoped advisory lock and row-level locking so concurrent independent application instances cannot create duplicate logical findings for the same correlation key. Evidence-validation lifecycle transitions lock the current validation record before evaluating and writing a transition or supersession. Orchestration regression coverage exercises independent PostgreSQL connections racing stale recovery and cancellation against provider finalization; exactly one lifecycle winner is accepted and audit state remains consistent.
+
+These controls rely on PostgreSQL transactional semantics rather than process-local Python locks for cross-instance correctness. Persistence failures remain fail-closed and do not permit an in-memory provider result to masquerade as a committed lifecycle state.
+
+## 43. Architecture Gate 21 — Controlled Web/API Assessment Foundation
+
+Gate 21 establishes the first bounded HTTP assessment provider for explicitly authorized HTTP(S) URL targets. The provider accepts only absolute HTTP(S) URLs without userinfo or fragments, honors campaign exclusions and cancellation, bounds target count, request timeout, response size, and HTTP methods, and disables automatic redirect following. Redirect destinations are never treated as newly authorized scope.
+
+The safe default method is HEAD. GET is available only when explicitly configured by the execution policy. The provider performs a destination safety check before network access and rejects destinations resolving to private, loopback, link-local, or reserved addresses unless the policy explicitly enables private-address assessment for an authorized environment. This is a conservative SSRF boundary, not a claim that DNS-based destination validation alone replaces campaign scope authorization.
+
+Each HTTP response is serialized into immutable, SHA-256-sealed evidence with execution/provider provenance before any policy finding is generated. The current deterministic policy layer evaluates only evidence-backed response-header controls: missing HSTS on successful HTTPS responses and missing X-Content-Type-Options. Findings reference the exact persisted evidence and cross the ProviderHandoff boundary.
+
+Gate 21 deliberately excludes authenticated API workflows, arbitrary methods, state-changing requests, parameter fuzzing, schema-driven API discovery, credential testing, SSRF exploitation, redirect traversal, and intrusive web testing. Those capabilities require later explicit authorization, execution, evidence, and safety contracts.
