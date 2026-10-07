@@ -65,8 +65,13 @@ class FakeOrchestrator:
         if execution_id not in self.repository.states:
             raise KeyError(str(execution_id))
         self.cancel_principals.append(principal)
-        if self.repository.states[execution_id] is not LifecycleState.COMPLETED:
+        if self.repository.states[execution_id] in {
+            LifecycleState.QUEUED,
+            LifecycleState.RUNNING,
+        }:
             self.repository.states[execution_id] = LifecycleState.CANCELLED
+            return True
+        return False
 
     def recover_stale(self, execution_id, principal=None):
         if execution_id not in self.repository.states:
@@ -98,6 +103,41 @@ async def login(client):
     )
     assert response.status_code == 200
     return response.json()["access_token"]
+
+
+@pytest.mark.anyio
+async def test_cancel_requires_authentication():
+    client, _, _ = await make_client()
+    async with client:
+        response = await client.post(f"/api/v1/scans/{EXECUTION_ID}/cancel")
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_recover_stale_requires_authentication():
+    client, _, _ = await make_client()
+    async with client:
+        response = await client.post(f"/api/v1/scans/{EXECUTION_ID}/recover-stale")
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_cancel_terminal_scan_reports_no_change():
+    client, repository, _ = await make_client()
+    repository.states[EXECUTION_ID] = LifecycleState.CANCELLED
+    async with client:
+        token = await login(client)
+        response = await client.post(
+            f"/api/v1/scans/{EXECUTION_ID}/cancel",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert response.status_code == 200
+    assert response.json() == {
+        "execution_id": str(EXECUTION_ID),
+        "action": "CANCEL",
+        "state": "CANCELLED",
+        "changed": False,
+    }
 
 
 @pytest.mark.anyio
