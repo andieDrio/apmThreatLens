@@ -79,6 +79,26 @@ class FindingListResponse(BaseModel):
     items: list[FindingReadModel]
 
 
+class ScanReadModel(BaseModel):
+    execution_id: str
+    campaign_id: str
+    campaign_name: str
+    provider_name: str
+    state: str
+    queued_at: str
+    started_at: str | None = None
+    finished_at: str | None = None
+    heartbeat_at: str | None = None
+    error: str | None = None
+
+
+class ScanListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[ScanReadModel]
+
+
 class DashboardSummary(BaseModel):
     campaigns: int
     assets: int
@@ -189,6 +209,27 @@ def create_app(repository=None, auth_service=None) -> FastAPI:
             normalized["services"] = [ServiceReadModel(**service) for service in item["services"]]
             items.append(AssetReadModel(**normalized))
         return AssetListResponse(
+            total=result["total"],
+            limit=result["limit"],
+            offset=result["offset"],
+            items=items,
+        )
+
+    @app.get("/api/v1/scans", response_model=ScanListResponse)
+    def scans(
+        current=Depends(require(Permission.READ)),
+        limit: int = Query(default=50, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+    ) -> ScanListResponse:
+        result = context.repository.scans_read_model(limit=limit, offset=offset)
+        items = []
+        for item in result["items"]:
+            normalized = dict(item)
+            for field_name in ("queued_at", "started_at", "finished_at", "heartbeat_at"):
+                value = item[field_name]
+                normalized[field_name] = value.isoformat() if value is not None else None
+            items.append(ScanReadModel(**normalized))
+        return ScanListResponse(
             total=result["total"],
             limit=result["limit"],
             offset=result["offset"],
