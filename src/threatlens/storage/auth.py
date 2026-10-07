@@ -76,8 +76,10 @@ class SQLiteAuthMixin:
             self.connection.execute("UPDATE auth_sessions SET revoked=1 WHERE id=?", (str(session_id),))
 
     def save_audit_event(self, event: AuditEvent) -> None:
-        with self.connection:
-            self.connection.execute(
+        lock = getattr(self, "_transaction_lock", None)
+        if lock is None:
+            with self.connection:
+                self.connection.execute(
                 "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?)",
                 (str(event.id), str(event.actor_user_id) if event.actor_user_id else None, event.action,
                  event.resource_type, str(event.resource_id) if event.resource_id else None,
