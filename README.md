@@ -45,7 +45,7 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 
 ### Current Architecture Gate
 
-Architecture Gate 12: normalized finding correlation and deterministic deduplication. Equivalent findings from multiple assessment providers are reduced to one logical finding while preserving all unique evidence references and contributing provider sources. Correlation is deliberately conservative and never infers endpoint/service-location equivalence that the current Finding contract cannot represent.
+Architecture Gate 14: Explainable Risk Engine. Correlated findings are scored deterministically using technical severity, exploitability, exposure, asset criticality, business impact, threat relevance, and finding confidence. Explicit control coverage acts only as a mitigating factor. Missing environmental inputs remain unknown and are excluded rather than guessed; CVSS is a supporting signal, never the sole risk determinant. Each assessment returns factor scores, weights, source inputs, missing inputs, and human-readable rationale.
 
 ### PostgreSQL Deployment Readiness
 
@@ -59,4 +59,4 @@ Repository changes are verified through GitHub. Local pytest, lint, build, Postg
 
 ## Next Architecture Direction
 
-The next priority is integrating the normalized correlation engine at the persistence/orchestration boundary so duplicate logical findings are prevented before durable storage while preserving all evidence provenance.
+The next priority is Attack-Path Analysis over correlated findings, assets, services, exposure, and validated relationships. Attack-path inference must remain evidence-backed, deterministic where possible, scope-aware, and conservative when graph context is incomplete.
