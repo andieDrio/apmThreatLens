@@ -38,6 +38,8 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 - Service identification and protocol metadata normalizer for bounded observations, with explicit protocol classification, product/version extraction, confidence, and banner-size limits. Identification remains an observation layer and does not create vulnerability claims.
 - Controlled active service interrogation provider using only explicit, bounded protocol probes for authorized in-scope hosts, with target/port/response limits, cancellation, timeout, and evidence provenance.
 - Controlled TLS assessment provider with bounded TLS handshake inspection, certificate metadata capture, hostname verification state, cipher/protocol observation, timeout/target limits, exclusion enforcement, cancellation, and evidence provenance.
+- Controlled web assessment provider with bounded HTTP(S) HEAD/GET observation, redirect suppression, destination safety validation, response limits, evidence-first handoff, and conservative header policy findings.
+- Controlled API assessment foundation with explicit API URL targets, bounded read-only HEAD/GET requests, redirect suppression, destination safety validation, JSON response evidence, and conservative malformed-JSON policy evaluation.
 - Deterministic TLS security-policy evaluation for deprecated TLS versions, certificate validation failures, hostname mismatch, certificate expiration, and weak/deprecated ciphers.
 - End-to-end TLS finding handoff through persisted evidence, asset resolution, normalized finding validation, and the existing ProviderHandoff boundary.
 - Deterministic cross-provider finding correlation using asset identity plus vulnerability identity (or normalized title/CWE fallback), with stable logical finding IDs and preservation of all unique evidence and contributing provider sources.
@@ -45,7 +47,7 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 
 ### Current Architecture Gate
 
-Architecture Gate 21: Controlled Web Assessment Foundation. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
+Architecture Gate 22: Controlled API Assessment Foundation. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
 
 ### Gate 19 PostgreSQL Enforcement — COMPLETE
 
@@ -101,7 +103,7 @@ Running scans now maintain a durable execution heartbeat. The runtime refreshes 
 
 Gate 20 hardens PostgreSQL for cross-instance lifecycle and correlation races. Finding correlation persistence now uses a transaction-scoped PostgreSQL advisory lock plus row locking so independent ThreatLens instances converge on one deterministic logical finding. Evidence-validation transitions lock the current validation record before state changes. Cross-instance orchestration tests cover stale-recovery winner selection and cancellation versus provider finalization races. PostgreSQL transaction boundaries remain authoritative for lifecycle/audit mutations and failure recovery.
 
-### Architecture Gate 21 — Controlled Web Assessment Foundation
+### Architecture Gate 21 — Controlled Web Assessment Foundation — COMPLETE
 
 Gate 21 establishes the first bounded HTTP assessment boundary for explicitly scoped HTTP(S) URLs. The built-in web provider supports only HEAD by default and an explicitly configured bounded GET; it disables redirect following, rejects URL userinfo and fragments, enforces target limits/timeouts/response-size limits, and blocks destinations resolving to private, loopback, link-local, or reserved addresses unless private addressing is explicitly enabled for an authorized assessment environment.
 
