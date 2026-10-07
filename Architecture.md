@@ -470,7 +470,17 @@ The PostgreSQL repository uses fixed SQL with a maximum page size of 100 and det
 
 The endpoint is strictly read-only. Campaign creation, scope mutation, authorization changes, and assessment execution remain separate control-plane operations requiring their own authenticated permissions, audit semantics, and fail-closed validation.
 
-**Validation status:** Gate 33 focused API regression tests are implemented. Local `pytest -q` and `ruff check .` are required before the gate can be declared complete.
+Gate 33 is complete after explicit local validation.
+
+## 57. Architecture Gate 34 — Authenticated Scan Lifecycle Control API — IMPLEMENTED
+
+Gate 34 exposes the existing `ScanOrchestrator` lifecycle controls through the authenticated HTTP application boundary. `POST /api/v1/scans/{execution_id}/cancel` and `POST /api/v1/scans/{execution_id}/recover-stale` require `ASSESS` permission and pass the authenticated principal directly to the orchestrator. FastAPI does not reproduce lifecycle state transitions or audit writes.
+
+Cancellation remains governed by the existing transactional lifecycle contract: only queued/running executions can change to `CANCELLED`, terminal cancellation is audited as a no-op, and cross-instance races remain resolved by PostgreSQL persistence semantics. Stale recovery remains governed by the durable heartbeat lease and only transitions an eligible stale running execution to `FAILED` with its recovery audit event.
+
+The API returns the persisted lifecycle state after the control operation, distinguishes a state-changing recovery from a no-op, returns 404 for unknown executions, and rejects malformed execution identifiers. These endpoints do not invoke providers, expand scope, or create new authorization paths.
+
+**Validation status:** Gate 34 focused API regression tests are implemented. Local `pytest -q` and `ruff check .` are required before the gate can be declared complete.
 
 ## 55. Architecture Gate 32 — Scan Read Model API — IMPLEMENTED
 
