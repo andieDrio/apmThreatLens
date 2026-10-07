@@ -114,7 +114,10 @@ class RiskEngine:
             derived = finding.cvss / 10.0
             values["exploitability"] = (
                 derived,
-                f"Exploitability is derived from supplied CVSS {finding.cvss:.1f}; CVSS is not used as the sole risk determinant.",
+                (
+                    f"Exploitability is derived from supplied CVSS {finding.cvss:.1f}; "
+                    "CVSS is not used as the sole risk determinant."
+                ),
                 "Finding.cvss",
             )
 
@@ -148,7 +151,10 @@ class RiskEngine:
             score = base_score * (1.0 - mitigation)
             explanation = [factor.rationale for factor in factors]
             explanation.append(
-                f"Control coverage is {context.control_coverage:.2f}; residual risk is reduced by {mitigation * 100:.1f}%."
+                (
+                    f"Control coverage is {context.control_coverage:.2f}; "
+                    f"residual risk is reduced by {mitigation * 100:.1f}%."
+                )
             )
         else:
             score = base_score
