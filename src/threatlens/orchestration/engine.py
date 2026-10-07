@@ -42,7 +42,7 @@ class ScanRepository(Protocol):
 
     def cancel_scan(self, execution_id: UUID) -> bool: ...
 
-    def cancel_scan_with_audit(self, execution_id: UUID, event: AuditEvent) -> bool: ...
+    def cancel_scan_with_audit(self, execution_id: UUID, success_event: AuditEvent, noop_event: AuditEvent) -> bool: ...
 
 
 @dataclass(slots=True)
@@ -76,7 +76,8 @@ class ScanOrchestrator:
         self.authentication.authorize(principal, Permission.ASSESS)
         self.repository.cancel_scan_with_audit(
             execution_id,
-            AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED", resource_type="SCAN", resource_id=execution_id, outcome="SUCCESS" if self.repository.scan_state(execution_id) in {LifecycleState.QUEUED, LifecycleState.RUNNING} else "NOOP", detail="scan cancellation requested" if self.repository.scan_state(execution_id) in {LifecycleState.QUEUED, LifecycleState.RUNNING} else "scan already terminal"),
+            AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED", resource_type="SCAN", resource_id=execution_id, outcome="SUCCESS", detail="scan cancellation requested"),
+            AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED", resource_type="SCAN", resource_id=execution_id, outcome="NOOP", detail="scan already terminal"),
         )
 
     def run_registered(
