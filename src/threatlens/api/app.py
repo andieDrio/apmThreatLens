@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from threatlens.auth.service import AuthenticationService, Permission
@@ -21,6 +21,37 @@ class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "Bearer"
     expires_in: int
+
+
+class FindingReadModel(BaseModel):
+    id: str
+    title: str
+    asset_id: str
+    asset_canonical_id: str
+    state: str
+    severity: str
+    vulnerability_id: str | None = None
+    cwe: str | None = None
+    cve: str | None = None
+    cvss: float | None = None
+    confidence: float
+    source: str
+    detected_at: str
+    service_id: str | None = None
+    service_protocol: str | None = None
+    service_port: int | None = None
+    service_name: str | None = None
+    service_version: str | None = None
+    endpoint: str | None = None
+    parameter: str | None = None
+    location: str | None = None
+
+
+class FindingListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[FindingReadModel]
 
 
 class DashboardSummary(BaseModel):
@@ -117,6 +148,27 @@ def create_app(repository=None, auth_service=None) -> FastAPI:
     def dashboard_summary(current=Depends(require(Permission.READ))) -> DashboardSummary:
         summary = context.repository.dashboard_summary()
         return DashboardSummary(**summary)
+
+    @app.get("/api/v1/findings", response_model=FindingListResponse)
+    def findings(
+        current=Depends(require(Permission.READ)),
+        limit: int = Query(default=50, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+    ) -> FindingListResponse:
+        result = context.repository.findings_read_model(limit=limit, offset=offset)
+        items = [
+            FindingReadModel(
+                **item,
+                detected_at=item["detected_at"].isoformat(),
+            )
+            for item in result["items"]
+        ]
+        return FindingListResponse(
+            total=result["total"],
+            limit=result["limit"],
+            offset=result["offset"],
+            items=items,
+        )
 
     @app.get("/api/v1/me", response_model=PrincipalResponse)
     def me(current=Depends(require(Permission.READ))) -> PrincipalResponse:
