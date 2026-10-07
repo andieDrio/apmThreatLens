@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -305,25 +306,17 @@ def create_app(repository=None, auth_service=None, orchestrator=None) -> FastAPI
 
     @app.post("/api/v1/scans/{execution_id}/cancel", response_model=ScanControlResponse)
     def cancel_scan(
-        execution_id: str, current=Depends(require(Permission.ASSESS))
+        execution_id: UUID, current=Depends(require(Permission.ASSESS))
     ) -> ScanControlResponse:
-        from uuid import UUID
-
         try:
-            parsed_execution_id = UUID(execution_id)
-            context.orchestrator.cancel(parsed_execution_id, principal=current)
-            state = context.repository.scan_state(parsed_execution_id)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="invalid execution_id",
-            ) from exc
+            context.orchestrator.cancel(execution_id, principal=current)
+            state = context.repository.scan_state(execution_id)
         except KeyError as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="scan not found"
             ) from exc
         return ScanControlResponse(
-            execution_id=execution_id,
+            execution_id=str(execution_id),
             action="CANCEL",
             state=state.value,
             changed=state.value == "CANCELLED",
@@ -331,25 +324,17 @@ def create_app(repository=None, auth_service=None, orchestrator=None) -> FastAPI
 
     @app.post("/api/v1/scans/{execution_id}/recover-stale", response_model=ScanControlResponse)
     def recover_stale_scan(
-        execution_id: str, current=Depends(require(Permission.ASSESS))
+        execution_id: UUID, current=Depends(require(Permission.ASSESS))
     ) -> ScanControlResponse:
-        from uuid import UUID
-
         try:
-            parsed_execution_id = UUID(execution_id)
-            changed = context.orchestrator.recover_stale(parsed_execution_id, principal=current)
-            state = context.repository.scan_state(parsed_execution_id)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="invalid execution_id",
-            ) from exc
+            changed = context.orchestrator.recover_stale(execution_id, principal=current)
+            state = context.repository.scan_state(execution_id)
         except KeyError as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="scan not found"
             ) from exc
         return ScanControlResponse(
-            execution_id=execution_id,
+            execution_id=str(execution_id),
             action="RECOVER_STALE",
             state=state.value,
             changed=changed,
