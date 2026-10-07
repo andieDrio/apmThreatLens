@@ -103,6 +103,7 @@ class Scan:
     queued_at: datetime = field(default_factory=utc_now)
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    heartbeat_at: datetime | None = None
     error: str | None = None
 
     def __post_init__(self) -> None:
@@ -110,6 +111,8 @@ class Scan:
             raise ValueError("scan.provider_name cannot be blank")
         if self.state is LifecycleState.QUEUED and self.started_at is not None:
             raise ValueError("queued scan cannot have started_at")
+        if self.state is LifecycleState.QUEUED and self.heartbeat_at is not None:
+            raise ValueError("queued scan cannot have heartbeat_at")
 
 
 @dataclass(frozen=True, slots=True)
