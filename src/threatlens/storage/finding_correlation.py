@@ -307,7 +307,7 @@ class PostgresFindingCorrelationMixin:
             with self.connection.cursor() as cursor:
                 cursor.execute(
                     """UPDATE findings SET title=%s,state=%s,severity=%s,vulnerability_id=%s,cwe=%s,cve=%s,
-                       cvss=%s,confidence=%s,source=%s,detected_at=%s WHERE id=%s""",
+                       cvss=%s,confidence=%s,source=%s,detected_at=%s,service_id=%s,endpoint=%s,parameter=%s,location=%s WHERE id=%s""",
                     (
                         finding.title,
                         finding.state.value,
