@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import httpx
@@ -63,7 +64,7 @@ class FakeRepository:
                     "cvss": None,
                     "confidence": 0.9,
                     "source": "web-assessment",
-                    "detected_at": __import__("datetime").datetime(2026, 10, 7, tzinfo=__import__("datetime").UTC),
+                    "detected_at": datetime(2026, 10, 7, tzinfo=UTC),
                     "service_id": "33333333-3333-3333-3333-333333333333",
                     "service_protocol": "tcp",
                     "service_port": 443,
