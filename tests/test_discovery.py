@@ -5,13 +5,10 @@ import pytest
 from threatlens.domain.models import Campaign, Scope
 from threatlens.providers.discovery import DiscoveryProvider
 from threatlens.providers.handoff import ProviderHandoff
-from threatlens.storage.sqlite import SQLiteRepository
 
 
-def test_discovery_normalizes_and_persists_only_in_scope_targets(tmp_path) -> None:
-    repo = SQLiteRepository(tmp_path / "threatlens.db")
-    repo.initialize()
-    provider = DiscoveryProvider(repo, ProviderHandoff(repo))
+def test_discovery_normalizes_and_persists_only_in_scope_targets(postgres_repository) -> None:
+    provider = DiscoveryProvider(postgres_repository, ProviderHandoff(postgres_repository))
     campaign = Campaign(
         name="controlled-discovery",
         scope=Scope(
@@ -23,17 +20,14 @@ def test_discovery_normalizes_and_persists_only_in_scope_targets(tmp_path) -> No
 
     provider.execute(campaign, campaign.id, Event())
 
-    assert repo.count("assets") == 2
-    assert repo.count("evidence") == 2
-    assert repo.asset_id("ipv4:198.51.100.10")
-    assert repo.asset_id("url:https://example.test/login")
-    repo.close()
+    assert postgres_repository.count("assets") == 2
+    assert postgres_repository.count("evidence") == 2
+    assert postgres_repository.asset_id("ipv4:198.51.100.10")
+    assert postgres_repository.asset_id("url:https://example.test/login")
 
 
-def test_discovery_cancellation_stops_before_processing(tmp_path) -> None:
-    repo = SQLiteRepository(tmp_path / "threatlens.db")
-    repo.initialize()
-    provider = DiscoveryProvider(repo, ProviderHandoff(repo))
+def test_discovery_cancellation_stops_before_processing(postgres_repository) -> None:
+    provider = DiscoveryProvider(postgres_repository, ProviderHandoff(postgres_repository))
     campaign = Campaign(
         name="cancelled-discovery",
         scope=Scope(include=("198.51.100.10",)),
@@ -44,9 +38,8 @@ def test_discovery_cancellation_stops_before_processing(tmp_path) -> None:
 
     provider.execute(campaign, campaign.id, event)
 
-    assert repo.count("assets") == 0
-    assert repo.count("evidence") == 0
-    repo.close()
+    assert postgres_repository.count("assets") == 0
+    assert postgres_repository.count("evidence") == 0
 
 
 def test_discovery_rejects_blank_target() -> None:
