@@ -115,11 +115,13 @@ class WebAssessmentProvider:
         policy: WebAssessmentPolicy | None = None,
         probe: HTTPProbe | None = None,
         asset_resolver=None,
+        destination_resolver=None,
     ) -> None:
         self.handoff = handoff
         self.policy = policy or WebAssessmentPolicy()
         self.probe = probe or SocketHTTPProbe()
         self.asset_resolver = asset_resolver
+        self.destination_resolver = destination_resolver or self._resolve_addresses
 
     def execute(self, campaign: Campaign, execution_id: UUID, cancel_event: Event) -> None:
         targets = [self._normalize_url(value) for value in campaign.scope.include if self._is_url(value)]
@@ -183,8 +185,8 @@ class WebAssessmentProvider:
         except ValueError:
             try:
                 addresses = {
-                    ipaddress.ip_address(info[4][0])
-                    for info in socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+                    ipaddress.ip_address(address)
+                    for address in self.destination_resolver(hostname)
                 }
             except OSError as exc:
                 raise ConnectionError(f"web assessment DNS resolution failed: {hostname}") from exc
@@ -193,6 +195,13 @@ class WebAssessmentProvider:
             for address in addresses
         ):
             raise PermissionError("web assessment destination resolves to a non-public address")
+
+    @staticmethod
+    def _resolve_addresses(hostname: str) -> tuple[str, ...]:
+        try:
+            return tuple(info[4][0] for info in socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM))
+        except OSError as exc:
+            raise ConnectionError(f"web assessment DNS resolution failed: {hostname}") from exc
 
     @staticmethod
     def _header(observation: HTTPObservation, name: str) -> str:
