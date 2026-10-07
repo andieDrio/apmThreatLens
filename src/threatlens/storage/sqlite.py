@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
+from threatlens.storage.evidence_validation import SQLiteEvidenceValidationMixin
 from threatlens.storage.finding_correlation import SQLiteFindingCorrelationMixin
 
 from threatlens.domain.models import (
@@ -108,7 +109,7 @@ CREATE TABLE IF NOT EXISTS finding_evidence (
 """
 
 
-class SQLiteRepository(SQLiteFindingCorrelationMixin):
+class SQLiteRepository(SQLiteFindingCorrelationMixin, SQLiteEvidenceValidationMixin):
     """Transactional repository for domain persistence."""
 
     def __init__(self, path: str | Path) -> None:
@@ -255,7 +256,7 @@ class SQLiteRepository(SQLiteFindingCorrelationMixin):
             )
 
     def count(self, table: str) -> int:
-        allowed = {"campaigns", "scans", "assets", "services", "evidence", "findings", "finding_evidence"}
+        allowed = {"campaigns", "scans", "assets", "services", "evidence", "findings", "finding_evidence", "finding_correlations", "evidence_validations"}
         if table not in allowed:
             raise ValueError("unsupported table")
         return int(self.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
