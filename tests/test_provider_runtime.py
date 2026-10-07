@@ -112,7 +112,9 @@ class StubbornProvider:
 
 
 def test_runtime_marks_non_cooperative_timeout_worker(tmp_path) -> None:
-    runtime = ExecutionRuntime(ExecutionPolicy(timeout_seconds=0.01, cancellation_grace_seconds=0.001))
+    runtime = ExecutionRuntime(
+        ExecutionPolicy(timeout_seconds=0.01, cancellation_grace_seconds=0.001)
+    )
     provider = StubbornProvider()
     result = runtime.execute(campaign(), uuid4(), metadata(provider.name), provider, Event())
     assert result.timed_out

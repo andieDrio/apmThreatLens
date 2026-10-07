@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from threading import BoundedSemaphore, Event, Thread
-from typing import Callable, Protocol
+from typing import Protocol
+from collections.abc import Callable
 from uuid import UUID
 
 from threatlens.auth import AuthenticationService, AuthenticatedPrincipal, Permission
@@ -36,16 +37,33 @@ class ScanRepository(Protocol):
 
     def scan_state(self, execution_id: UUID) -> LifecycleState: ...
 
-    def update_scan_state_if_current(self, execution_id: UUID, expected: LifecycleState, target: LifecycleState, error: str | None = None) -> bool: ...
+    def update_scan_state_if_current(
+        self,
+        execution_id: UUID,
+        expected: LifecycleState,
+        target: LifecycleState,
+        error: str | None = None,
+    ) -> bool: ...
 
-    def update_scan_state_if_current_with_audit(self, execution_id: UUID, expected: LifecycleState, target: LifecycleState, event: AuditEvent, error: str | None = None) -> bool: ...
+    def update_scan_state_if_current_with_audit(
+        self,
+        execution_id: UUID,
+        expected: LifecycleState,
+        target: LifecycleState,
+        event: AuditEvent,
+        error: str | None = None,
+    ) -> bool: ...
 
     def heartbeat_scan(self, execution_id: UUID) -> bool: ...
-    def recover_stale_scan(self, execution_id: UUID, stale_after_seconds: float, event: AuditEvent) -> bool: ...
+    def recover_stale_scan(
+        self, execution_id: UUID, stale_after_seconds: float, event: AuditEvent
+    ) -> bool: ...
 
     def cancel_scan(self, execution_id: UUID) -> bool: ...
 
-    def cancel_scan_with_audit(self, execution_id: UUID, success_event: AuditEvent, noop_event: AuditEvent) -> bool: ...
+    def cancel_scan_with_audit(
+        self, execution_id: UUID, success_event: AuditEvent, noop_event: AuditEvent
+    ) -> bool: ...
 
 
 @dataclass(slots=True)
@@ -61,7 +79,12 @@ class ScanOrchestrator:
             concurrency_gate=BoundedSemaphore(self.policy.max_concurrency),
         )
 
-    def queue(self, campaign: Campaign, provider: ScanExecutor, principal: AuthenticatedPrincipal | None = None) -> Scan:
+    def queue(
+        self,
+        campaign: Campaign,
+        provider: ScanExecutor,
+        principal: AuthenticatedPrincipal | None = None,
+    ) -> Scan:
         """Create a persisted queued execution after authorization/scope validation."""
         validate_campaign_execution(campaign, self.policy)
         self.authentication.authorize(principal, Permission.ASSESS)
@@ -70,16 +93,32 @@ class ScanOrchestrator:
         scan = Scan(campaign_id=campaign.id, provider_name=provider.name)
         self.repository.save_scan_with_audit(
             scan,
-            AuditEvent(actor_user_id=principal.user_id, action="SCAN_QUEUED", resource_type="SCAN", resource_id=scan.execution_id, outcome="SUCCESS", detail=f"provider={provider.name}"),
+            AuditEvent(
+                actor_user_id=principal.user_id,
+                action="SCAN_QUEUED",
+                resource_type="SCAN",
+                resource_id=scan.execution_id,
+                outcome="SUCCESS",
+                detail=f"provider={provider.name}",
+            ),
         )
         return scan
 
-    def recover_stale(self, execution_id: UUID, principal: AuthenticatedPrincipal | None = None) -> bool:
+    def recover_stale(
+        self, execution_id: UUID, principal: AuthenticatedPrincipal | None = None
+    ) -> bool:
         self.authentication.authorize(principal, Permission.ASSESS)
         return self.repository.recover_stale_scan(
             execution_id,
             self.policy.stale_after_seconds,
-            AuditEvent(actor_user_id=principal.user_id, action="SCAN_RECOVERED_STALE", resource_type="SCAN", resource_id=execution_id, outcome="SUCCESS", detail="execution heartbeat lease expired"),
+            AuditEvent(
+                actor_user_id=principal.user_id,
+                action="SCAN_RECOVERED_STALE",
+                resource_type="SCAN",
+                resource_id=execution_id,
+                outcome="SUCCESS",
+                detail="execution heartbeat lease expired",
+            ),
         )
 
     def cancel(self, execution_id: UUID, principal: AuthenticatedPrincipal | None = None) -> None:
@@ -87,8 +126,22 @@ class ScanOrchestrator:
         self.authentication.authorize(principal, Permission.ASSESS)
         self.repository.cancel_scan_with_audit(
             execution_id,
-            AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED", resource_type="SCAN", resource_id=execution_id, outcome="SUCCESS", detail="scan cancellation requested"),
-            AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED", resource_type="SCAN", resource_id=execution_id, outcome="NOOP", detail="scan already terminal"),
+            AuditEvent(
+                actor_user_id=principal.user_id,
+                action="SCAN_CANCELLED",
+                resource_type="SCAN",
+                resource_id=execution_id,
+                outcome="SUCCESS",
+                detail="scan cancellation requested",
+            ),
+            AuditEvent(
+                actor_user_id=principal.user_id,
+                action="SCAN_CANCELLED",
+                resource_type="SCAN",
+                resource_id=execution_id,
+                outcome="NOOP",
+                detail="scan already terminal",
+            ),
         )
 
     def run_registered(
@@ -109,8 +162,22 @@ class ScanOrchestrator:
         if event.is_set():
             self.repository.cancel_scan_with_audit(
                 scan.execution_id,
-                AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED", resource_type="SCAN", resource_id=scan.execution_id, outcome="SUCCESS", detail="pre-start cancellation"),
-                AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED", resource_type="SCAN", resource_id=scan.execution_id, outcome="NOOP", detail="scan already terminal"),
+                AuditEvent(
+                    actor_user_id=principal.user_id,
+                    action="SCAN_CANCELLED",
+                    resource_type="SCAN",
+                    resource_id=scan.execution_id,
+                    outcome="SUCCESS",
+                    detail="pre-start cancellation",
+                ),
+                AuditEvent(
+                    actor_user_id=principal.user_id,
+                    action="SCAN_CANCELLED",
+                    resource_type="SCAN",
+                    resource_id=scan.execution_id,
+                    outcome="NOOP",
+                    detail="scan already terminal",
+                ),
             )
             return Scan(
                 campaign_id=scan.campaign_id,
@@ -150,7 +217,20 @@ class ScanOrchestrator:
         else:
             final_state = LifecycleState.FAILED
             error = result.error or "provider execution failed"
-        if not self.repository.update_scan_state_if_current_with_audit(scan.execution_id, LifecycleState.RUNNING, final_state, AuditEvent(actor_user_id=principal.user_id, action="SCAN_FINALIZED", resource_type="SCAN", resource_id=scan.execution_id, outcome=final_state.value, detail=error or "provider execution finalized"), error=error):
+        if not self.repository.update_scan_state_if_current_with_audit(
+            scan.execution_id,
+            LifecycleState.RUNNING,
+            final_state,
+            AuditEvent(
+                actor_user_id=principal.user_id,
+                action="SCAN_FINALIZED",
+                resource_type="SCAN",
+                resource_id=scan.execution_id,
+                outcome=final_state.value,
+                detail=error or "provider execution finalized",
+            ),
+            error=error,
+        ):
             final_state = self.repository.scan_state(scan.execution_id)
 
         return Scan(
@@ -176,8 +256,22 @@ class ScanOrchestrator:
         if event.is_set():
             self.repository.cancel_scan_with_audit(
                 scan.execution_id,
-                AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED", resource_type="SCAN", resource_id=scan.execution_id, outcome="SUCCESS", detail="pre-start cancellation"),
-                AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED", resource_type="SCAN", resource_id=scan.execution_id, outcome="NOOP", detail="scan already terminal"),
+                AuditEvent(
+                    actor_user_id=principal.user_id,
+                    action="SCAN_CANCELLED",
+                    resource_type="SCAN",
+                    resource_id=scan.execution_id,
+                    outcome="SUCCESS",
+                    detail="pre-start cancellation",
+                ),
+                AuditEvent(
+                    actor_user_id=principal.user_id,
+                    action="SCAN_CANCELLED",
+                    resource_type="SCAN",
+                    resource_id=scan.execution_id,
+                    outcome="NOOP",
+                    detail="scan already terminal",
+                ),
             )
             return Scan(
                 campaign_id=scan.campaign_id,
@@ -199,10 +293,14 @@ class ScanOrchestrator:
                 queued_at=scan.queued_at,
             )
         heartbeat_stop = Event()
+
         def heartbeat_loop() -> None:
             while not heartbeat_stop.wait(self.policy.heartbeat_interval_seconds):
                 self.repository.heartbeat_scan(scan.execution_id)
-        heartbeat_thread = Thread(target=heartbeat_loop, name=f"threatlens-heartbeat-{scan.execution_id}", daemon=True)
+
+        heartbeat_thread = Thread(
+            target=heartbeat_loop, name=f"threatlens-heartbeat-{scan.execution_id}", daemon=True
+        )
         self.repository.heartbeat_scan(scan.execution_id)
         heartbeat_thread.start()
         try:
@@ -213,7 +311,14 @@ class ScanOrchestrator:
                 scan.execution_id,
                 LifecycleState.RUNNING,
                 LifecycleState.FAILED,
-                AuditEvent(actor_user_id=principal.user_id, action="SCAN_FINALIZED", resource_type="SCAN", resource_id=scan.execution_id, outcome=LifecycleState.FAILED.value, detail=error),
+                AuditEvent(
+                    actor_user_id=principal.user_id,
+                    action="SCAN_FINALIZED",
+                    resource_type="SCAN",
+                    resource_id=scan.execution_id,
+                    outcome=LifecycleState.FAILED.value,
+                    detail=error,
+                ),
                 error=error,
             )
         else:
@@ -222,7 +327,14 @@ class ScanOrchestrator:
                 scan.execution_id,
                 LifecycleState.RUNNING,
                 final_state,
-                AuditEvent(actor_user_id=principal.user_id, action="SCAN_FINALIZED", resource_type="SCAN", resource_id=scan.execution_id, outcome=final_state.value, detail="provider execution finalized"),
+                AuditEvent(
+                    actor_user_id=principal.user_id,
+                    action="SCAN_FINALIZED",
+                    resource_type="SCAN",
+                    resource_id=scan.execution_id,
+                    outcome=final_state.value,
+                    detail="provider execution finalized",
+                ),
             ):
                 final_state = self.repository.scan_state(scan.execution_id)
         finally:

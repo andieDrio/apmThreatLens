@@ -41,7 +41,13 @@ class ProviderHandoff:
         """Persist raw evidence only after provenance is bound to the execution."""
         sealed = self.seal_evidence(evidence)
         metadata = dict(sealed.metadata)
-        metadata.update({"execution_id": str(execution_id), "provider": provider.name, "provider_version": provider.version})
+        metadata.update(
+            {
+                "execution_id": str(execution_id),
+                "provider": provider.name,
+                "provider_version": provider.version,
+            }
+        )
         sealed = replace(sealed, metadata=metadata, source=provider.name)
         self.repository.save_evidence(sealed)
         return sealed

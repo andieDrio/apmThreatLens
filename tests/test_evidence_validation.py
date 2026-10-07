@@ -55,6 +55,10 @@ def test_validation_requires_supporting_evidence_for_final_decision() -> None:
 
 def test_validation_lifecycle_is_fail_closed() -> None:
     validate_evidence_transition(EvidenceValidationState.PENDING, EvidenceValidationState.VALIDATED)
-    validate_evidence_transition(EvidenceValidationState.VALIDATED, EvidenceValidationState.SUPERSEDED)
+    validate_evidence_transition(
+        EvidenceValidationState.VALIDATED, EvidenceValidationState.SUPERSEDED
+    )
     with pytest.raises(ValueError, match="invalid evidence validation transition"):
-        validate_evidence_transition(EvidenceValidationState.VALIDATED, EvidenceValidationState.REJECTED)
+        validate_evidence_transition(
+            EvidenceValidationState.VALIDATED, EvidenceValidationState.REJECTED
+        )

@@ -135,10 +135,7 @@ class AttackPathAnalyzer:
                     )
                 )
                 if path_findings:
-                    score = max(
-                        (risk_scores or {}).get(item.id, 0.0)
-                        for item in path_findings
-                    )
+                    score = max((risk_scores or {}).get(item.id, 0.0) for item in path_findings)
                     level = _risk_level(score, risk_levels, path_findings)
                     finding_ids = tuple(item.id for item in path_findings)
                     paths.append(

@@ -22,3 +22,7 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/threatlens/storage/*.py" = ["E501"]
+"tests/postgres_support.py" = ["E501"]

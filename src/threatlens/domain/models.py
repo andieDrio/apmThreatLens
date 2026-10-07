@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from enum import StrEnum
-from typing import Mapping, Tuple
+from collections.abc import Mapping
 from uuid import UUID, uuid4
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class LifecycleState(StrEnum):
@@ -66,8 +66,8 @@ class Severity(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Scope:
-    include: Tuple[str, ...]
-    exclude: Tuple[str, ...] = ()
+    include: tuple[str, ...]
+    exclude: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.include:
@@ -168,7 +168,7 @@ class Evidence:
 class Finding:
     title: str
     asset_id: UUID
-    evidence_ids: Tuple[UUID, ...]
+    evidence_ids: tuple[UUID, ...]
     state: FindingState = FindingState.SUSPECTED
     severity: Severity = Severity.INFORMATIONAL
     vulnerability_id: str | None = None

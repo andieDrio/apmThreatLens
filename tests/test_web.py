@@ -77,7 +77,10 @@ def test_web_provider_persists_evidence_and_policy_findings() -> None:
     repository = MemoryRepository()
     asset = None
     from threatlens.domain.models import Asset
-    asset = Asset(canonical_id="url:https://example.test/", asset_type="url", value="https://example.test/")
+
+    asset = Asset(
+        canonical_id="url:https://example.test/", asset_type="url", value="https://example.test/"
+    )
     probe = FakeProbe(observation())
     provider = WebAssessmentProvider(
         ProviderHandoff(repository),
@@ -99,9 +102,10 @@ def test_web_provider_persists_evidence_and_policy_findings() -> None:
     assert probe.calls[0][1] == "HEAD"
     assert len(repository.evidence) == 1
     assert len(repository.findings) == 2
-    assert all(str(execution_id) == finding_metadata["execution_id"] for finding_metadata in [
-        repository.evidence[0].metadata
-    ])
+    assert all(
+        str(execution_id) == finding_metadata["execution_id"]
+        for finding_metadata in [repository.evidence[0].metadata]
+    )
 
 
 def test_web_provider_rejects_private_destination_by_default() -> None:

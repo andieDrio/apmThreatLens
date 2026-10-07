@@ -60,8 +60,14 @@ def test_handoff_rejects_finding_for_wrong_asset() -> None:
     provider = metadata()
     asset = Asset(canonical_id="fqdn:a.internal", asset_type="fqdn", value="a.internal")
     other = Asset(canonical_id="fqdn:b.internal", asset_type="fqdn", value="b.internal")
-    evidence = handoff.persist_evidence("8f9e1c5d-6cc8-4f70-91dd-cf3c0c0c7f10", provider, Evidence(kind="banner", content="x", source="raw"))
+    evidence = handoff.persist_evidence(
+        "8f9e1c5d-6cc8-4f70-91dd-cf3c0c0c7f10",
+        provider,
+        Evidence(kind="banner", content="x", source="raw"),
+    )
     finding = Finding(title="Example", asset_id=other.id, evidence_ids=(evidence.id,))
 
     with pytest.raises(ValueError, match="asset_id"):
-        handoff.persist_finding("8f9e1c5d-6cc8-4f70-91dd-cf3c0c0c7f10", provider, asset, finding, (evidence,))
+        handoff.persist_finding(
+            "8f9e1c5d-6cc8-4f70-91dd-cf3c0c0c7f10", provider, asset, finding, (evidence,)
+        )

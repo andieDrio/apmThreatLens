@@ -11,7 +11,7 @@ import ipaddress
 import json
 from dataclasses import dataclass
 from threading import Event
-from typing import Callable
+from collections.abc import Callable
 from uuid import UUID
 from urllib.parse import urlparse
 
@@ -81,19 +81,16 @@ class APIAssessmentProvider:
     def execute(self, campaign: Campaign, execution_id: UUID, cancel_event: Event) -> None:
         if self.probe is None:
             from threatlens.providers.web import SocketHTTPProbe
+
             self.probe = SocketHTTPProbe()
 
         targets = [
-            self._normalize_url(value)
-            for value in campaign.scope.include
-            if self._is_url(value)
+            self._normalize_url(value) for value in campaign.scope.include if self._is_url(value)
         ]
         if len(targets) > self.policy.max_targets:
             raise ValueError("API target count exceeds execution policy")
         excluded = {
-            self._normalize_url(value)
-            for value in campaign.scope.exclude
-            if self._is_url(value)
+            self._normalize_url(value) for value in campaign.scope.exclude if self._is_url(value)
         }
 
         for url in targets:
@@ -117,7 +114,8 @@ class APIAssessmentProvider:
                     body_excerpt=observation.body_excerpt,
                     redirect_location=observation.redirect_location,
                     body_truncated=(
-                        len(observation.body_excerpt.encode("utf-8")) >= self.policy.max_response_bytes
+                        len(observation.body_excerpt.encode("utf-8"))
+                        >= self.policy.max_response_bytes
                     ),
                 )
                 evidence = Evidence(
@@ -132,16 +130,12 @@ class APIAssessmentProvider:
                         "location": observation.redirect_location or "",
                     },
                 )
-                persisted = self.handoff.persist_evidence(
-                    execution_id, self.metadata, evidence
-                )
+                persisted = self.handoff.persist_evidence(execution_id, self.metadata, evidence)
                 if self.policy.emit_policy_findings and self.asset_resolver is not None:
                     asset = self.asset_resolver(f"url:{url}")
                     if asset is None:
                         raise ValueError(f"API target has no authorized asset: {url}")
-                    for finding in evaluate_api_policy(
-                        api_observation, asset.id, persisted.id
-                    ):
+                    for finding in evaluate_api_policy(api_observation, asset.id, persisted.id):
                         self.handoff.persist_finding(
                             execution_id, self.metadata, asset, finding, (persisted,)
                         )
@@ -155,14 +149,14 @@ class APIAssessmentProvider:
         except ValueError:
             if self.destination_resolver is None:
                 from threatlens.providers.web import WebAssessmentProvider
+
                 addresses = set(
                     ipaddress.ip_address(address)
                     for address in WebAssessmentProvider._resolve_addresses(hostname)
                 )
             else:
                 addresses = {
-                    ipaddress.ip_address(address)
-                    for address in self.destination_resolver(hostname)
+                    ipaddress.ip_address(address) for address in self.destination_resolver(hostname)
                 }
         if not addresses:
             raise ConnectionError(
@@ -196,7 +190,7 @@ class APIAssessmentProvider:
     def _header(observation: APIObservation | object, name: str) -> str:
         wanted = name.lower()
         return next(
-            (value for key, value in getattr(observation, "headers") if key.lower() == wanted),
+            (value for key, value in observation.headers if key.lower() == wanted),
             "",
         )
 

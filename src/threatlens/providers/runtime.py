@@ -6,7 +6,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from threading import BoundedSemaphore, Event, Lock, Semaphore, Thread
 from time import monotonic
-from typing import Callable, Protocol
+from typing import Protocol
+from collections.abc import Callable
 from uuid import UUID
 
 from threatlens.domain.models import Campaign
@@ -164,7 +165,10 @@ class ExecutionRuntime:
         while not acquired:
             acquired = self._concurrency_gate.acquire(timeout=0.05)
             if not acquired and cancel_event.is_set():
-                emit(ProviderEventType.CANCELLED, "provider cancellation requested before execution slot was available")
+                emit(
+                    ProviderEventType.CANCELLED,
+                    "provider cancellation requested before execution slot was available",
+                )
                 return ExecutionResult(
                     success=False,
                     cancelled=True,
@@ -183,7 +187,11 @@ class ExecutionRuntime:
                     heartbeat()
                 except Exception as exc:
                     heartbeat_error.append(f"{type(exc).__name__}: {exc}")
-                    emit(ProviderEventType.WARNING, "execution heartbeat update failed", error=heartbeat_error[-1])
+                    emit(
+                        ProviderEventType.WARNING,
+                        "execution heartbeat update failed",
+                        error=heartbeat_error[-1],
+                    )
                     heartbeat_stop.set()
 
         def invoke() -> None:
@@ -197,7 +205,9 @@ class ExecutionRuntime:
 
         emit(ProviderEventType.STARTED, version=metadata.version)
         worker = Thread(target=invoke, name=f"threatlens-provider-{execution_id}", daemon=True)
-        heartbeat_worker = Thread(target=heartbeat_loop, name=f"threatlens-heartbeat-{execution_id}", daemon=True)
+        heartbeat_worker = Thread(
+            target=heartbeat_loop, name=f"threatlens-heartbeat-{execution_id}", daemon=True
+        )
         try:
             worker.start()
             heartbeat_worker.start()

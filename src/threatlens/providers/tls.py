@@ -5,9 +5,10 @@ from __future__ import annotations
 import socket
 import ssl
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from threading import Event
-from typing import Callable, Protocol
+from typing import Protocol
+from collections.abc import Callable
 from uuid import UUID
 
 from threatlens.domain.models import Asset, Campaign, Evidence
@@ -45,7 +46,9 @@ class SocketTLSProbe:
                     cert = tls.getpeercert()
                     subject = _name(cert.get("subject", ()))
                     issuer = _name(cert.get("issuer", ()))
-                    san = tuple(value for kind, value in cert.get("subjectAltName", ()) if kind == "DNS")
+                    san = tuple(
+                        value for kind, value in cert.get("subjectAltName", ()) if kind == "DNS"
+                    )
                     return TLSObservation(
                         host=host,
                         port=port,
@@ -199,6 +202,7 @@ class TLSAssessmentProvider:
         if not value or "://" in value or "/" in value:
             raise ValueError("TLS assessment accepts host/IP targets only")
         import ipaddress
+
         try:
             return str(ipaddress.ip_address(value))
         except ValueError:
@@ -206,13 +210,21 @@ class TLSAssessmentProvider:
                 raise ValueError(f"invalid TLS host: {target!r}") from None
             normalized = value.lower().rstrip(".")
             labels = normalized.split(".")
-            if not all(label and len(label) <= 63 and label[0] != "-" and label[-1] != "-" for label in labels):
-                raise ValueError(f"invalid TLS host: {target!r}")
+            if not all(
+                label and len(label) <= 63 and label[0] != "-" and label[-1] != "-"
+                for label in labels
+            ):
+                raise ValueError(f"invalid TLS host: {target!r}") from None
             return normalized
 
 
 def _name(parts: tuple[tuple[tuple[str, str], ...], ...]) -> str | None:
-    values = [value for group in parts for key, value in group if key in {"commonName", "organizationName"}]
+    values = [
+        value
+        for group in parts
+        for key, value in group
+        if key in {"commonName", "organizationName"}
+    ]
     return values[0] if values else None
 
 
@@ -224,5 +236,5 @@ def _serialize(observation: TLSObservation) -> str:
         f"san={','.join(observation.san)}\nnot_before={observation.not_before or ''}\n"
         f"not_after={observation.not_after or ''}\nhostname_match={observation.hostname_match}\n"
         f"certificate_error={observation.certificate_error or ''}\n"
-        f"captured_at={datetime.now(timezone.utc).isoformat()}"
+        f"captured_at={datetime.now(UTC).isoformat()}"
     )

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from uuid import uuid4
 
 from threatlens.providers.tls import TLSObservation
@@ -50,7 +50,7 @@ def test_expired_certificate_is_detected_deterministically() -> None:
         _obs(not_after="Jan  1 00:00:00 2025 GMT"),
         asset_id=uuid4(),
         evidence_id=uuid4(),
-        now=datetime(2026, 1, 2, tzinfo=timezone.utc),
+        now=datetime(2026, 1, 2, tzinfo=UTC),
     )[0]
     assert finding.vulnerability_id == "TLS-CERT-EXPIRED"
 

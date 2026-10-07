@@ -102,7 +102,9 @@ class NetworkDiscoveryProvider:
             if processed > self.policy.max_targets:
                 raise ValueError("network discovery target count exceeds execution policy")
 
-            asset = Asset(canonical_id=f"host:{host}", asset_type=self._asset_type(host), value=host)
+            asset = Asset(
+                canonical_id=f"host:{host}", asset_type=self._asset_type(host), value=host
+            )
             self.repository.save_asset(asset)
             for port in self.policy.ports:
                 if cancel_event.is_set():
@@ -120,7 +122,12 @@ class NetworkDiscoveryProvider:
                     kind="tcp-connect",
                     content=f"tcp://{host}:{port} accepted a TCP connection",
                     source=self.name,
-                    metadata={"asset_id": str(asset.id), "host": host, "port": str(port), "protocol": "tcp"},
+                    metadata={
+                        "asset_id": str(asset.id),
+                        "host": host,
+                        "port": str(port),
+                        "protocol": "tcp",
+                    },
                 )
                 self.handoff.persist_evidence(
                     execution_id=execution_id,
@@ -143,9 +150,10 @@ class NetworkDiscoveryProvider:
             normalized = value.lower().rstrip(".")
             labels = normalized.split(".")
             if not all(
-                label and len(label) <= 63 and label[0] != "-" and label[-1] != "-" for label in labels
+                label and len(label) <= 63 and label[0] != "-" and label[-1] != "-"
+                for label in labels
             ):
-                raise ValueError(f"invalid network discovery host: {target!r}")
+                raise ValueError(f"invalid network discovery host: {target!r}") from None
             return normalized
 
     @staticmethod
@@ -158,6 +166,13 @@ class NetworkDiscoveryProvider:
     @staticmethod
     def _well_known_service(port: int) -> str | None:
         return {
-            22: "ssh", 25: "smtp", 53: "dns", 80: "http", 110: "pop3",
-            143: "imap", 443: "https", 445: "smb", 3389: "rdp",
+            22: "ssh",
+            25: "smtp",
+            53: "dns",
+            80: "http",
+            110: "pop3",
+            143: "imap",
+            443: "https",
+            445: "smb",
+            3389: "rdp",
         }.get(port)

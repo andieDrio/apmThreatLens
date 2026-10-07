@@ -7,7 +7,10 @@ import pytest
 
 from threatlens.domain.models import Campaign, Scope
 from threatlens.providers.handoff import ProviderHandoff
-from threatlens.providers.interrogation import ActiveServiceInterrogationProvider, InterrogationPolicy
+from threatlens.providers.interrogation import (
+    ActiveServiceInterrogationProvider,
+    InterrogationPolicy,
+)
 
 
 class FakeRepository:

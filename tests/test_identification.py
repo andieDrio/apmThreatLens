@@ -42,6 +42,8 @@ def test_banner_is_bounded() -> None:
 
 
 def test_null_bytes_are_removed_before_normalization() -> None:
-    observation = normalize_observation(port=80, banner="\x00HTTP/1.1 200 OK\r\nServer: caddy/2.8.4\r\n")
+    observation = normalize_observation(
+        port=80, banner="\x00HTTP/1.1 200 OK\r\nServer: caddy/2.8.4\r\n"
+    )
     assert observation.product == "caddy"
     assert observation.version == "2.8.4"

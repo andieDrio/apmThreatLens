@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from enum import StrEnum
 import hashlib
 import hmac
@@ -29,7 +29,9 @@ class Permission(StrEnum):
 
 _ROLE_PERMISSIONS = {
     Role.ADMIN: frozenset(Permission),
-    Role.ANALYST: frozenset({Permission.READ, Permission.ASSESS, Permission.VALIDATE, Permission.REMEDIATE}),
+    Role.ANALYST: frozenset(
+        {Permission.READ, Permission.ASSESS, Permission.VALIDATE, Permission.REMEDIATE}
+    ),
     Role.VIEWER: frozenset({Permission.READ}),
 }
 
@@ -66,7 +68,9 @@ class AuthenticationService:
             scheme, iteration_text, salt_hex, digest_hex = encoded.split("$")
             if scheme != "pbkdf2_sha256":
                 return False
-            expected = AuthenticationService._hash_password(password, bytes.fromhex(salt_hex), int(iteration_text))
+            expected = AuthenticationService._hash_password(
+                password, bytes.fromhex(salt_hex), int(iteration_text)
+            )
             return hmac.compare_digest(expected, encoded)
         except (ValueError, TypeError):
             return False
@@ -81,39 +85,66 @@ class AuthenticationService:
             role = Role(role)
         except ValueError as exc:
             raise ValueError("unsupported role") from exc
-        user = User(username=username, password_hash=self.create_password_hash(password), role=role.value)
+        user = User(
+            username=username, password_hash=self.create_password_hash(password), role=role.value
+        )
         self.repository.save_user(user)
         self.repository.save_audit_event(
-            AuditEvent(actor_user_id=user.id, action="USER_CREATED", resource_type="USER",
-                       resource_id=user.id, outcome="SUCCESS", detail=f"role={role.value}")
+            AuditEvent(
+                actor_user_id=user.id,
+                action="USER_CREATED",
+                resource_type="USER",
+                resource_id=user.id,
+                outcome="SUCCESS",
+                detail=f"role={role.value}",
+            )
         )
         return user
 
     def authenticate(self, username: str, password: str) -> tuple[AuthenticatedPrincipal, str]:
         user = self.repository.user_by_username(username.strip())
-        if user is None or not user.active or not self._verify_password(password, user.password_hash):
+        if (
+            user is None
+            or not user.active
+            or not self._verify_password(password, user.password_hash)
+        ):
             self.repository.save_audit_event(
-                AuditEvent(actor_user_id=None, action="LOGIN", resource_type="AUTH",
-                           resource_id=None, outcome="DENIED", detail="invalid credentials")
+                AuditEvent(
+                    actor_user_id=None,
+                    action="LOGIN",
+                    resource_type="AUTH",
+                    resource_id=None,
+                    outcome="DENIED",
+                    detail="invalid credentials",
+                )
             )
             raise PermissionError("authentication failed")
         role = Role(user.role)
         raw_token = secrets.token_urlsafe(32)
         session_id = self.repository.create_session(
-            user.id, hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
-            datetime.now(timezone.utc) + self.session_ttl,
+            user.id,
+            hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
+            datetime.now(UTC) + self.session_ttl,
         )
         self.repository.save_audit_event(
-            AuditEvent(actor_user_id=user.id, action="LOGIN", resource_type="AUTH",
-                       resource_id=user.id, outcome="SUCCESS", detail="session created")
+            AuditEvent(
+                actor_user_id=user.id,
+                action="LOGIN",
+                resource_type="AUTH",
+                resource_id=user.id,
+                outcome="SUCCESS",
+                detail="session created",
+            )
         )
         return AuthenticatedPrincipal(user.id, user.username, role, session_id), raw_token
 
     def authenticate_session(self, raw_token: str) -> AuthenticatedPrincipal:
         if not raw_token:
             raise PermissionError("authentication required")
-        session = self.repository.session_by_token_hash(hashlib.sha256(raw_token.encode("utf-8")).hexdigest())
-        now = datetime.now(timezone.utc)
+        session = self.repository.session_by_token_hash(
+            hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+        )
+        now = datetime.now(UTC)
         if session is None or session["revoked"] or session["expires_at"] <= now:
             raise PermissionError("session is invalid or expired")
         user = self.repository.user_by_id(UUID(session["user_id"]))
@@ -124,8 +155,14 @@ class AuthenticationService:
     def logout(self, principal: AuthenticatedPrincipal) -> None:
         self.repository.revoke_session(principal.session_id)
         self.repository.save_audit_event(
-            AuditEvent(actor_user_id=principal.user_id, action="LOGOUT", resource_type="AUTH",
-                       resource_id=principal.user_id, outcome="SUCCESS", detail="session revoked")
+            AuditEvent(
+                actor_user_id=principal.user_id,
+                action="LOGOUT",
+                resource_type="AUTH",
+                resource_id=principal.user_id,
+                outcome="SUCCESS",
+                detail="session revoked",
+            )
         )
 
     def authorize(self, principal: AuthenticatedPrincipal | None, permission: Permission) -> None:
@@ -133,8 +170,13 @@ class AuthenticationService:
             raise PermissionError("authentication required")
         if permission not in _ROLE_PERMISSIONS[principal.role]:
             self.repository.save_audit_event(
-                AuditEvent(actor_user_id=principal.user_id, action="AUTHZ_DENIED",
-                           resource_type="PERMISSION", resource_id=None, outcome="DENIED",
-                           detail=f"permission={permission.value}")
+                AuditEvent(
+                    actor_user_id=principal.user_id,
+                    action="AUTHZ_DENIED",
+                    resource_type="PERMISSION",
+                    resource_id=None,
+                    outcome="DENIED",
+                    detail=f"permission={permission.value}",
+                )
             )
             raise PermissionError("insufficient permission")

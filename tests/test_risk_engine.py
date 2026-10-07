@@ -54,7 +54,9 @@ def test_cvss_is_supporting_input_not_sole_risk_determinant():
 
     assert assessment.level is RiskLevel.LOW
     assert assessment.score < 0.40
-    assert any("CVSS is not used as the sole risk determinant" in item for item in assessment.explanation)
+    assert any(
+        "CVSS is not used as the sole risk determinant" in item for item in assessment.explanation
+    )
 
 
 def test_missing_environmental_context_is_not_treated_as_zero():

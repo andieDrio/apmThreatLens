@@ -71,7 +71,9 @@ class SocketHTTPProbe:
                 reason=exc.reason or "",
                 headers=headers,
                 body_excerpt=body,
-                redirect_location=exc.headers.get("Location") if exc.code in {301, 302, 303, 307, 308} else None,
+                redirect_location=exc.headers.get("Location")
+                if exc.code in {301, 302, 303, 307, 308}
+                else None,
             )
         except (URLError, OSError, TimeoutError) as exc:
             raise ConnectionError(f"HTTP assessment failed: {type(exc).__name__}: {exc}") from exc
@@ -124,10 +126,14 @@ class WebAssessmentProvider:
         self.destination_resolver = destination_resolver or self._resolve_addresses
 
     def execute(self, campaign: Campaign, execution_id: UUID, cancel_event: Event) -> None:
-        targets = [self._normalize_url(value) for value in campaign.scope.include if self._is_url(value)]
+        targets = [
+            self._normalize_url(value) for value in campaign.scope.include if self._is_url(value)
+        ]
         if len(targets) > self.policy.max_targets:
             raise ValueError("web target count exceeds execution policy")
-        excluded = {self._normalize_url(value) for value in campaign.scope.exclude if self._is_url(value)}
+        excluded = {
+            self._normalize_url(value) for value in campaign.scope.exclude if self._is_url(value)
+        }
         for url in targets:
             if cancel_event.is_set():
                 return
@@ -185,13 +191,15 @@ class WebAssessmentProvider:
         except ValueError:
             try:
                 addresses = {
-                    ipaddress.ip_address(address)
-                    for address in self.destination_resolver(hostname)
+                    ipaddress.ip_address(address) for address in self.destination_resolver(hostname)
                 }
             except OSError as exc:
                 raise ConnectionError(f"web assessment DNS resolution failed: {hostname}") from exc
         if not self.policy.allow_private_addresses and any(
-            address.is_private or address.is_loopback or address.is_link_local or address.is_reserved
+            address.is_private
+            or address.is_loopback
+            or address.is_link_local
+            or address.is_reserved
             for address in addresses
         ):
             raise PermissionError("web assessment destination resolves to a non-public address")
@@ -199,7 +207,9 @@ class WebAssessmentProvider:
     @staticmethod
     def _resolve_addresses(hostname: str) -> tuple[str, ...]:
         try:
-            return tuple(info[4][0] for info in socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM))
+            return tuple(
+                info[4][0] for info in socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+            )
         except OSError as exc:
             raise ConnectionError(f"web assessment DNS resolution failed: {hostname}") from exc
 

@@ -6,9 +6,9 @@ import re
 from collections import defaultdict
 from dataclasses import replace
 from enum import IntEnum
-from uuid import NAMESPACE_URL, UUID, uuid5
+from uuid import NAMESPACE_URL, uuid5
 
-from threatlens.domain.models import Finding, FindingState, Severity
+from threatlens.domain.models import Finding, FindingState
 
 
 class _SeverityRank(IntEnum):
@@ -63,7 +63,9 @@ def correlate_findings(findings: tuple[Finding, ...] | list[Finding]) -> tuple[F
                 str(item.id),
             ),
         )
-        evidence_ids = tuple(dict.fromkeys(evidence_id for item in group for evidence_id in item.evidence_ids))
+        evidence_ids = tuple(
+            dict.fromkeys(evidence_id for item in group for evidence_id in item.evidence_ids)
+        )
         sources = tuple(sorted({item.source for item in group if item.source}))
         logical_id = uuid5(NAMESPACE_URL, f"threatlens:finding:{key}")
         merged_source = ",".join(sources) if sources else representative.source

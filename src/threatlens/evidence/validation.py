@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from hashlib import sha256
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from enum import StrEnum
 from uuid import UUID, uuid4
 
@@ -21,7 +21,9 @@ class EvidenceValidationState(StrEnum):
 
 
 _ALLOWED_TRANSITIONS: dict[EvidenceValidationState, frozenset[EvidenceValidationState]] = {
-    EvidenceValidationState.PENDING: frozenset({EvidenceValidationState.VALIDATED, EvidenceValidationState.REJECTED}),
+    EvidenceValidationState.PENDING: frozenset(
+        {EvidenceValidationState.VALIDATED, EvidenceValidationState.REJECTED}
+    ),
     EvidenceValidationState.VALIDATED: frozenset({EvidenceValidationState.SUPERSEDED}),
     EvidenceValidationState.REJECTED: frozenset({EvidenceValidationState.SUPERSEDED}),
     EvidenceValidationState.SUPERSEDED: frozenset(),
@@ -34,7 +36,9 @@ def validate_evidence_transition(
 ) -> None:
     """Reject lifecycle changes that could silently rewrite a validation decision."""
     if target not in _ALLOWED_TRANSITIONS[current]:
-        raise ValueError(f"invalid evidence validation transition: {current.value} -> {target.value}")
+        raise ValueError(
+            f"invalid evidence validation transition: {current.value} -> {target.value}"
+        )
 
 
 def validate_evidence_integrity(evidence: Evidence) -> None:
@@ -54,7 +58,7 @@ class EvidenceValidation:
     state: EvidenceValidationState
     validator: str
     rationale: str
-    validated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    validated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     supporting_evidence_ids: tuple[UUID, ...] = ()
     id: UUID = field(default_factory=uuid4)
 

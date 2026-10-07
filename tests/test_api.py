@@ -55,23 +55,29 @@ def test_api_policy_flags_only_malformed_explicit_json() -> None:
 def test_api_policy_ignores_non_json_and_head() -> None:
     asset_id = uuid4()
     evidence_id = uuid4()
-    assert evaluate_api_policy(
-        make_observation(body="<html>", headers=(("content-type", "text/html"),)),
-        asset_id,
-        evidence_id,
-    ) == ()
-    assert evaluate_api_policy(
-        APIObservation(
-            url="https://api.example.test/v1/items",
-            method="HEAD",
-            status_code=200,
-            reason="OK",
-            headers=(("content-type", "application/json"),),
-            body_excerpt="",
-        ),
-        asset_id,
-        evidence_id,
-    ) == ()
+    assert (
+        evaluate_api_policy(
+            make_observation(body="<html>", headers=(("content-type", "text/html"),)),
+            asset_id,
+            evidence_id,
+        )
+        == ()
+    )
+    assert (
+        evaluate_api_policy(
+            APIObservation(
+                url="https://api.example.test/v1/items",
+                method="HEAD",
+                status_code=200,
+                reason="OK",
+                headers=(("content-type", "application/json"),),
+                body_excerpt="",
+            ),
+            asset_id,
+            evidence_id,
+        )
+        == ()
+    )
 
 
 def test_api_provider_persists_evidence_and_finding() -> None:

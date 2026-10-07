@@ -66,7 +66,9 @@ def test_network_discovery_rejects_url_and_target_overflow(tmp_path) -> None:
     repo = SQLiteRepository(tmp_path / "threatlens.db")
     repo.initialize()
     with pytest.raises(ValueError):
-        NetworkDiscoveryProvider(repo, ProviderHandoff(repo))._normalize_host("https://example.test")
+        NetworkDiscoveryProvider(repo, ProviderHandoff(repo))._normalize_host(
+            "https://example.test"
+        )
     campaign = Campaign(
         name="overflow-test",
         scope=Scope(include=("192.0.2.10", "192.0.2.11"), exclude=()),

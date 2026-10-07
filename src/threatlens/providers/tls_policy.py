@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from uuid import UUID
 
 from threatlens.domain.models import Finding, FindingState, Severity
@@ -33,7 +33,7 @@ def evaluate_tls_observation(
     """
     policy = policy or TLSPolicy()
     findings: list[Finding] = []
-    current = now or datetime.now(timezone.utc)
+    current = now or datetime.now(UTC)
 
     if observation.certificate_error:
         findings.append(
@@ -108,7 +108,7 @@ def _expired(value: str | None, now: datetime) -> bool:
     if not value:
         return False
     try:
-        expires = datetime.strptime(value, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
+        expires = datetime.strptime(value, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=UTC)
     except ValueError:
         return False
     return expires < now
