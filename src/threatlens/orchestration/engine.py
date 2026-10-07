@@ -96,7 +96,16 @@ class ScanOrchestrator:
                 finished_at=scan.queued_at,
             )
 
-        self.repository.update_scan_state(scan.execution_id, LifecycleState.RUNNING)
+        if not self.repository.update_scan_state_if_current(
+            scan.execution_id, LifecycleState.QUEUED, LifecycleState.RUNNING
+        ):
+            return Scan(
+                campaign_id=scan.campaign_id,
+                provider_name=scan.provider_name,
+                execution_id=scan.execution_id,
+                state=self.repository.scan_state(scan.execution_id),
+                queued_at=scan.queued_at,
+            )
         result = self.runtime.execute(
             campaign,
             scan.execution_id,
@@ -149,7 +158,16 @@ class ScanOrchestrator:
                 finished_at=scan.queued_at,
             )
 
-        self.repository.update_scan_state(scan.execution_id, LifecycleState.RUNNING)
+        if not self.repository.update_scan_state_if_current(
+            scan.execution_id, LifecycleState.QUEUED, LifecycleState.RUNNING
+        ):
+            return Scan(
+                campaign_id=scan.campaign_id,
+                provider_name=scan.provider_name,
+                execution_id=scan.execution_id,
+                state=self.repository.scan_state(scan.execution_id),
+                queued_at=scan.queued_at,
+            )
         try:
             provider.execute(campaign, scan.execution_id, event)
             final_state = LifecycleState.CANCELLED if event.is_set() else LifecycleState.COMPLETED
