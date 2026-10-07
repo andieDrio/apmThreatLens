@@ -241,7 +241,10 @@ class PostgresFindingCorrelationMixin:
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.execute(
-                    "INSERT INTO finding_correlations (correlation_key,finding_id,created_at) VALUES (%s,%s,%s)",
+                    (
+                        "INSERT INTO finding_correlations "
+                        "(correlation_key,finding_id,created_at) VALUES (%s,%s,%s)"
+                    ),
                     (key, finding_id, datetime.now(timezone.utc)),
                 )
 
@@ -249,8 +252,9 @@ class PostgresFindingCorrelationMixin:
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.execute(
-                    """UPDATE findings SET title=%s,state=%s,severity=%s,vulnerability_id=%s,cwe=%s,cve=%s,
-                       cvss=%s,confidence=%s,source=%s,detected_at=%s WHERE id=%s""",
+                    """UPDATE findings SET title=%s,state=%s,severity=%s,
+                       vulnerability_id=%s,cwe=%s,cve=%s,cvss=%s,
+                       confidence=%s,source=%s,detected_at=%s WHERE id=%s""",
                     (
                         finding.title, finding.state.value, finding.severity.value,
                         finding.vulnerability_id, finding.cwe, finding.cve, finding.cvss,
@@ -262,6 +266,9 @@ class PostgresFindingCorrelationMixin:
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.executemany(
-                    "INSERT INTO finding_evidence (finding_id,evidence_id) VALUES (%s,%s) ON CONFLICT DO NOTHING",
+                    (
+                    "INSERT INTO finding_evidence "
+                    "(finding_id,evidence_id) VALUES (%s,%s) ON CONFLICT DO NOTHING"
+                ),
                     [(finding_id, evidence_id) for evidence_id in evidence_ids],
                 )
