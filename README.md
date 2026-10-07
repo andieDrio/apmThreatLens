@@ -75,6 +75,14 @@ Provider execution now enforces ExecutionPolicy.max_concurrency through a shared
 
 SQLite scan lifecycle operations now execute their read/validate/write state transitions inside one repository transaction and use a repository lock for concurrent lifecycle access. SQLite permits cross-thread repository cancellation safely while preserving serialized connection use. PostgreSQL now exposes the same transactional update_scan_state() contract, locks lifecycle rows during read/validate/write transitions, and serializes scan/audit transaction access. Pre-start cancellation uses the atomic cancellation primitive.
 
+## Gate 18 Reliability Hardening Update — Persistence Failure Atomicity and Recovery
+
+Scan creation, lifecycle finalization, and cancellation now use repository-level atomic transactions that couple the state mutation with its audit event. If the audit write or lifecycle write fails, the transaction rolls back and the persisted scan state is not partially advanced.
+
+Provider execution failures are handled separately from persistence failures. A successful provider is never reclassified as a provider failure merely because lifecycle finalization persistence failed. The persistence exception is allowed to surface fail-closed, leaving the last durable lifecycle state authoritative for deterministic recovery.
+
+Recovery is explicit: after a persistence failure, operators can inspect the authoritative persisted state and retry the valid lifecycle transition once the persistence fault is removed. SQLite and PostgreSQL implement the same atomic repository contract.
+
 ## Next Architecture Direction
 
 After local validation of this hardening, continue Gate 18 reliability/performance review with any remaining transaction-boundary races before advancing to the next architecture priority.
