@@ -102,7 +102,11 @@ CREATE TABLE IF NOT EXISTS findings (
     cvss REAL CHECK (cvss IS NULL OR (cvss >= 0 AND cvss <= 10)),
     confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
     source TEXT NOT NULL,
-    detected_at TEXT NOT NULL
+    detected_at TEXT NOT NULL,
+    service_id TEXT REFERENCES services(id),
+    endpoint TEXT,
+    parameter TEXT,
+    location TEXT
 );
 
 CREATE TABLE IF NOT EXISTS finding_evidence (
@@ -126,6 +130,20 @@ class SQLiteRepository(
         self.connection.execute("PRAGMA foreign_keys = ON")
         self.connection.execute("PRAGMA journal_mode = WAL")
 
+    def _ensure_finding_context_columns(self) -> None:
+        columns = {row[1] for row in self.connection.execute("PRAGMA table_info(findings)").fetchall()}
+        if not columns:
+            return
+        for column, definition in (
+            ("service_id", "TEXT REFERENCES services(id)"),
+            ("endpoint", "TEXT"),
+            ("parameter", "TEXT"),
+            ("location", "TEXT"),
+        ):
+            if column not in columns:
+                self.connection.execute(f"ALTER TABLE findings ADD COLUMN {column} {definition}")
+        self.connection.commit()
+
     def _ensure_scan_heartbeat_column(self) -> None:
         columns = {row[1] for row in self.connection.execute("PRAGMA table_info(scans)").fetchall()}
         if not columns:
@@ -141,6 +159,7 @@ class SQLiteRepository(
         self.connection.executescript(SCHEMA)
         self.connection.commit()
         self._ensure_scan_heartbeat_column()
+        self._ensure_finding_context_columns()
         self.initialize_finding_correlation()
         self.initialize_evidence_validation()
         self.initialize_auth()
@@ -541,8 +560,8 @@ class SQLiteRepository(
         with self.connection:
             self.connection.execute(
                 """INSERT INTO findings
-                   (id,title,asset_id,state,severity,vulnerability_id,cwe,cve,cvss,confidence,source,detected_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   (id,title,asset_id,state,severity,vulnerability_id,cwe,cve,cvss,confidence,source,detected_at,service_id,endpoint,parameter,location)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     str(finding.id),
                     finding.title,
@@ -556,6 +575,10 @@ class SQLiteRepository(
                     finding.confidence,
                     finding.source,
                     finding.detected_at.isoformat(),
+                    str(finding.service_id) if finding.service_id else None,
+                    finding.endpoint,
+                    finding.parameter,
+                    finding.location,
                 ),
             )
             self.connection.executemany(
