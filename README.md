@@ -41,11 +41,11 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 - Deterministic TLS security-policy evaluation for deprecated TLS versions, certificate validation failures, hostname mismatch, certificate expiration, and weak/deprecated ciphers.
 - End-to-end TLS finding handoff through persisted evidence, asset resolution, normalized finding validation, and the existing ProviderHandoff boundary.
 - Deterministic cross-provider finding correlation using asset identity plus vulnerability identity (or normalized title/CWE fallback), with stable logical finding IDs and preservation of all unique evidence and contributing provider sources.
-- Automated persistence, orchestration, provider-runtime, evidence-handoff, discovery, network-discovery, identification, interrogation, TLS assessment, TLS finding integration, finding-correlation, risk-engine, and attack-path tests.
+- Automated persistence, orchestration, provider-runtime, evidence-handoff, discovery, network-discovery, identification, interrogation, TLS assessment, TLS finding integration, finding-correlation, risk-engine, attack-path, and evidence-validation tests.
 
 ### Current Architecture Gate
 
-Architecture Gate 15: Attack-Path Analysis. The system analyzes only explicitly supplied directional relationships that are validated and evidence-backed, between explicitly designated entry and objective assets. Paths are deterministic, cycle-safe, bounded by hop/path limits, and prioritized using already-computed finding risk without inventing exploitability, trust, reachability, or compromise relationships.
+Architecture Gate 16: Evidence Management and Validation. Raw evidence remains immutable and SHA-256 sealed. Validation is an explicit append-only lifecycle with PENDING → VALIDATED/REJECTED and terminal SUPERSEDED handling; validation decisions require traceability to persisted evidence and re-check stored evidence integrity before acceptance. Raw evidence is never rewritten by validation.
 
 ### PostgreSQL Deployment Readiness
 
@@ -59,4 +59,4 @@ Repository changes are verified through GitHub. Local pytest, lint, build, Postg
 
 ## Next Architecture Direction
 
-The next priority is Evidence Management and Validation: preserve evidence lifecycle/integrity, support validation state transitions, and make remediation/verification decisions traceable to immutable evidence without allowing unsupported claims.
+The next priority is Authentication and Authorization: enforce authenticated access, role-aware authorization, and fail-closed control boundaries before exposing higher-level assessment and remediation workflows.
