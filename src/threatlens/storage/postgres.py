@@ -194,7 +194,7 @@ class PostgresRepository(PostgresAuthMixin, PostgresFindingCorrelationMixin, Pos
                            (execution_id,campaign_id,provider_name,state,queued_at,started_at,finished_at,error,heartbeat_at)
                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (scan.execution_id, scan.campaign_id, scan.provider_name, scan.state.value,
-                         scan.queued_at, scan.started_at, scan.finished_at, scan.error),
+                         scan.queued_at, scan.started_at, scan.finished_at, scan.error, scan.heartbeat_at),
                     )
                     cursor.execute(
                         "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
