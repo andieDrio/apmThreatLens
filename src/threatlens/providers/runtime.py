@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 from threading import BoundedSemaphore, Event, Lock, Semaphore, Thread
-from time import monotonic
+from time import monotonic, sleep
 from typing import Callable, Protocol
 from uuid import UUID
 
@@ -135,6 +135,7 @@ class ExecutionRuntime:
         executor: ProviderExecutor,
         cancel_event: Event,
         observer: Callable[[ProviderEvent], None] | None = None,
+        heartbeat: Callable[[], None] | None = None,
     ) -> ExecutionResult:
         context = ExecutionContext(campaign.id, execution_id, metadata, self.policy, cancel_event)
         events: list[ProviderEvent] = []
@@ -172,6 +173,11 @@ class ExecutionRuntime:
                     events=tuple(events),
                 )
 
+        def heartbeat_loop() -> None:
+            while not done.wait(self.policy.heartbeat_interval_seconds):
+                if heartbeat is not None:
+                    heartbeat()
+
         def invoke() -> None:
             try:
                 executor.execute(campaign, execution_id, cancel_event)
@@ -183,8 +189,10 @@ class ExecutionRuntime:
 
         emit(ProviderEventType.STARTED, version=metadata.version)
         worker = Thread(target=invoke, name=f"threatlens-provider-{execution_id}", daemon=True)
+        heartbeat_worker = Thread(target=heartbeat_loop, name=f"threatlens-heartbeat-{execution_id}", daemon=True)
         try:
             worker.start()
+            heartbeat_worker.start()
         except BaseException:
             self._concurrency_gate.release()
             raise
@@ -195,6 +203,7 @@ class ExecutionRuntime:
         if timed_out:
             cancel_event.set()
             worker.join(self.policy.cancellation_grace_seconds)
+            heartbeat_worker.join(0)
             error = f"TimeoutError: provider exceeded {self.policy.timeout_seconds:.3f}s execution budget"
             if worker.is_alive():
                 error += "; provider worker did not stop within cancellation grace period"
