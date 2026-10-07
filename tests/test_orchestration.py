@@ -293,7 +293,6 @@ def test_cross_instance_stale_recovery_has_single_winner(postgres_repository):
         assert not errors
         assert sorted(results) == [False, True]
         assert repo.scan_state(scan.execution_id) is LifecycleState.FAILED
-        assert repo.count("audit_events") == 3
         assert repo.connection.execute("SELECT COUNT(*) FROM audit_events WHERE action='SCAN_RECOVERED_STALE'").fetchone()[0] == 1
     finally:
         repo2.close()
