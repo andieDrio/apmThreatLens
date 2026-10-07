@@ -180,7 +180,7 @@ class SQLiteRepository(SQLiteAuthMixin, SQLiteFindingCorrelationMixin, SQLiteEvi
                 self.connection.execute(
                     """INSERT INTO scans
                        (execution_id,campaign_id,provider_name,state,queued_at,started_at,finished_at,error)
-                       VALUES (?,?,?,?,?,?,?,?)""",
+                       VALUES (?,?,?,?,?,?,?,?,?)""",
                     (str(scan.execution_id), str(scan.campaign_id), scan.provider_name, scan.state.value,
                      scan.queued_at.isoformat(), scan.started_at.isoformat() if scan.started_at else None,
                      scan.finished_at.isoformat() if scan.finished_at else None, scan.error),
