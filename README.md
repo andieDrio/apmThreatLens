@@ -51,7 +51,7 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 
 ### Current Architecture Gate
 
-Architecture Gate 26: Vulnerability Correlation Context Expansion. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
+Architecture Gate 27: Risk Context Provenance. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
 
 ### Gate 19 PostgreSQL Enforcement — COMPLETE
 
@@ -68,6 +68,12 @@ For local development, install the Python dependencies after pulling the reposit
 Gate 26 expands deterministic finding identity beyond asset and vulnerability identity. Findings may now carry explicit service, endpoint, parameter, and location context. Correlation includes every supplied context dimension, normalizes textual context deterministically, and refuses to merge context-bearing findings with context-free findings. PostgreSQL and legacy SQLite persistence retain the context fields so durable correlation uses the same identity as in-memory correlation.
 
 **Validation status:** Gate 26 focused regression tests are implemented but require local `pytest -q` and `ruff check .` execution before completion.
+
+### Architecture Gate 27 — Risk Context Provenance — IMPLEMENTED
+
+Gate 27 requires explicit provenance for supplied environmental risk context. Risk assessments now retain the source of environmental inputs, and supplied context without a declared source is rejected rather than treated as anonymous telemetry. This keeps risk scoring explainable and prepares the risk layer for auditable GUI drill-downs.
+
+**Validation status:** Gate 27 focused regression tests are implemented but require local `pytest -q` and `ruff check .` execution before completion.
 
 ### Validation Limitation
 
