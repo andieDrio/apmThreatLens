@@ -151,8 +151,7 @@ class AttackPathAnalyzer:
                             explanation=(
                                 "Path uses only explicitly supplied validated relationships.",
                                 (
-                                    "Every relationship in the path has at least one "
-                                    "evidence reference."
+                                    "Every relationship in the path has at least one evidence reference."
                                 ),
                                 (
                                     f"Highest associated finding risk is {score:.4f}; "
