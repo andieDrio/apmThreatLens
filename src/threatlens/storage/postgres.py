@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS findings (
     state TEXT NOT NULL, severity TEXT NOT NULL, vulnerability_id TEXT, cwe TEXT, cve TEXT,
     cvss DOUBLE PRECISION CHECK (cvss IS NULL OR (cvss >= 0 AND cvss <= 10)),
     confidence DOUBLE PRECISION NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
-    source TEXT NOT NULL, detected_at TIMESTAMPTZ NOT NULL
+    source TEXT NOT NULL, detected_at TIMESTAMPTZ NOT NULL,
+    service_id UUID REFERENCES services(id), endpoint TEXT, parameter TEXT, location TEXT
 );
 CREATE TABLE IF NOT EXISTS finding_evidence (
     finding_id UUID NOT NULL REFERENCES findings(id) ON DELETE CASCADE,
@@ -79,6 +80,10 @@ class PostgresRepository(
         self.connection.commit()
         with self.connection.cursor() as cursor:
             cursor.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ")
+            cursor.execute("ALTER TABLE findings ADD COLUMN IF NOT EXISTS service_id UUID REFERENCES services(id)")
+            cursor.execute("ALTER TABLE findings ADD COLUMN IF NOT EXISTS endpoint TEXT")
+            cursor.execute("ALTER TABLE findings ADD COLUMN IF NOT EXISTS parameter TEXT")
+            cursor.execute("ALTER TABLE findings ADD COLUMN IF NOT EXISTS location TEXT")
         self.connection.commit()
         self.initialize_finding_correlation()
         self.initialize_evidence_validation()
@@ -161,8 +166,8 @@ class PostgresRepository(
             with self.connection.cursor() as cursor:
                 cursor.execute(
                     """INSERT INTO findings
-                       (id,title,asset_id,state,severity,vulnerability_id,cwe,cve,cvss,confidence,source,detected_at)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                       (id,title,asset_id,state,severity,vulnerability_id,cwe,cve,cvss,confidence,source,detected_at,service_id,endpoint,parameter,location)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (
                         finding.id,
                         finding.title,
@@ -176,6 +181,10 @@ class PostgresRepository(
                         finding.confidence,
                         finding.source,
                         finding.detected_at,
+                        finding.service_id,
+                        finding.endpoint,
+                        finding.parameter,
+                        finding.location,
                     ),
                 )
                 cursor.executemany(
