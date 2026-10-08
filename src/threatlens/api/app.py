@@ -13,6 +13,7 @@ from threatlens.auth.service import AuthenticationService, Permission
 from threatlens.evidence.service import EvidenceValidationService
 from threatlens.evidence.validation import EvidenceValidationState
 from threatlens.orchestration.engine import ScanOrchestrator
+from threatlens.providers.runtime import ProviderRegistry
 from threatlens.safety.policy import ExecutionPolicy
 from threatlens.storage.postgres import PostgresRepository
 
@@ -137,6 +138,17 @@ class PrincipalResponse(BaseModel):
     session_id: str
 
 
+class ScanQueueRequest(BaseModel):
+    provider_name: str = Field(min_length=1, max_length=128)
+
+
+class ScanQueueResponse(BaseModel):
+    execution_id: str
+    campaign_id: str
+    provider_name: str
+    state: str
+
+
 class ScanControlResponse(BaseModel):
     execution_id: str
     action: str
@@ -183,9 +195,10 @@ class APIContext:
     auth: AuthenticationService
     orchestrator: ScanOrchestrator
     evidence_validation: EvidenceValidationService
+    provider_registry: ProviderRegistry
 
 
-def create_app(repository=None, auth_service=None, orchestrator=None) -> FastAPI:
+def create_app(repository=None, auth_service=None, orchestrator=None, provider_registry=None) -> FastAPI:
     """Create the API with injected persistence/auth dependencies."""
     if repository is None:
         dsn = os.getenv("THREATLENS_DATABASE_URL")
@@ -197,11 +210,14 @@ def create_app(repository=None, auth_service=None, orchestrator=None) -> FastAPI
         auth_service = AuthenticationService(repository)
     if orchestrator is None:
         orchestrator = ScanOrchestrator(repository, ExecutionPolicy(), auth_service)
+    if provider_registry is None:
+        provider_registry = ProviderRegistry()
     context = APIContext(
         repository=repository,
         auth=auth_service,
         orchestrator=orchestrator,
         evidence_validation=EvidenceValidationService(repository),
+        provider_registry=provider_registry,
     )
 
     app = FastAPI(
@@ -465,6 +481,33 @@ def create_app(repository=None, auth_service=None, orchestrator=None) -> FastAPI
             limit=result["limit"],
             offset=result["offset"],
             items=items,
+        )
+
+    @app.post(
+        "/api/v1/campaigns/{campaign_id}/scans",
+        response_model=ScanQueueResponse,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def queue_scan(
+        campaign_id: UUID,
+        request: ScanQueueRequest,
+        current=Depends(require(Permission.ASSESS)),
+    ) -> ScanQueueResponse:
+        try:
+            campaign = context.repository.campaign_by_id(campaign_id)
+            _, provider = context.provider_registry.get(request.provider_name)
+            scan = context.orchestrator.queue(campaign, provider, principal=current)
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        return ScanQueueResponse(
+            execution_id=str(scan.execution_id),
+            campaign_id=str(scan.campaign_id),
+            provider_name=scan.provider_name,
+            state=scan.state.value,
         )
 
     @app.post("/api/v1/scans/{execution_id}/cancel", response_model=ScanControlResponse)
