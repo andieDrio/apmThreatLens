@@ -1,5 +1,3 @@
-from uuid import uuid4
-
 import pytest
 
 from threatlens.attack_paths.engine import AttackPathRelation, AttackPathRelationType
