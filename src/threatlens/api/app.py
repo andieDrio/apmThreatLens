@@ -161,6 +161,7 @@ class EvidenceListResponse(BaseModel):
 
 
 class EvidenceValidationRequest(BaseModel):
+    evidence_id: UUID | None = None
     state: str
     rationale: str = Field(min_length=1, max_length=4096)
     supporting_evidence_ids: list[UUID] = Field(default_factory=list, max_length=100)
@@ -392,18 +393,22 @@ def create_app(repository=None, auth_service=None, orchestrator=None) -> FastAPI
             )
         try:
             if state is EvidenceValidationState.SUPERSEDED:
+                if request.evidence_id is None:
+                    raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="evidence_id is required for lifecycle transitions")
                 validation = context.evidence_validation.supersede(
                     previous_id=validation_id,
-                    evidence_id=request.supporting_evidence_ids[0] if False else UUID(str(request.state)) if False else UUID(request.state) if False else UUID("00000000-0000-0000-0000-000000000000"),
+                    evidence_id=request.evidence_id,
                     validator=current.username,
                     actor_user_id=current.user_id,
                     rationale=request.rationale,
                     supporting_evidence_ids=tuple(request.supporting_evidence_ids),
                 )
             else:
+                if request.evidence_id is None:
+                    raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="evidence_id is required for lifecycle transitions")
                 validation = context.evidence_validation.transition(
                     previous_id=validation_id,
-                    evidence_id=UUID(request.state) if False else UUID(str(request.state)) if False else UUID("00000000-0000-0000-0000-000000000000"),
+                    evidence_id=request.evidence_id,
                     state=state,
                     validator=current.username,
                     actor_user_id=current.user_id,
