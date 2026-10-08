@@ -146,6 +146,35 @@ class PostgresRepository(
             ),
         )
 
+    def save_campaign_with_audit(self, campaign: Campaign, actor_user_id: UUID) -> None:
+        from threatlens.domain.models import AuditEvent
+
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        "INSERT INTO campaigns (id,name,authorized,state,created_at) VALUES (%s,%s,%s,%s,%s)",
+                        (campaign.id, campaign.name, campaign.authorized, campaign.state.value, campaign.created_at),
+                    )
+                    cursor.execute("INSERT INTO scopes (campaign_id) VALUES (%s)", (campaign.id,))
+                    cursor.executemany(
+                        "INSERT INTO scope_entries (campaign_id,value,included) VALUES (%s,%s,%s)",
+                        [(campaign.id, value, True) for value in campaign.scope.include]
+                        + [(campaign.id, value, False) for value in campaign.scope.exclude],
+                    )
+                    event = AuditEvent(
+                        actor_user_id=actor_user_id,
+                        action="CAMPAIGN_CREATED",
+                        resource_type="CAMPAIGN",
+                        resource_id=campaign.id,
+                        outcome="SUCCESS",
+                        detail=f"authorized=true;include_count={len(campaign.scope.include)};exclude_count={len(campaign.scope.exclude)}",
+                    )
+                    cursor.execute(
+                        "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (event.id, event.actor_user_id, event.action, event.resource_type, event.resource_id, event.outcome, event.detail, event.created_at),
+                    )
+
     def save_asset(self, asset: Asset) -> None:
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
