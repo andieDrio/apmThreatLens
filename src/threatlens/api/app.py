@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from threatlens.auth.service import AuthenticationService, Permission
 from threatlens.evidence.service import EvidenceValidationService
-from threatlens.domain.models import Campaign, Scope
+from threatlens.domain.models import Campaign, FindingState, Scope
 from threatlens.evidence.validation import EvidenceValidationState
 from threatlens.orchestration.engine import ScanOrchestrator
 from threatlens.providers.runtime import ProviderRegistry
@@ -163,6 +163,18 @@ class ScanQueueResponse(BaseModel):
 
 class ScanControlResponse(BaseModel):
     execution_id: str
+    action: str
+    state: str
+    changed: bool
+
+
+class FindingRemediationRequest(BaseModel):
+    state: str
+    rationale: str = Field(min_length=1, max_length=4096)
+
+
+class FindingRemediationResponse(BaseModel):
+    finding_id: str
     action: str
     state: str
     changed: bool
@@ -539,6 +551,51 @@ def create_app(
             limit=result["limit"],
             offset=result["offset"],
             items=items,
+        )
+
+    @app.post(
+        "/api/v1/findings/{finding_id}/remediation",
+        response_model=FindingRemediationResponse,
+    )
+    def remediate_finding(
+        finding_id: UUID,
+        request: FindingRemediationRequest,
+        current=Depends(require(Permission.REMEDIATE)),
+    ) -> FindingRemediationResponse:
+        try:
+            target_state = FindingState(request.state)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="invalid finding state",
+            ) from exc
+
+        try:
+            changed, state, allowed = (
+                context.repository.transition_finding_remediation_with_audit(
+                    finding_id=finding_id,
+                    target_state=target_state,
+                    actor_user_id=current.user_id,
+                    rationale=request.rationale,
+                )
+            )
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="finding not found",
+            ) from exc
+
+        if not allowed:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="invalid finding remediation transition",
+            )
+
+        return FindingRemediationResponse(
+            finding_id=str(finding_id),
+            action="REMEDIATE",
+            state=state.value,
+            changed=changed,
         )
 
     @app.post(
