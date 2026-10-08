@@ -514,6 +514,63 @@ class PostgresRepository(
                     return assessment_id
 
 
+
+    def risk_assessments_read_model(
+        self, finding_id: UUID, limit: int = 50, offset: int = 0
+    ) -> dict[str, object]:
+        """Return bounded persisted risk assessments for one canonical finding."""
+        if not 1 <= limit <= 100:
+            raise ValueError("limit must be within 1..100")
+        if offset < 0:
+            raise ValueError("offset cannot be negative")
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT COUNT(*) FROM risk_assessments WHERE finding_id=%s",
+                (finding_id,),
+            )
+            total = int(cursor.fetchone()[0])
+            cursor.execute(
+                """SELECT id, finding_id, level, score, context_json, factors_json,
+                          explanation_json, inputs_used_json, missing_inputs_json,
+                          context_source, created_at
+                   FROM risk_assessments
+                   WHERE finding_id=%s
+                   ORDER BY created_at DESC, id DESC
+                   LIMIT %s OFFSET %s""",
+                (finding_id, limit, offset),
+            )
+            rows = cursor.fetchall()
+        items = []
+        for row in rows:
+            factors = []
+            for factor in list(row[5] or []):
+                normalized = dict(factor)
+                normalized["contribution"] = round(
+                    float(normalized["score"]) * float(normalized["weight"]), 4
+                )
+                factors.append(normalized)
+            items.append(
+                {
+                    "assessment_id": str(row[0]),
+                    "finding_id": str(row[1]),
+                    "level": str(row[2]),
+                    "score": float(row[3]),
+                    "context": dict(row[4] or {}),
+                    "factors": factors,
+                    "explanation": list(row[6] or []),
+                    "inputs_used": list(row[7] or []),
+                    "missing_inputs": list(row[8] or []),
+                    "context_source": row[9],
+                    "created_at": row[10],
+                }
+            )
+        return {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "items": items,
+        }
+
     def count(self, table: str) -> int:
         allowed = {
             "campaigns",
