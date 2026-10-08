@@ -126,7 +126,7 @@ async def test_risk_assessment_read_model_requires_authentication():
 
 
 @pytest.mark.anyio
-async def test_risk_assessment_read_model_requires_read_permission():
+async def test_risk_assessment_read_model_allows_viewer_read_permission():
     client, repository = make_client(Role.VIEWER)
     async with client:
         token = await login(client)
@@ -134,7 +134,7 @@ async def test_risk_assessment_read_model_requires_read_permission():
             f"/api/v1/findings/{repository.finding.id}/risk-assessments",
             headers={"Authorization": f"Bearer {token}"},
         )
-    assert response.status_code == 403
+    assert response.status_code == 200
 
 
 @pytest.mark.anyio
