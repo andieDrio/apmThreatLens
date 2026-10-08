@@ -1,4 +1,3 @@
-from datetime import UTC, datetime
 from uuid import uuid4
 
 import httpx
@@ -6,7 +5,7 @@ import pytest
 
 from threatlens.api.app import create_app
 from threatlens.auth.service import AuthenticationService, Role
-from threatlens.domain.models import AuditEvent, Campaign, LifecycleState, Scope, Scan, User
+from threatlens.domain.models import AuditEvent, Campaign, Scope, Scan, User
 from threatlens.providers.runtime import ProviderMetadata, ProviderRegistry, ProviderCapability
 
 
