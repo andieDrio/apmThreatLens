@@ -568,3 +568,18 @@ The authenticated principal is the sole audit actor. The API does not mutate evi
 API regression tests cover authentication, REMEDIATE authorization, successful remediation, denied invalid transitions, idempotent terminal-state requests, missing findings, and audit actor binding. Domain tests cover the fail-closed transition matrix, while PostgreSQL integration tests cover durable mutation and atomic audit behavior.
 
 **Validation status:** Gate 39 implementation and tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 39 can be declared complete.
+
+  
+## 63. Architecture Gate 40 — Authenticated Finding Risk Assessment API — IMPLEMENTED
+
+Gate 40 establishes the authenticated risk-assessment control boundary for an existing normalized finding. The endpoint `POST /api/v1/findings/{finding_id}/risk-assessments` requires ASSESS permission and delegates calculation to the existing deterministic `RiskEngine`.
+
+The HTTP contract accepts only explicitly normalized environmental inputs in the range 0..1. Whenever environmental context is supplied, a bounded source identifier is required. Missing values remain unknown and are excluded from the weighted calculation, preserving the existing explainability contract rather than treating absent telemetry as zero risk.
+
+The PostgreSQL repository reconstructs the normalized finding from canonical persistence, persists a unique risk-assessment record containing the full context, deterministic factors, explanations, inputs used, missing inputs, and context provenance, and commits the assessment together with a `RISK_ASSESSMENT_CREATED` security audit event. The authenticated principal is always the audit actor.
+
+The API returns the durable assessment identity and deterministic risk decision without exposing raw evidence or introducing arbitrary query controls. It does not create findings, mutate evidence, execute providers, modify campaign scope, or implement an alternate risk algorithm.
+
+Regression coverage includes authentication, ASSESS authorization, required context provenance, deterministic risk output, unknown-finding handling, domain risk semantics, and PostgreSQL persistence/audit behavior.
+
+**Validation status:** Gate 40 implementation and regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 40 can be declared complete.
