@@ -6,6 +6,9 @@ import json
 from threading import RLock
 from uuid import UUID, uuid4
 
+from hashlib import sha256
+from datetime import UTC, datetime
+
 from threatlens.attack_paths.engine import AttackPathRelation
 from threatlens.domain.models import (
     Asset,
@@ -73,7 +76,7 @@ CREATE TABLE IF NOT EXISTS attack_path_relations (
     validated BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL,
     validated_at TIMESTAMPTZ,
-    validated_by UUID REFERENCES users(id)
+    validated_by UUID
 );
 CREATE TABLE IF NOT EXISTS attack_path_relation_evidence (
     relation_id UUID NOT NULL REFERENCES attack_path_relations(id) ON DELETE CASCADE,
@@ -137,10 +140,10 @@ class PostgresRepository(
             with self.connection.transaction():
                 with self.connection.cursor() as cursor:
                     cursor.execute(
-                        "SELECT 1 FROM assets WHERE id=%s OR id=%s",
-                        (relation.source_asset_id, relation.target_asset_id),
+                        "SELECT COUNT(*) FROM assets WHERE id = ANY(%s)",
+                        ([str(relation.source_asset_id), str(relation.target_asset_id)],),
                     )
-                    if cursor.fetchone() is None:
+                    if cursor.fetchone()[0] != 2:
                         raise KeyError("attack-path relation references missing asset")
                     cursor.execute(
                         "SELECT id, content, sha256 FROM evidence WHERE id = ANY(%s)",
@@ -150,7 +153,7 @@ class PostgresRepository(
                     if len(rows) != len(relation.evidence_ids):
                         raise KeyError("attack-path relation references missing evidence")
                     for _, content, sealed_hash in rows:
-                        if not sealed_hash or sealed_hash != __import__("hashlib").sha256(
+                        if not sealed_hash or sealed_hash != sha256(
                             content.encode("utf-8")
                         ).hexdigest():
                             raise ValueError("attack-path relation references unsealed or invalid evidence")
@@ -184,9 +187,6 @@ class PostgresRepository(
         self, relation_id: UUID, actor_user_id: UUID
     ) -> bool:
         """Validate a relation only when every referenced evidence item is currently VALIDATED."""
-        from hashlib import sha256
-        from datetime import datetime, UTC
-
         with self._transaction_lock:
             with self.connection.transaction():
                 with self.connection.cursor() as cursor:
