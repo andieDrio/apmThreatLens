@@ -613,6 +613,40 @@ class PostgresRepository(
             ],
         }
 
+    def evidence_read_model(self, limit: int = 50, offset: int = 0) -> dict[str, object]:
+        """Return bounded immutable evidence metadata without exposing raw payloads."""
+        if not 1 <= limit <= 100:
+            raise ValueError("limit must be within 1..100")
+        if offset < 0:
+            raise ValueError("offset cannot be negative")
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM evidence")
+            total = int(cursor.fetchone()[0])
+            cursor.execute(
+                """SELECT id, kind, source, captured_at, sha256, metadata_json
+                   FROM evidence
+                   ORDER BY captured_at DESC, id DESC
+                   LIMIT %s OFFSET %s""",
+                (limit, offset),
+            )
+            rows = cursor.fetchall()
+        return {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "items": [
+                {
+                    "id": str(row[0]),
+                    "kind": row[1],
+                    "source": row[2],
+                    "captured_at": row[3],
+                    "sha256": row[4],
+                    "metadata": dict(row[5] or {}),
+                }
+                for row in rows
+            ],
+        }
+
     def findings_read_model(self, limit: int = 50, offset: int = 0) -> dict[str, object]:
         """Return a bounded finding list without exposing raw evidence or arbitrary SQL."""
         if not 1 <= limit <= 100:
