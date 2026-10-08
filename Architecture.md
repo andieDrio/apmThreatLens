@@ -472,7 +472,7 @@ The endpoint is strictly read-only. Campaign creation, scope mutation, authoriza
 
 Gate 33 is complete after explicit local validation.
 
-## 57. Architecture Gate 34 — Authenticated Scan Lifecycle Control API — IMPLEMENTED
+## 57. Architecture Gate 34 — Authenticated Scan Lifecycle Control API — COMPLETE
 
 Gate 34 exposes the existing `ScanOrchestrator` lifecycle controls through the authenticated HTTP application boundary. `POST /api/v1/scans/{execution_id}/cancel` and `POST /api/v1/scans/{execution_id}/recover-stale` require `ASSESS` permission and pass the authenticated principal directly to the orchestrator. FastAPI does not reproduce lifecycle state transitions or audit writes.
 
@@ -480,7 +480,7 @@ Cancellation remains governed by the existing transactional lifecycle contract: 
 
 The API returns the persisted lifecycle state after the control operation, distinguishes a state-changing recovery from a no-op, returns 404 for unknown executions, and rejects malformed execution identifiers. These endpoints do not invoke providers, expand scope, or create new authorization paths.
 
-**Validation status:** Gate 34 focused API regression tests are implemented. Local `pytest -q` and `ruff check .` are required before the gate can be declared complete.
+Gate 34 is complete after explicit local validation.
 
 ## 55. Architecture Gate 32 — Scan Read Model API — IMPLEMENTED
 
@@ -501,3 +501,16 @@ The response includes canonical asset identity, asset type/value, first/last obs
 The service information remains observational context. The read model does not infer vulnerabilities or exploitability and does not bypass the existing provider, evidence, correlation, or authorization boundaries.
 
 Gate 31 is complete after explicit local validation.
+
+
+## 58. Architecture Gate 35 — Authenticated Evidence Read Model API — IMPLEMENTED
+
+Gate 35 establishes the authenticated application read boundary for immutable evidence metadata. `GET /api/v1/evidence` requires the existing READ permission and returns a bounded, paginated application model containing evidence identity, kind, source, capture time, SHA-256 integrity identity, and provider/execution metadata.
+
+The API deliberately does not expose raw evidence content. Evidence remains immutable and its SHA-256 digest remains the integrity anchor established by ProviderHandoff. This gate is read-only and does not create an evidence mutation, validation-transition, arbitrary SQL, or provider-execution path.
+
+PostgreSQL supplies the evidence read model through fixed SQL with a maximum page size of 100 and deterministic ordering by capture time and evidence identity. The application boundary does not reconstruct findings, infer trust, or treat evidence metadata as a vulnerability claim.
+
+Authentication and authorization remain delegated to AuthenticationService and the existing READ permission boundary. Evidence validation lifecycle mutation remains outside this gate and continues to use the existing append-only persistence contracts.
+
+**Validation status:** Gate 35 focused API regression tests are implemented. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 35 can be declared complete.
