@@ -257,7 +257,7 @@ Successful changes, idempotent terminal-state requests, and denied invalid trans
 
 The endpoint does not alter evidence, create findings, execute providers, change campaign scope, or bypass finding/evidence identity. Validation decisions such as CONFIRMED, FALSE_POSITIVE, and NOT_REPRODUCIBLE remain outside this remediation boundary.
 
-Gate 39 implementation includes API regression coverage, domain transition tests, and PostgreSQL integration coverage. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 39 can be declared complete.
+Gate 39 is complete after explicit local PostgreSQL-backed `pytest -q` and `ruff check .` validation.
 
 ### Architecture Gate 40 — Authenticated Finding Risk Assessment API
 
