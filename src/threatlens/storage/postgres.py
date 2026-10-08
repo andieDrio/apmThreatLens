@@ -445,10 +445,11 @@ class PostgresRepository(
 
     def save_risk_assessment_with_audit(
         self, assessment, context: dict[str, object], actor_user_id: UUID
-    ) -> None:
+    ) -> UUID:
         from datetime import datetime
         from threatlens.domain.models import AuditEvent
 
+        assessment_id = uuid4()
         with self._transaction_lock:
             with self.connection.transaction():
                 with self.connection.cursor() as cursor:
@@ -459,7 +460,7 @@ class PostgresRepository(
                             context_source,created_at)
                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (
-                            uuid4(),
+                            assessment_id,
                             UUID(assessment.finding_id),
                             assessment.level.value,
                             assessment.score,
@@ -510,6 +511,7 @@ class PostgresRepository(
                             event.created_at,
                         ),
                     )
+                    return assessment_id
 
 
     def count(self, table: str) -> int:
