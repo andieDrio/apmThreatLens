@@ -53,6 +53,14 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 
 Architecture Gate 35: Authenticated Evidence Read Model API. Gate 34 Authenticated Scan Lifecycle Control API is complete after explicit local validation. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
 
+### Architecture Gate 35 — Authenticated Evidence Read Model API
+
+Gate 35 adds the authenticated `GET /api/v1/evidence` read model for immutable evidence metadata. The endpoint requires READ permission, uses bounded pagination, and exposes evidence identity, kind, source, capture time, SHA-256 integrity identity, and bounded metadata without exposing raw evidence content.
+
+The endpoint is strictly read-only. Evidence integrity remains anchored by the sealed SHA-256 digest, while evidence validation transitions remain governed by the existing append-only persistence contract. PostgreSQL remains authoritative and uses fixed, bounded SQL with deterministic ordering.
+
+**Validation status:** Gate 35 focused API regression tests are implemented. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 35 can be declared complete.
+
 ### Gate 19 PostgreSQL Enforcement — COMPLETE
 
 The active persistence test suite now runs through PostgreSQL only. The shared integration fixture requires `THREATLENS_TEST_DATABASE_URL` or the canonical `THREATLENS_DATABASE_URL`, never falls back to SQLite, initializes the schema, isolates tests with `TRUNCATE ... CASCADE`, and covers domain persistence, foreign-key integrity, authentication, durable correlation, evidence validation, scan lifecycle CAS, concurrency-sensitive orchestration, and PostgreSQL trigger-based failure-atomicity scenarios. The repository contains no active test-suite imports of `SQLiteRepository`. The SQLite adapter is retained only as legacy compatibility code and receives no new production behavior.
