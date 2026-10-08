@@ -528,6 +528,7 @@ class PostgresRepository(
             "users",
             "auth_sessions",
             "audit_events",
+            "risk_assessments",
         }
         if table not in allowed:
             raise ValueError("unsupported table")
