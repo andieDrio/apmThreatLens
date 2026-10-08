@@ -28,6 +28,7 @@ def test_risk_is_deterministic_and_explainable():
         business_impact=0.8,
         threat_relevance=0.7,
         control_coverage=0.1,
+        source="assessment-context",
     )
 
     first = RiskEngine().assess(finding, context)
@@ -48,6 +49,7 @@ def test_cvss_is_supporting_input_not_sole_risk_determinant():
         business_impact=0.0,
         threat_relevance=0.0,
         control_coverage=1.0,
+        source="assessment-context",
     )
 
     assessment = RiskEngine().assess(finding, low_context)
