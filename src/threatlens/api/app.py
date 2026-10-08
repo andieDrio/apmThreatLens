@@ -211,6 +211,27 @@ class RiskAssessmentResponse(BaseModel):
     missing_inputs: list[str]
     context_source: str | None = None
 
+class RiskAssessmentReadModel(BaseModel):
+    assessment_id: str
+    finding_id: str
+    level: str
+    score: float
+    context: dict[str, object]
+    factors: list[RiskFactorResponse]
+    explanation: list[str]
+    inputs_used: list[str]
+    missing_inputs: list[str]
+    context_source: str | None = None
+    created_at: str
+
+
+class RiskAssessmentListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[RiskAssessmentReadModel]
+
+
 
 class EvidenceReadModel(BaseModel):
     id: str
@@ -579,6 +600,53 @@ def create_app(
             normalized["detected_at"] = item["detected_at"].isoformat()
             items.append(FindingReadModel(**normalized))
         return FindingListResponse(
+            total=result["total"],
+            limit=result["limit"],
+            offset=result["offset"],
+            items=items,
+        )
+
+    @app.get(
+        "/api/v1/findings/{finding_id}/risk-assessments",
+        response_model=RiskAssessmentListResponse,
+    )
+    def finding_risk_assessments(
+        finding_id: UUID,
+        current=Depends(require(Permission.READ)),
+        limit: int = Query(default=50, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+    ) -> RiskAssessmentListResponse:
+        try:
+            context.repository.finding_by_id(finding_id)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="finding not found",
+            ) from exc
+
+        result = context.repository.risk_assessments_read_model(
+            finding_id=finding_id,
+            limit=limit,
+            offset=offset,
+        )
+        items = []
+        for item in result["items"]:
+            items.append(
+                RiskAssessmentReadModel(
+                    assessment_id=item["assessment_id"],
+                    finding_id=item["finding_id"],
+                    level=item["level"],
+                    score=item["score"],
+                    context=dict(item["context"]),
+                    factors=[RiskFactorResponse(**factor) for factor in item["factors"]],
+                    explanation=list(item["explanation"]),
+                    inputs_used=list(item["inputs_used"]),
+                    missing_inputs=list(item["missing_inputs"]),
+                    context_source=item["context_source"],
+                    created_at=item["created_at"].isoformat(),
+                )
+            )
+        return RiskAssessmentListResponse(
             total=result["total"],
             limit=result["limit"],
             offset=result["offset"],
