@@ -503,7 +503,7 @@ The service information remains observational context. The read model does not i
 Gate 31 is complete after explicit local validation.
 
 
-## 58. Architecture Gate 35 — Authenticated Evidence Read Model API — IMPLEMENTED
+## 58. Architecture Gate 35 — Authenticated Evidence Read Model API — COMPLETE
 
 Gate 35 establishes the authenticated application read boundary for immutable evidence metadata. `GET /api/v1/evidence` requires the existing READ permission and returns a bounded, paginated application model containing evidence identity, kind, source, capture time, SHA-256 integrity identity, and provider/execution metadata.
 
@@ -513,4 +513,17 @@ PostgreSQL supplies the evidence read model through fixed SQL with a maximum pag
 
 Authentication and authorization remain delegated to AuthenticationService and the existing READ permission boundary. Evidence validation lifecycle mutation remains outside this gate and continues to use the existing append-only persistence contracts.
 
-**Validation status:** Gate 35 focused API regression tests are implemented. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 35 can be declared complete.
+Gate 35 is complete after explicit local validation.
+
+
+## 59. Architecture Gate 36 — Authenticated Evidence Validation Lifecycle API — IMPLEMENTED
+
+Gate 36 exposes the existing evidence-validation lifecycle through an authenticated application boundary without duplicating or bypassing the domain/persistence contracts. Validation creation is available at `POST /api/v1/evidence/{evidence_id}/validations`, while lifecycle transitions are available at `POST /api/v1/evidence/validations/{validation_id}/transition`. Both require the existing VALIDATE permission.
+
+The authenticated principal supplies the validator identity and audit actor identity. The client cannot choose an arbitrary validator username. Rationale is required and bounded, final decisions continue to require supporting evidence through the immutable `EvidenceValidation` domain contract, and SUPERSEDED is only reachable through an existing validation transition.
+
+The application service delegates all integrity checks and lifecycle enforcement to `EvidenceValidationPersistence`. PostgreSQL re-verifies the target evidence SHA-256 digest, verifies supporting evidence references, locks the current validation row with `FOR UPDATE`, enforces the existing allowed state transitions, preserves evidence identity, and appends the new immutable validation record. The validation mutation and its security audit event are committed in the same PostgreSQL transaction, so audit persistence failure rolls back the lifecycle mutation.
+
+The API exposes no raw evidence content mutation, provider execution, arbitrary SQL, client-controlled validator identity, or alternate validation state machine. Concurrency remains governed by the existing PostgreSQL row-locking boundary.
+
+**Validation status:** Gate 36 implementation and focused API regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 36 can be declared complete.
