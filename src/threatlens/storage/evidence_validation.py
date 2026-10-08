@@ -22,7 +22,10 @@ class EvidenceValidationPersistence(Protocol):
     ) -> None: ...
 
     def transition_evidence_validation(
-        self, previous_id: UUID, replacement: EvidenceValidation, audit_event: AuditEvent | None = None
+        self,
+        previous_id: UUID,
+        replacement: EvidenceValidation,
+        audit_event: AuditEvent | None = None,
     ) -> None: ...
 
 
@@ -155,7 +158,10 @@ class SQLiteEvidenceValidationMixin:
                 self._insert_audit_event(audit_event)
 
     def supersede_evidence_validation(
-        self, previous_id: UUID, replacement: EvidenceValidation, audit_event: AuditEvent | None = None
+        self,
+        previous_id: UUID,
+        replacement: EvidenceValidation,
+        audit_event: AuditEvent | None = None,
     ) -> None:
         if replacement.state is not EvidenceValidationState.SUPERSEDED:
             raise ValueError("replacement validation must be SUPERSEDED")
