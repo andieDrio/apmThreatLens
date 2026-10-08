@@ -165,20 +165,20 @@ async def client():
 
 @pytest.mark.anyio
 async def test_health_is_public(client):
-    response = client.get("/health")
+    response = await client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 
 
 @pytest.mark.anyio
 async def test_me_requires_authentication(client):
-    response = client.get("/api/v1/me")
+    response = await client.get("/api/v1/me")
     assert response.status_code == 401
 
 
 @pytest.mark.anyio
 async def test_login_and_me_return_authenticated_principal(client):
-    response = client.post(
+    response = await client.post(
         "/api/v1/auth/login",
         json={"username": "analyst", "password": "correct-horse-battery-123"},
     )
@@ -186,7 +186,7 @@ async def test_login_and_me_return_authenticated_principal(client):
     token = response.json()["access_token"]
     assert token
 
-    response = client.get(
+    response = await client.get(
         "/api/v1/me",
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -197,19 +197,19 @@ async def test_login_and_me_return_authenticated_principal(client):
 
 @pytest.mark.anyio
 async def test_logout_revokes_session(client):
-    response = client.post(
+    response = await client.post(
         "/api/v1/auth/login",
         json={"username": "analyst", "password": "correct-horse-battery-123"},
     )
     token = response.json()["access_token"]
 
-    response = client.post(
+    response = await client.post(
         "/api/v1/auth/logout",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 204
 
-    response = client.get(
+    response = await client.get(
         "/api/v1/me",
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -218,7 +218,7 @@ async def test_logout_revokes_session(client):
 
 @pytest.mark.anyio
 async def test_invalid_credentials_fail_closed(client):
-    response = client.post(
+    response = await client.post(
         "/api/v1/auth/login",
         json={"username": "analyst", "password": "wrong-password"},
     )
