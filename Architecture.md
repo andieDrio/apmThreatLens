@@ -529,7 +529,7 @@ The API exposes no raw evidence content mutation, provider execution, arbitrary 
 Gate 36 is complete after explicit local validation.
 
 
-## 60. Architecture Gate 37 — Authenticated Scan Queue Control API — IMPLEMENTED
+## 60. Architecture Gate 37 — Authenticated Scan Queue Control API — COMPLETE
 
 Gate 37 exposes the existing scan queueing application boundary through `POST /api/v1/campaigns/{campaign_id}/scans`. The endpoint requires the existing ASSESS permission, loads the authorized campaign from PostgreSQL, resolves the requested provider only through the injected `ProviderRegistry`, and delegates scan creation to `ScanOrchestrator.queue()`.
 
@@ -539,4 +539,17 @@ PostgreSQL adds a bounded `campaign_by_id()` repository lookup that reconstructs
 
 Focused API regression coverage verifies authentication, ASSESS authorization, principal propagation, campaign/provider lookup failures, malformed campaign identifiers, queued-state response, audit creation, and the absence of provider execution.
 
-**Validation status:** Gate 37 implementation and focused API regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 37 can be declared complete.
+Gate 37 is complete after explicit local validation.
+
+
+## 61. Architecture Gate 38 — Authenticated Campaign & Scope Control API — IMPLEMENTED
+
+Gate 38 establishes the authenticated campaign authorization control boundary at `POST /api/v1/campaigns`. Only principals with ADMIN permission may create an authorized campaign. The request requires explicit authorization acknowledgement and bounded include/exclude scope arrays; the immutable Campaign and Scope domain contracts remain authoritative for validation.
+
+PostgreSQL adds `save_campaign_with_audit()`, which persists the campaign, scope container, and all scope entries together with the `CAMPAIGN_CREATED` audit event in one transaction. Any persistence failure rolls back the complete campaign creation mutation. The audit actor is always the authenticated principal and is not client-controlled.
+
+The endpoint does not execute scans, expand scope, infer authorization, or grant assessment permission. Analysts and viewers cannot create authorized campaigns through this control boundary.
+
+Focused regression tests cover authentication, ADMIN authorization, explicit authorization acknowledgement, exact scope persistence/response, audit actor binding, and empty-scope rejection.
+
+**Validation status:** Gate 38 implementation and focused API regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 38 can be declared complete.
