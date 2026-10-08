@@ -56,6 +56,25 @@ class FindingState(StrEnum):
     INFORMATIONAL = "INFORMATIONAL"
 
 
+_ALLOWED_FINDING_REMEDIATION_TRANSITIONS: dict[FindingState, frozenset[FindingState]] = {
+    FindingState.CONFIRMED: frozenset(
+        {FindingState.MITIGATED, FindingState.ACCEPTED_RISK}
+    ),
+}
+
+
+def validate_finding_remediation_transition(
+    current: FindingState, target: FindingState
+) -> None:
+    """Fail closed when remediation changes a finding outside its terminal workflow."""
+    if target not in {FindingState.MITIGATED, FindingState.ACCEPTED_RISK}:
+        raise ValueError("remediation target must be MITIGATED or ACCEPTED_RISK")
+    if target not in _ALLOWED_FINDING_REMEDIATION_TRANSITIONS.get(current, frozenset()):
+        raise ValueError(
+            f"invalid finding remediation transition: {current.value} -> {target.value}"
+        )
+
+
 class Severity(StrEnum):
     CRITICAL = "CRITICAL"
     HIGH = "HIGH"
