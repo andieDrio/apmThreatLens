@@ -23,7 +23,6 @@ from threatlens.domain.models import (
 from threatlens.storage.auth import PostgresAuthMixin
 from threatlens.storage.evidence_validation import PostgresEvidenceValidationMixin
 from threatlens.storage.finding_correlation import PostgresFindingCorrelationMixin
-from datetime import UTC
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS campaigns (
@@ -156,7 +155,9 @@ class PostgresRepository(
                         if not sealed_hash or sealed_hash != sha256(
                             content.encode("utf-8")
                         ).hexdigest():
-                            raise ValueError("attack-path relation references unsealed or invalid evidence")
+                            raise ValueError(
+                                "attack-path relation references unsealed or invalid evidence"
+                            )
                     cursor.execute(
                         """INSERT INTO attack_path_relations
                            (id,source_asset_id,target_asset_id,relationship_type,validated,created_at)
@@ -222,7 +223,9 @@ class PostgresRepository(
                         raise ValueError("attack-path relation must reference evidence")
                     for _, content, sealed_hash in evidence_rows:
                         if not sealed_hash or sealed_hash != sha256(content.encode("utf-8")).hexdigest():
-                            raise ValueError("attack-path relation references invalid evidence")
+                            raise ValueError(
+                                "attack-path relation references invalid evidence"
+                            )
                     evidence_ids = [row[0] for row in evidence_rows]
                     cursor.execute(
                         """SELECT COUNT(*)
@@ -236,7 +239,9 @@ class PostgresRepository(
                         (evidence_ids,),
                     )
                     if cursor.fetchone()[0] != len(evidence_ids):
-                        raise ValueError("all attack-path evidence must have a current VALIDATED decision")
+                        raise ValueError(
+                            "all attack-path evidence must have a current VALIDATED decision"
+                        )
                     validated_at = datetime.now(UTC)
                     cursor.execute(
                         """UPDATE attack_path_relations
