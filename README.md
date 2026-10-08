@@ -51,7 +51,7 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 
 ### Current Architecture Gate
 
-Architecture Gate 40: Authenticated Finding Risk Assessment API. Gate 38 Authenticated Campaign & Scope Control API is complete after explicit local validation. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
+Architecture Gate 41: Authenticated Risk Assessment Read Model API. Gate 38 Authenticated Campaign & Scope Control API is complete after explicit local validation. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
 
 ### Architecture Gate 35 — Authenticated Evidence Read Model API — COMPLETE
 
@@ -259,7 +259,7 @@ The endpoint does not alter evidence, create findings, execute providers, change
 
 Gate 39 is complete after explicit local PostgreSQL-backed `pytest -q` and `ruff check .` validation.
 
-### Architecture Gate 40 — Authenticated Finding Risk Assessment API
+### Architecture Gate 40 — Authenticated Finding Risk Assessment API — COMPLETE
 
 Gate 40 establishes the authenticated risk decision boundary for an existing normalized finding. `POST /api/v1/findings/{finding_id}/risk-assessments` requires ASSESS permission and invokes the existing deterministic `RiskEngine` with explicitly supplied environmental context.
 
@@ -269,4 +269,14 @@ PostgreSQL persists the complete deterministic assessment, including context, fa
 
 The boundary is finding-scoped and read-safe: it does not create findings, mutate evidence, execute providers, alter campaign scope, or introduce a second risk-scoring algorithm. The response exposes the deterministic score, risk level, factor contributions, explanation, provenance, and missing inputs for downstream GUI/reporting use.
 
-Gate 40 implementation includes API regression coverage, deterministic risk-context validation coverage, and PostgreSQL persistence/audit integration coverage. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 40 can be declared complete.
+Gate 40 implementation includes API regression coverage, deterministic risk-context validation coverage, and PostgreSQL persistence/audit integration coverage. Gate 40 is complete after explicit local PostgreSQL-backed validation.
+
+### Architecture Gate 41 — Authenticated Risk Assessment Read Model API
+
+Gate 41 exposes persisted risk decisions through the authenticated read boundary at `GET /api/v1/findings/{finding_id}/risk-assessments`. The endpoint requires READ permission, verifies that the requested finding exists, and returns bounded assessment history with deterministic ordering and a maximum page size of 100.
+
+The read model exposes only durable risk decision data required by the GUI/reporting layer: assessment identity, finding identity, score, level, environmental context, factor contributions, explanations, inputs used, missing inputs, provenance, and creation time. It does not expose raw evidence, audit records, arbitrary SQL, or provider-internal state.
+
+PostgreSQL reads the canonical `risk_assessments` table with a finding-scoped query and deterministic `created_at DESC, id DESC` ordering. Factor contributions are reconstructed from the persisted score/weight values, preserving the same deterministic calculation without introducing a second risk engine.
+
+Gate 41 implementation includes authenticated read-model regression coverage and bounded PostgreSQL query behavior. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 41 can be declared complete.
