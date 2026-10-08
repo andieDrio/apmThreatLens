@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from threading import RLock
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from threatlens.domain.models import (
     Asset,
@@ -459,7 +459,7 @@ class PostgresRepository(
                             context_source,created_at)
                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (
-                            UUID(assessment.finding_id),
+                            uuid4(),
                             UUID(assessment.finding_id),
                             assessment.level.value,
                             assessment.score,
