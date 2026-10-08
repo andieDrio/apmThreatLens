@@ -6,7 +6,16 @@ import json
 from threading import RLock
 from uuid import UUID
 
-from threatlens.domain.models import Asset, AuditEvent, Campaign, Evidence, Finding, Service
+from threatlens.domain.models import (
+    Asset,
+    AuditEvent,
+    Campaign,
+    Evidence,
+    Finding,
+    FindingState,
+    Service,
+    validate_finding_remediation_transition,
+)
 from threatlens.storage.auth import PostgresAuthMixin
 from threatlens.storage.evidence_validation import PostgresEvidenceValidationMixin
 from threatlens.storage.finding_correlation import PostgresFindingCorrelationMixin
@@ -272,6 +281,112 @@ class PostgresRepository(
                     "INSERT INTO finding_evidence (finding_id,evidence_id) VALUES (%s,%s)",
                     [(finding.id, evidence_id) for evidence_id in finding.evidence_ids],
                 )
+
+    def transition_finding_remediation_with_audit(
+        self,
+        finding_id: UUID,
+        target_state: FindingState,
+        actor_user_id: UUID,
+        rationale: str,
+    ) -> tuple[bool, FindingState, bool]:
+        """Atomically apply an authorized remediation state transition and audit it."""
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT state FROM findings WHERE id=%s FOR UPDATE",
+                        (finding_id,),
+                    )
+                    row = cursor.fetchone()
+                    if row is None:
+                        raise KeyError(str(finding_id))
+
+                    current_state = FindingState(row[0])
+                    if current_state is target_state:
+                        event = AuditEvent(
+                            actor_user_id=actor_user_id,
+                            action="FINDING_REMEDIATION",
+                            resource_type="FINDING",
+                            resource_id=finding_id,
+                            outcome="NOOP",
+                            detail=f"state={target_state.value};rationale={rationale}",
+                        )
+                        cursor.execute(
+                            "INSERT INTO audit_events "
+                            "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
+                            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                            (
+                                event.id,
+                                event.actor_user_id,
+                                event.action,
+                                event.resource_type,
+                                event.resource_id,
+                                event.outcome,
+                                event.detail,
+                                event.created_at,
+                            ),
+                        )
+                        return False, current_state, True
+
+                    try:
+                        validate_finding_remediation_transition(current_state, target_state)
+                    except ValueError as exc:
+                        event = AuditEvent(
+                            actor_user_id=actor_user_id,
+                            action="FINDING_REMEDIATION",
+                            resource_type="FINDING",
+                            resource_id=finding_id,
+                            outcome="DENIED",
+                            detail=f"current={current_state.value};target={target_state.value};reason={exc}",
+                        )
+                        cursor.execute(
+                            "INSERT INTO audit_events "
+                            "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
+                            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                            (
+                                event.id,
+                                event.actor_user_id,
+                                event.action,
+                                event.resource_type,
+                                event.resource_id,
+                                event.outcome,
+                                event.detail,
+                                event.created_at,
+                            ),
+                        )
+                        return False, current_state, False
+
+                    cursor.execute(
+                        "UPDATE findings SET state=%s WHERE id=%s AND state=%s",
+                        (target_state.value, finding_id, current_state.value),
+                    )
+                    if cursor.rowcount != 1:
+                        raise RuntimeError("finding remediation compare-and-set failed")
+
+                    event = AuditEvent(
+                        actor_user_id=actor_user_id,
+                        action="FINDING_REMEDIATION",
+                        resource_type="FINDING",
+                        resource_id=finding_id,
+                        outcome="SUCCESS",
+                        detail=f"from={current_state.value};to={target_state.value};rationale={rationale}",
+                    )
+                    cursor.execute(
+                        "INSERT INTO audit_events "
+                        "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (
+                            event.id,
+                            event.actor_user_id,
+                            event.action,
+                            event.resource_type,
+                            event.resource_id,
+                            event.outcome,
+                            event.detail,
+                            event.created_at,
+                        ),
+                    )
+                    return True, target_state, True
 
     def count(self, table: str) -> int:
         allowed = {
