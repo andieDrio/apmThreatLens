@@ -17,7 +17,9 @@ from threatlens.evidence.validation import (
 
 
 class EvidenceValidationPersistence(Protocol):
-    def save_evidence_validation(self, validation: EvidenceValidation) -> None: ...
+    def save_evidence_validation(
+        self, validation: EvidenceValidation, audit_event: AuditEvent | None = None
+    ) -> None: ...
 
     def transition_evidence_validation(
         self, previous_id: UUID, replacement: EvidenceValidation, audit_event: AuditEvent | None = None
@@ -26,6 +28,21 @@ class EvidenceValidationPersistence(Protocol):
 
 class SQLiteEvidenceValidationMixin:
     """Append-only evidence validation records with foreign-key traceability."""
+
+    def _insert_audit_event(self, event: AuditEvent) -> None:
+        self.connection.execute(
+            "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?)",
+            (
+                str(event.id),
+                str(event.actor_user_id) if event.actor_user_id is not None else None,
+                event.action,
+                event.resource_type,
+                str(event.resource_id) if event.resource_id is not None else None,
+                event.outcome,
+                event.detail,
+                event.created_at.isoformat(),
+            ),
+        )
 
     def initialize_evidence_validation(self) -> None:
         with self.connection:
@@ -42,7 +59,9 @@ class SQLiteEvidenceValidationMixin:
                 )"""
             )
 
-    def save_evidence_validation(self, validation: EvidenceValidation) -> None:
+    def save_evidence_validation(
+        self, validation: EvidenceValidation, audit_event: AuditEvent | None = None
+    ) -> None:
         import json
 
         evidence_row = self.connection.execute(
@@ -86,7 +105,10 @@ class SQLiteEvidenceValidationMixin:
             )
 
     def transition_evidence_validation(
-        self, previous_id: UUID, replacement: EvidenceValidation
+        self,
+        previous_id: UUID,
+        replacement: EvidenceValidation,
+        audit_event: AuditEvent | None = None,
     ) -> None:
         """Append a new lifecycle state and supersede the previous record atomically."""
         if replacement.state is EvidenceValidationState.SUPERSEDED:
@@ -129,6 +151,8 @@ class SQLiteEvidenceValidationMixin:
                     str(previous_id),
                 ),
             )
+            if audit_event is not None:
+                self._insert_audit_event(audit_event)
 
     def supersede_evidence_validation(
         self, previous_id: UUID, replacement: EvidenceValidation, audit_event: AuditEvent | None = None
@@ -161,6 +185,8 @@ class SQLiteEvidenceValidationMixin:
                     str(previous_id),
                 ),
             )
+            if audit_event is not None:
+                self._insert_audit_event(audit_event)
 
 class PostgresEvidenceValidationMixin:
     """PostgreSQL equivalent of the append-only validation boundary."""
