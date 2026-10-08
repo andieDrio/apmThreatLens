@@ -159,7 +159,9 @@ async def client():
     auth = AuthenticationService(repository)
     auth.create_user("analyst", "correct-horse-battery-123", Role.ANALYST)
     app = create_app(repository=repository, auth_service=auth)
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
         yield client
 
 
