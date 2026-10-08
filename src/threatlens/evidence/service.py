@@ -20,6 +20,7 @@ class EvidenceValidationService:
         evidence_id: UUID,
         state: EvidenceValidationState,
         validator: str,
+        actor_user_id,
         rationale: str,
         supporting_evidence_ids: tuple[UUID, ...],
     ) -> EvidenceValidation:
@@ -31,7 +32,7 @@ class EvidenceValidationService:
             supporting_evidence_ids=supporting_evidence_ids,
         )
         event = AuditEvent(
-            actor_user_id=self.repository.user_id_for_validator(validator),
+            actor_user_id=actor_user_id,
             action="EVIDENCE_VALIDATION_CREATED",
             resource_type="EVIDENCE_VALIDATION",
             resource_id=validation.id,
@@ -48,6 +49,7 @@ class EvidenceValidationService:
         evidence_id: UUID,
         state: EvidenceValidationState,
         validator: str,
+        actor_user_id,
         rationale: str,
         supporting_evidence_ids: tuple[UUID, ...],
     ) -> EvidenceValidation:
@@ -61,7 +63,7 @@ class EvidenceValidationService:
             supporting_evidence_ids=supporting_evidence_ids,
         )
         event = AuditEvent(
-            actor_user_id=self.repository.user_id_for_validator(validator),
+            actor_user_id=actor_user_id,
             action="EVIDENCE_VALIDATION_TRANSITIONED",
             resource_type="EVIDENCE_VALIDATION",
             resource_id=replacement.id,
@@ -79,6 +81,7 @@ class EvidenceValidationService:
         previous_id: UUID,
         evidence_id: UUID,
         validator: str,
+        actor_user_id,
         rationale: str,
         supporting_evidence_ids: tuple[UUID, ...],
     ) -> EvidenceValidation:
@@ -90,7 +93,7 @@ class EvidenceValidationService:
             supporting_evidence_ids=supporting_evidence_ids,
         )
         event = AuditEvent(
-            actor_user_id=self.repository.user_id_for_validator(validator),
+            actor_user_id=actor_user_id,
             action="EVIDENCE_VALIDATION_SUPERSEDED",
             resource_type="EVIDENCE_VALIDATION",
             resource_id=replacement.id,
