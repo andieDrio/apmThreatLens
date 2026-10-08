@@ -106,6 +106,8 @@ class SQLiteEvidenceValidationMixin:
                     ),
                 ),
             )
+            if audit_event is not None:
+                self._insert_audit_event(audit_event)
 
     def transition_evidence_validation(
         self,
