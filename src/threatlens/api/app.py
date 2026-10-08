@@ -15,6 +15,7 @@ from threatlens.domain.models import Campaign, FindingState, Scope
 from threatlens.evidence.validation import EvidenceValidationState
 from threatlens.orchestration.engine import ScanOrchestrator
 from threatlens.providers.runtime import ProviderRegistry
+from threatlens.risk.engine import RiskContext, RiskEngine
 from threatlens.safety.policy import ExecutionPolicy
 from threatlens.storage.postgres import PostgresRepository
 
@@ -178,6 +179,37 @@ class FindingRemediationResponse(BaseModel):
     action: str
     state: str
     changed: bool
+
+
+class RiskContextRequest(BaseModel):
+    exploitability: float | None = Field(default=None, ge=0.0, le=1.0)
+    exposure: float | None = Field(default=None, ge=0.0, le=1.0)
+    asset_criticality: float | None = Field(default=None, ge=0.0, le=1.0)
+    business_impact: float | None = Field(default=None, ge=0.0, le=1.0)
+    threat_relevance: float | None = Field(default=None, ge=0.0, le=1.0)
+    control_coverage: float | None = Field(default=None, ge=0.0, le=1.0)
+    source: str | None = Field(default=None, min_length=1, max_length=256)
+
+
+class RiskFactorResponse(BaseModel):
+    name: str
+    score: float
+    weight: float
+    rationale: str
+    source: str
+    contribution: float
+
+
+class RiskAssessmentResponse(BaseModel):
+    assessment_id: str
+    finding_id: str
+    level: str
+    score: float
+    factors: list[RiskFactorResponse]
+    explanation: list[str]
+    inputs_used: list[str]
+    missing_inputs: list[str]
+    context_source: str | None = None
 
 
 class EvidenceReadModel(BaseModel):
@@ -551,6 +583,79 @@ def create_app(
             limit=result["limit"],
             offset=result["offset"],
             items=items,
+        )
+
+    @app.post(
+        "/api/v1/findings/{finding_id}/risk-assessments",
+        response_model=RiskAssessmentResponse,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def assess_finding_risk(
+        finding_id: UUID,
+        request: RiskContextRequest,
+        current=Depends(require(Permission.ASSESS)),
+    ) -> RiskAssessmentResponse:
+        try:
+            finding = context.repository.finding_by_id(finding_id)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="finding not found",
+            ) from exc
+
+        try:
+            risk_context = RiskContext(
+                exploitability=request.exploitability,
+                exposure=request.exposure,
+                asset_criticality=request.asset_criticality,
+                business_impact=request.business_impact,
+                threat_relevance=request.threat_relevance,
+                control_coverage=request.control_coverage,
+                source=request.source,
+            )
+            assessment = RiskEngine().assess(finding, risk_context)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+
+        context_payload = {
+            key: value
+            for key, value in {
+                "exploitability": request.exploitability,
+                "exposure": request.exposure,
+                "asset_criticality": request.asset_criticality,
+                "business_impact": request.business_impact,
+                "threat_relevance": request.threat_relevance,
+                "control_coverage": request.control_coverage,
+                "source": request.source,
+            }.items()
+            if value is not None
+        }
+        assessment_id = context.repository.save_risk_assessment_with_audit(
+            assessment, context_payload, current.user_id
+        )
+        return RiskAssessmentResponse(
+            assessment_id=str(assessment_id),
+            finding_id=assessment.finding_id,
+            level=assessment.level.value,
+            score=assessment.score,
+            factors=[
+                RiskFactorResponse(
+                    name=factor.name,
+                    score=factor.score,
+                    weight=factor.weight,
+                    rationale=factor.rationale,
+                    source=factor.source,
+                    contribution=round(factor.contribution, 4),
+                )
+                for factor in assessment.factors
+            ],
+            explanation=list(assessment.explanation),
+            inputs_used=list(assessment.inputs_used),
+            missing_inputs=list(assessment.missing_inputs),
+            context_source=assessment.context_source,
         )
 
     @app.post(
