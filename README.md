@@ -51,7 +51,7 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 
 ### Current Architecture Gate
 
-Architecture Gate 39: Authenticated Finding Remediation Control API. Gate 38 Authenticated Campaign & Scope Control API is complete after explicit local validation. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
+Architecture Gate 40: Authenticated Finding Risk Assessment API. Gate 38 Authenticated Campaign & Scope Control API is complete after explicit local validation. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
 
 ### Architecture Gate 35 — Authenticated Evidence Read Model API — COMPLETE
 
@@ -258,3 +258,15 @@ Successful changes, idempotent terminal-state requests, and denied invalid trans
 The endpoint does not alter evidence, create findings, execute providers, change campaign scope, or bypass finding/evidence identity. Validation decisions such as CONFIRMED, FALSE_POSITIVE, and NOT_REPRODUCIBLE remain outside this remediation boundary.
 
 Gate 39 implementation includes API regression coverage, domain transition tests, and PostgreSQL integration coverage. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 39 can be declared complete.
+
+### Architecture Gate 40 — Authenticated Finding Risk Assessment API
+
+Gate 40 establishes the authenticated risk decision boundary for an existing normalized finding. `POST /api/v1/findings/{finding_id}/risk-assessments` requires ASSESS permission and invokes the existing deterministic `RiskEngine` with explicitly supplied environmental context.
+
+Environmental context is bounded to normalized 0..1 inputs and requires an explicit source whenever context is supplied. Unknown values remain unknown and are omitted from the weighted calculation; the API never invents exposure, criticality, business impact, threat relevance, exploitability, or control coverage.
+
+PostgreSQL persists the complete deterministic assessment, including context, factors, explanations, inputs used, missing inputs, and context provenance. The assessment record and `RISK_ASSESSMENT_CREATED` audit event are committed atomically with the authenticated principal as the sole audit actor.
+
+The boundary is finding-scoped and read-safe: it does not create findings, mutate evidence, execute providers, alter campaign scope, or introduce a second risk-scoring algorithm. The response exposes the deterministic score, risk level, factor contributions, explanation, provenance, and missing inputs for downstream GUI/reporting use.
+
+Gate 40 implementation includes API regression coverage, deterministic risk-context validation coverage, and PostgreSQL persistence/audit integration coverage. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 40 can be declared complete.
