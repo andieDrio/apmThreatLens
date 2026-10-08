@@ -583,3 +583,16 @@ The API returns the durable assessment identity and deterministic risk decision 
 Regression coverage includes authentication, ASSESS authorization, required context provenance, deterministic risk output, unknown-finding handling, domain risk semantics, and PostgreSQL persistence/audit behavior.
 
 **Validation status:** Gate 40 implementation and regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 40 can be declared complete.
+
+
+## 64. Architecture Gate 41 — Authenticated Risk Assessment Read Model API — IMPLEMENTED
+
+Gate 41 exposes persisted risk assessments through the authenticated application read boundary at `GET /api/v1/findings/{finding_id}/risk-assessments`. The endpoint requires READ permission and first verifies that the finding exists in canonical PostgreSQL persistence.
+
+The response is bounded to a maximum page size of 100 and uses deterministic `created_at DESC, id DESC` ordering. It exposes the durable assessment identity, finding identity, risk level and score, explicitly persisted environmental context, factor scores/weights/contributions, explanations, inputs used, missing inputs, context provenance, and creation time.
+
+The read path is strictly read-only. It does not expose raw evidence, audit records, arbitrary SQL controls, provider execution, campaign mutation, or a second risk-scoring implementation. Factor contributions are reconstructed from the persisted deterministic factor score and weight, so the read model remains faithful to the assessment already committed by Gate 40.
+
+Focused regression coverage verifies authentication, READ authorization, bounded pagination, deterministic assessment fields, and missing-finding handling.
+
+**Validation status:** Gate 41 implementation and regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 41 can be declared complete.
