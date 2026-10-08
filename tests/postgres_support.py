@@ -16,7 +16,7 @@ def postgres_repository():
     with repository.connection.transaction():
         with repository.connection.cursor() as cursor:
             cursor.execute(
-                "TRUNCATE TABLE finding_evidence, finding_correlations, evidence_validations, findings, evidence, services, scans, scope_entries, scopes, campaigns, auth_sessions, audit_events, users CASCADE"
+                "TRUNCATE TABLE finding_evidence, finding_correlations, evidence_validations, risk_assessments, findings, evidence, services, scans, scope_entries, scopes, campaigns, auth_sessions, audit_events, users CASCADE"
             )
     yield repository
     with repository.connection.transaction():
