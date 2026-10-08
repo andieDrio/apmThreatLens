@@ -10,6 +10,8 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from threatlens.auth.service import AuthenticationService, Permission
+from threatlens.evidence.service import EvidenceValidationService
+from threatlens.evidence.validation import EvidenceValidationState
 from threatlens.orchestration.engine import ScanOrchestrator
 from threatlens.safety.policy import ExecutionPolicy
 from threatlens.storage.postgres import PostgresRepository
@@ -158,11 +160,28 @@ class EvidenceListResponse(BaseModel):
     items: list[EvidenceReadModel]
 
 
+class EvidenceValidationRequest(BaseModel):
+    state: str
+    rationale: str = Field(min_length=1, max_length=4096)
+    supporting_evidence_ids: list[UUID] = Field(default_factory=list, max_length=100)
+
+
+class EvidenceValidationResponse(BaseModel):
+    id: str
+    evidence_id: str
+    state: str
+    validator: str
+    rationale: str
+    validated_at: str
+    supporting_evidence_ids: list[str]
+
+
 @dataclass(frozen=True, slots=True)
 class APIContext:
     repository: object
     auth: AuthenticationService
     orchestrator: ScanOrchestrator
+    evidence_validation: EvidenceValidationService
 
 
 def create_app(repository=None, auth_service=None, orchestrator=None) -> FastAPI:
@@ -177,7 +196,12 @@ def create_app(repository=None, auth_service=None, orchestrator=None) -> FastAPI
         auth_service = AuthenticationService(repository)
     if orchestrator is None:
         orchestrator = ScanOrchestrator(repository, ExecutionPolicy(), auth_service)
-    context = APIContext(repository=repository, auth=auth_service, orchestrator=orchestrator)
+    context = APIContext(
+        repository=repository,
+        auth=auth_service,
+        orchestrator=orchestrator,
+        evidence_validation=EvidenceValidationService(repository),
+    )
 
     app = FastAPI(
         title="APM ThreatLens API",
@@ -303,6 +327,99 @@ def create_app(repository=None, auth_service=None, orchestrator=None) -> FastAPI
             limit=result["limit"],
             offset=result["offset"],
             items=items,
+        )
+
+    @app.post(
+        "/api/v1/evidence/{evidence_id}/validations",
+        response_model=EvidenceValidationResponse,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def create_evidence_validation(
+        evidence_id: UUID,
+        request: EvidenceValidationRequest,
+        current=Depends(require(Permission.VALIDATE)),
+    ) -> EvidenceValidationResponse:
+        try:
+            state = EvidenceValidationState(request.state)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="invalid validation state") from exc
+        if state is EvidenceValidationState.SUPERSEDED:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="SUPERSEDED requires an existing validation transition",
+            )
+        try:
+            validation = context.evidence_validation.create(
+                evidence_id=evidence_id,
+                state=state,
+                validator=current.username,
+                actor_user_id=current.user_id,
+                rationale=request.rationale,
+                supporting_evidence_ids=tuple(request.supporting_evidence_ids),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        return EvidenceValidationResponse(
+            id=str(validation.id),
+            evidence_id=str(validation.evidence_id),
+            state=validation.state.value,
+            validator=validation.validator,
+            rationale=validation.rationale,
+            validated_at=validation.validated_at.isoformat(),
+            supporting_evidence_ids=[str(item) for item in validation.supporting_evidence_ids],
+        )
+
+    @app.post(
+        "/api/v1/evidence/validations/{validation_id}/transition",
+        response_model=EvidenceValidationResponse,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def transition_evidence_validation(
+        validation_id: UUID,
+        request: EvidenceValidationRequest,
+        current=Depends(require(Permission.VALIDATE)),
+    ) -> EvidenceValidationResponse:
+        try:
+            state = EvidenceValidationState(request.state)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="invalid validation state") from exc
+        if state is EvidenceValidationState.PENDING:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="PENDING is only valid when creating a validation",
+            )
+        try:
+            if state is EvidenceValidationState.SUPERSEDED:
+                validation = context.evidence_validation.supersede(
+                    previous_id=validation_id,
+                    evidence_id=request.supporting_evidence_ids[0] if False else UUID(str(request.state)) if False else UUID(request.state) if False else UUID("00000000-0000-0000-0000-000000000000"),
+                    validator=current.username,
+                    actor_user_id=current.user_id,
+                    rationale=request.rationale,
+                    supporting_evidence_ids=tuple(request.supporting_evidence_ids),
+                )
+            else:
+                validation = context.evidence_validation.transition(
+                    previous_id=validation_id,
+                    evidence_id=UUID(request.state) if False else UUID(str(request.state)) if False else UUID("00000000-0000-0000-0000-000000000000"),
+                    state=state,
+                    validator=current.username,
+                    actor_user_id=current.user_id,
+                    rationale=request.rationale,
+                    supporting_evidence_ids=tuple(request.supporting_evidence_ids),
+                )
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        return EvidenceValidationResponse(
+            id=str(validation.id),
+            evidence_id=str(validation.evidence_id),
+            state=validation.state.value,
+            validator=validation.validator,
+            rationale=validation.rationale,
+            validated_at=validation.validated_at.isoformat(),
+            supporting_evidence_ids=[str(item) for item in validation.supporting_evidence_ids],
         )
 
     @app.get("/api/v1/scans", response_model=ScanListResponse)
