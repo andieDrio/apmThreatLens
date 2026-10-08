@@ -358,7 +358,10 @@ def create_app(repository=None, auth_service=None, orchestrator=None, provider_r
             )
             context.repository.save_campaign_with_audit(campaign, current.user_id)
         except ValueError as exc:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
         return CampaignCreateResponse(
             id=str(campaign.id),
             name=campaign.name,
