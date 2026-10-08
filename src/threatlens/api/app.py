@@ -210,7 +210,9 @@ class APIContext:
     provider_registry: ProviderRegistry
 
 
-def create_app(repository=None, auth_service=None, orchestrator=None, provider_registry=None) -> FastAPI:
+def create_app(
+    repository=None, auth_service=None, orchestrator=None, provider_registry=None
+) -> FastAPI:
     """Create the API with injected persistence/auth dependencies."""
     if repository is None:
         dsn = os.getenv("THREATLENS_DATABASE_URL")
@@ -410,7 +412,9 @@ def create_app(repository=None, auth_service=None, orchestrator=None, provider_r
         try:
             state = EvidenceValidationState(request.state)
         except ValueError as exc:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="invalid validation state") from exc
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="invalid validation state"
+            ) from exc
         if state is EvidenceValidationState.SUPERSEDED:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -461,7 +465,10 @@ def create_app(repository=None, auth_service=None, orchestrator=None, provider_r
         try:
             if state is EvidenceValidationState.SUPERSEDED:
                 if request.evidence_id is None:
-                    raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="evidence_id is required for lifecycle transitions")
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail="evidence_id is required for lifecycle transitions",
+                    )
                 validation = context.evidence_validation.supersede(
                     previous_id=validation_id,
                     evidence_id=request.evidence_id,
