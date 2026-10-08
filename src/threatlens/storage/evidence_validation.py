@@ -162,7 +162,6 @@ class SQLiteEvidenceValidationMixin:
                 ),
             )
 
-
 class PostgresEvidenceValidationMixin:
     """PostgreSQL equivalent of the append-only validation boundary."""
 
@@ -182,7 +181,25 @@ class PostgresEvidenceValidationMixin:
                     )"""
                 )
 
-    def save_evidence_validation(self, validation: EvidenceValidation, audit_event: AuditEvent | None = None) -> None:
+    @staticmethod
+    def _insert_audit_event(cursor, event: AuditEvent) -> None:
+        cursor.execute(
+            "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+            (
+                event.id,
+                event.actor_user_id,
+                event.action,
+                event.resource_type,
+                event.resource_id,
+                event.outcome,
+                event.detail,
+                event.created_at,
+            ),
+        )
+
+    def save_evidence_validation(
+        self, validation: EvidenceValidation, audit_event: AuditEvent | None = None
+    ) -> None:
         import json
 
         with self.connection.transaction():
@@ -227,13 +244,13 @@ class PostgresEvidenceValidationMixin:
                     ),
                 )
                 if audit_event is not None:
-                    cursor.execute(
-                        "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-                        (audit_event.id, audit_event.actor_user_id, audit_event.action, audit_event.resource_type, audit_event.resource_id, audit_event.outcome, audit_event.detail, audit_event.created_at),
-                    )
+                    self._insert_audit_event(cursor, audit_event)
 
     def transition_evidence_validation(
-        self, previous_id: UUID, replacement: EvidenceValidation
+        self,
+        previous_id: UUID,
+        replacement: EvidenceValidation,
+        audit_event: AuditEvent | None = None,
     ) -> None:
         import json
 
@@ -265,10 +282,66 @@ class PostgresEvidenceValidationMixin:
                         "SELECT id FROM evidence WHERE id = ANY(%s)",
                         ([str(item) for item in replacement.supporting_evidence_ids],),
                     )
+                    rows = cursor.fetchall()
+                    if len(rows) != len(replacement.supporting_evidence_ids):
+                        raise KeyError("validation references missing supporting evidence")
+                cursor.execute(
+                    """INSERT INTO evidence_validations
+                       (id,evidence_id,state,validator,rationale,validated_at,supporting_evidence_ids_json,supersedes_id)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (
+                        replacement.id,
+                        replacement.evidence_id,
+                        replacement.state.value,
+                        replacement.validator,
+                        replacement.rationale,
+                        replacement.validated_at,
+                        json.dumps(
+                            [str(item) for item in replacement.supporting_evidence_ids],
+                            sort_keys=True,
+                        ),
+                        previous_id,
+                    ),
+                )
                 if audit_event is not None:
+                    self._insert_audit_event(cursor, audit_event)
+
+    def supersede_evidence_validation(
+        self,
+        previous_id: UUID,
+        replacement: EvidenceValidation,
+        audit_event: AuditEvent | None = None,
+    ) -> None:
+        import json
+
+        if replacement.state is not EvidenceValidationState.SUPERSEDED:
+            raise ValueError("replacement validation must be SUPERSEDED")
+        with self.connection.transaction():
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT state,evidence_id FROM evidence_validations WHERE id=%s FOR UPDATE",
+                    (previous_id,),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise KeyError(str(previous_id))
+                validate_evidence_transition(
+                    EvidenceValidationState(row[0]), EvidenceValidationState.SUPERSEDED
+                )
+                if replacement.evidence_id != row[1]:
+                    raise ValueError("validation transition cannot change evidence identity")
+                cursor.execute("SELECT content,sha256 FROM evidence WHERE id=%s", (row[1],))
+                target = cursor.fetchone()
+                if (
+                    target is None
+                    or not target[1]
+                    or target[1] != sha256(target[0].encode("utf-8")).hexdigest()
+                ):
+                    raise ValueError("target evidence failed integrity validation")
+                if replacement.supporting_evidence_ids:
                     cursor.execute(
-                        "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-                        (audit_event.id, audit_event.actor_user_id, audit_event.action, audit_event.resource_type, audit_event.resource_id, audit_event.outcome, audit_event.detail, audit_event.created_at),
+                        "SELECT id FROM evidence WHERE id = ANY(%s)",
+                        ([str(item) for item in replacement.supporting_evidence_ids],),
                     )
                     rows = cursor.fetchall()
                     if len(rows) != len(replacement.supporting_evidence_ids):
@@ -291,40 +364,5 @@ class PostgresEvidenceValidationMixin:
                         previous_id,
                     ),
                 )
-
-    def supersede_evidence_validation(
-        self, previous_id: UUID, replacement: EvidenceValidation
-    ) -> None:
-        import json
-
-        if replacement.state is not EvidenceValidationState.SUPERSEDED:
-            raise ValueError("replacement validation must be SUPERSEDED")
-        with self.connection.transaction():
-            with self.connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT state FROM evidence_validations WHERE id=%s FOR UPDATE", (previous_id,)
-                )
-                row = cursor.fetchone()
-                if row is None:
-                    raise KeyError(str(previous_id))
-                validate_evidence_transition(
-                    EvidenceValidationState(row[0]), EvidenceValidationState.SUPERSEDED
-                )
-                cursor.execute(
-                    """INSERT INTO evidence_validations
-                       (id,evidence_id,state,validator,rationale,validated_at,supporting_evidence_ids_json,supersedes_id)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
-                    (
-                        replacement.id,
-                        replacement.evidence_id,
-                        replacement.state.value,
-                        replacement.validator,
-                        replacement.rationale,
-                        replacement.validated_at,
-                        json.dumps(
-                            [str(item) for item in replacement.supporting_evidence_ids],
-                            sort_keys=True,
-                        ),
-                        previous_id,
-                    ),
-                )
+                if audit_event is not None:
+                    self._insert_audit_event(cursor, audit_event)
