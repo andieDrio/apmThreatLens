@@ -51,7 +51,7 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 
 ### Current Architecture Gate
 
-Architecture Gate 38: Authenticated Campaign & Scope Control API. Gate 37 Authenticated Scan Queue Control API is complete after explicit local validation. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
+Architecture Gate 39: Authenticated Finding Remediation Control API. Gate 38 Authenticated Campaign & Scope Control API is complete after explicit local validation. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
 
 ### Architecture Gate 35 — Authenticated Evidence Read Model API — COMPLETE
 
@@ -245,4 +245,16 @@ Campaign persistence and the `CAMPAIGN_CREATED` security audit event are committ
 
 Assessment users cannot self-authorize new campaign scope through this boundary. Campaign creation is intentionally separated from ASSESS so authorization remains an administrative control-plane decision.
 
-**Validation status:** Gate 38 implementation and focused API regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 38 can be declared complete.
+Gate 38 is complete after explicit local PostgreSQL-backed `pytest -q` and `ruff check .` validation.
+
+### Architecture Gate 39 — Authenticated Finding Remediation Control API
+
+Gate 39 establishes the authenticated remediation boundary for existing normalized findings. `POST /api/v1/findings/{finding_id}/remediation` requires REMEDIATE permission and accepts only the terminal remediation outcomes MITIGATED or ACCEPTED_RISK with a bounded operator rationale.
+
+Finding remediation transitions are fail-closed at the domain boundary: only a CONFIRMED finding may transition to MITIGATED or ACCEPTED_RISK. The PostgreSQL repository locks the finding row with `FOR UPDATE`, validates the transition, applies the state mutation with a compare-and-set predicate, and records the remediation decision in the same transaction.
+
+Successful changes, idempotent terminal-state requests, and denied invalid transitions are all security-audited with the authenticated principal as actor. Missing findings return 404; invalid target states return 422; invalid remediation transitions return 409.
+
+The endpoint does not alter evidence, create findings, execute providers, change campaign scope, or bypass finding/evidence identity. Validation decisions such as CONFIRMED, FALSE_POSITIVE, and NOT_REPRODUCIBLE remain outside this remediation boundary.
+
+Gate 39 implementation includes API regression coverage, domain transition tests, and PostgreSQL integration coverage. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 39 can be declared complete.
