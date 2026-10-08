@@ -552,4 +552,19 @@ The endpoint does not execute scans, expand scope, infer authorization, or grant
 
 Focused regression tests cover authentication, ADMIN authorization, explicit authorization acknowledgement, exact scope persistence/response, audit actor binding, and empty-scope rejection.
 
-**Validation status:** Gate 38 implementation and focused API regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 38 can be declared complete.
+Gate 38 is complete after explicit local PostgreSQL-backed `pytest -q` and `ruff check .` validation.
+
+
+## 62. Architecture Gate 39 — Authenticated Finding Remediation Control API — IMPLEMENTED
+
+Gate 39 establishes the authenticated remediation control boundary for existing normalized findings. The endpoint `POST /api/v1/findings/{finding_id}/remediation` requires the existing REMEDIATE permission and accepts only the remediation outcomes MITIGATED and ACCEPTED_RISK with a bounded operator rationale.
+
+The finding domain now exposes an explicit fail-closed remediation transition contract. Only a CONFIRMED finding may transition into MITIGATED or ACCEPTED_RISK. Validation-oriented finding decisions such as CONFIRMED, FALSE_POSITIVE, NOT_REPRODUCIBLE, and INFORMATIONAL are intentionally outside this remediation control.
+
+PostgreSQL applies the remediation transition inside one transaction. The target finding row is locked with `FOR UPDATE`, the domain transition contract is evaluated against the locked state, the successful state update uses a compare-and-set predicate, and the security audit event is written in the same transaction. A denied transition is also audited without mutating the finding. Repeating an already-applied terminal remediation state is an audited no-op.
+
+The authenticated principal is the sole audit actor. The API does not mutate evidence, create findings, execute providers, alter campaign scope, or introduce a second finding state machine.
+
+API regression tests cover authentication, REMEDIATE authorization, successful remediation, denied invalid transitions, idempotent terminal-state requests, missing findings, and audit actor binding. Domain tests cover the fail-closed transition matrix, while PostgreSQL integration tests cover durable mutation and atomic audit behavior.
+
+**Validation status:** Gate 39 implementation and tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 39 can be declared complete.
