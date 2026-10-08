@@ -8,6 +8,7 @@ from hashlib import sha256
 from typing import Protocol
 from uuid import UUID
 
+from threatlens.domain.models import AuditEvent
 from threatlens.evidence.validation import (
     EvidenceValidation,
     EvidenceValidationState,
@@ -19,7 +20,7 @@ class EvidenceValidationPersistence(Protocol):
     def save_evidence_validation(self, validation: EvidenceValidation) -> None: ...
 
     def transition_evidence_validation(
-        self, previous_id: UUID, replacement: EvidenceValidation
+        self, previous_id: UUID, replacement: EvidenceValidation, audit_event: AuditEvent | None = None
     ) -> None: ...
 
 
@@ -130,7 +131,7 @@ class SQLiteEvidenceValidationMixin:
             )
 
     def supersede_evidence_validation(
-        self, previous_id: UUID, replacement: EvidenceValidation
+        self, previous_id: UUID, replacement: EvidenceValidation, audit_event: AuditEvent | None = None
     ) -> None:
         if replacement.state is not EvidenceValidationState.SUPERSEDED:
             raise ValueError("replacement validation must be SUPERSEDED")
@@ -181,7 +182,7 @@ class PostgresEvidenceValidationMixin:
                     )"""
                 )
 
-    def save_evidence_validation(self, validation: EvidenceValidation) -> None:
+    def save_evidence_validation(self, validation: EvidenceValidation, audit_event: AuditEvent | None = None) -> None:
         import json
 
         with self.connection.transaction():
@@ -225,6 +226,11 @@ class PostgresEvidenceValidationMixin:
                         ),
                     ),
                 )
+                if audit_event is not None:
+                    cursor.execute(
+                        "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (audit_event.id, audit_event.actor_user_id, audit_event.action, audit_event.resource_type, audit_event.resource_id, audit_event.outcome, audit_event.detail, audit_event.created_at),
+                    )
 
     def transition_evidence_validation(
         self, previous_id: UUID, replacement: EvidenceValidation
@@ -258,6 +264,11 @@ class PostgresEvidenceValidationMixin:
                     cursor.execute(
                         "SELECT id FROM evidence WHERE id = ANY(%s)",
                         ([str(item) for item in replacement.supporting_evidence_ids],),
+                    )
+                if audit_event is not None:
+                    cursor.execute(
+                        "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (audit_event.id, audit_event.actor_user_id, audit_event.action, audit_event.resource_type, audit_event.resource_id, audit_event.outcome, audit_event.detail, audit_event.created_at),
                     )
                     rows = cursor.fetchall()
                     if len(rows) != len(replacement.supporting_evidence_ids):
