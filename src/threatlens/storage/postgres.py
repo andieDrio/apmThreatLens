@@ -6,6 +6,7 @@ import json
 from threading import RLock
 from uuid import UUID, uuid4
 
+from threatlens.attack_paths.engine import AttackPathRelation
 from threatlens.domain.models import (
     Asset,
     AuditEvent,
@@ -64,6 +65,21 @@ CREATE TABLE IF NOT EXISTS scans (
     provider_name TEXT NOT NULL, state TEXT NOT NULL, queued_at TIMESTAMPTZ NOT NULL,
     started_at TIMESTAMPTZ, finished_at TIMESTAMPTZ, error TEXT
 );
+CREATE TABLE IF NOT EXISTS attack_path_relations (
+    id UUID PRIMARY KEY,
+    source_asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    target_asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    relationship_type TEXT NOT NULL,
+    validated BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL,
+    validated_at TIMESTAMPTZ,
+    validated_by UUID REFERENCES users(id)
+);
+CREATE TABLE IF NOT EXISTS attack_path_relation_evidence (
+    relation_id UUID NOT NULL REFERENCES attack_path_relations(id) ON DELETE CASCADE,
+    evidence_id UUID NOT NULL REFERENCES evidence(id),
+    PRIMARY KEY (relation_id, evidence_id)
+);
 CREATE TABLE IF NOT EXISTS risk_assessments (
     id UUID PRIMARY KEY,
     finding_id UUID NOT NULL REFERENCES findings(id) ON DELETE CASCADE,
@@ -110,6 +126,135 @@ class PostgresRepository(
         self.initialize_finding_correlation()
         self.initialize_evidence_validation()
         self.initialize_auth()
+
+    def save_attack_path_relation_with_audit(
+        self, relation: AttackPathRelation, actor_user_id: UUID
+    ) -> None:
+        """Persist an explicit, initially unvalidated attack-path relationship atomically."""
+        if relation.validated:
+            raise ValueError("new attack-path relationships must start unvalidated")
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT 1 FROM assets WHERE id=%s OR id=%s",
+                        (relation.source_asset_id, relation.target_asset_id),
+                    )
+                    if cursor.fetchone() is None:
+                        raise KeyError("attack-path relation references missing asset")
+                    cursor.execute(
+                        "SELECT id, content, sha256 FROM evidence WHERE id = ANY(%s)",
+                        ([str(item) for item in relation.evidence_ids],),
+                    )
+                    rows = cursor.fetchall()
+                    if len(rows) != len(relation.evidence_ids):
+                        raise KeyError("attack-path relation references missing evidence")
+                    for _, content, sealed_hash in rows:
+                        if not sealed_hash or sealed_hash != __import__("hashlib").sha256(
+                            content.encode("utf-8")
+                        ).hexdigest():
+                            raise ValueError("attack-path relation references unsealed or invalid evidence")
+                    cursor.execute(
+                        """INSERT INTO attack_path_relations
+                           (id,source_asset_id,target_asset_id,relationship_type,validated,created_at)
+                           VALUES (%s,%s,%s,%s,FALSE,NOW())""",
+                        (
+                            relation.id,
+                            relation.source_asset_id,
+                            relation.target_asset_id,
+                            relation.relationship_type.value,
+                        ),
+                    )
+                    cursor.executemany(
+                        """INSERT INTO attack_path_relation_evidence (relation_id,evidence_id)
+                           VALUES (%s,%s)""",
+                        [(relation.id, evidence_id) for evidence_id in relation.evidence_ids],
+                    )
+                    event = AuditEvent(
+                        actor_user_id=actor_user_id,
+                        action="ATTACK_PATH_RELATION_CREATED",
+                        resource_type="ATTACK_PATH_RELATION",
+                        resource_id=relation.id,
+                        outcome="SUCCESS",
+                        detail=f"validated=false;evidence_count={len(relation.evidence_ids)}",
+                    )
+                    self._insert_audit_event(cursor, event)
+
+    def validate_attack_path_relation_with_audit(
+        self, relation_id: UUID, actor_user_id: UUID
+    ) -> bool:
+        """Validate a relation only when every referenced evidence item is currently VALIDATED."""
+        from hashlib import sha256
+        from datetime import datetime, UTC
+
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        """SELECT validated FROM attack_path_relations
+                           WHERE id=%s FOR UPDATE""",
+                        (relation_id,),
+                    )
+                    row = cursor.fetchone()
+                    if row is None:
+                        raise KeyError(str(relation_id))
+                    if row[0]:
+                        event = AuditEvent(
+                            actor_user_id=actor_user_id,
+                            action="ATTACK_PATH_RELATION_VALIDATED",
+                            resource_type="ATTACK_PATH_RELATION",
+                            resource_id=relation_id,
+                            outcome="NOOP",
+                            detail="already validated",
+                        )
+                        self._insert_audit_event(cursor, event)
+                        return False
+                    cursor.execute(
+                        """SELECT e.id, e.content, e.sha256
+                           FROM attack_path_relation_evidence re
+                           JOIN evidence e ON e.id = re.evidence_id
+                           WHERE re.relation_id=%s
+                           ORDER BY e.id""",
+                        (relation_id,),
+                    )
+                    evidence_rows = cursor.fetchall()
+                    if not evidence_rows:
+                        raise ValueError("attack-path relation must reference evidence")
+                    for _, content, sealed_hash in evidence_rows:
+                        if not sealed_hash or sealed_hash != sha256(content.encode("utf-8")).hexdigest():
+                            raise ValueError("attack-path relation references invalid evidence")
+                    evidence_ids = [row[0] for row in evidence_rows]
+                    cursor.execute(
+                        """SELECT COUNT(*)
+                           FROM evidence_validations ev
+                           WHERE ev.evidence_id = ANY(%s)
+                             AND ev.state = 'VALIDATED'
+                             AND NOT EXISTS (
+                                 SELECT 1 FROM evidence_validations newer
+                                 WHERE newer.supersedes_id = ev.id
+                             )""",
+                        (evidence_ids,),
+                    )
+                    if cursor.fetchone()[0] != len(evidence_ids):
+                        raise ValueError("all attack-path evidence must have a current VALIDATED decision")
+                    validated_at = datetime.now(UTC)
+                    cursor.execute(
+                        """UPDATE attack_path_relations
+                           SET validated=TRUE, validated_at=%s, validated_by=%s
+                           WHERE id=%s AND validated=FALSE""",
+                        (validated_at, actor_user_id, relation_id),
+                    )
+                    changed = cursor.rowcount == 1
+                    event = AuditEvent(
+                        actor_user_id=actor_user_id,
+                        action="ATTACK_PATH_RELATION_VALIDATED",
+                        resource_type="ATTACK_PATH_RELATION",
+                        resource_id=relation_id,
+                        outcome="SUCCESS" if changed else "NOOP",
+                        detail=f"evidence_count={len(evidence_ids)}",
+                    )
+                    self._insert_audit_event(cursor, event)
+                    return changed
 
     def save_campaign(self, campaign: Campaign) -> None:
         with self.connection.transaction():
