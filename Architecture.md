@@ -567,7 +567,7 @@ The authenticated principal is the sole audit actor. The API does not mutate evi
 
 API regression tests cover authentication, REMEDIATE authorization, successful remediation, denied invalid transitions, idempotent terminal-state requests, missing findings, and audit actor binding. Domain tests cover the fail-closed transition matrix, while PostgreSQL integration tests cover durable mutation and atomic audit behavior.
 
-**Validation status:** Gate 39 implementation and tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 39 can be declared complete.
+Gate 39 is complete after explicit local PostgreSQL-backed `pytest -q` and `ruff check .` validation.
 
   
 ## 63. Architecture Gate 40 — Authenticated Finding Risk Assessment API — IMPLEMENTED
