@@ -1,4 +1,3 @@
-from datetime import UTC
 from uuid import UUID, uuid4
 
 import httpx
