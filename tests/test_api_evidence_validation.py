@@ -6,7 +6,6 @@ import pytest
 from threatlens.api.app import create_app
 from threatlens.auth.service import AuthenticationService, Role
 from threatlens.domain.models import AuditEvent, User
-from threatlens.evidence.validation import EvidenceValidationState
 
 
 class FakeRepository:
