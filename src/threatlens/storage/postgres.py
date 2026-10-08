@@ -109,6 +109,43 @@ class PostgresRepository(
                     + [(campaign.id, value, False) for value in campaign.scope.exclude],
                 )
 
+    def campaign_by_id(self, campaign_id: UUID) -> Campaign:
+        from threatlens.domain.models import LifecycleState, Scope
+
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT c.id, c.name, c.authorized, c.state, c.created_at,
+                          COALESCE(
+                              array_agg(se.value ORDER BY se.included DESC, se.value)
+                              FILTER (WHERE se.included),
+                              ARRAY[]::TEXT[]
+                          ),
+                          COALESCE(
+                              array_agg(se.value ORDER BY se.value)
+                              FILTER (WHERE NOT se.included),
+                              ARRAY[]::TEXT[]
+                          )
+                   FROM campaigns c
+                   LEFT JOIN scope_entries se ON se.campaign_id = c.id
+                   WHERE c.id=%s
+                   GROUP BY c.id, c.name, c.authorized, c.state, c.created_at""",
+                (campaign_id,),
+            )
+            row = cursor.fetchone()
+        if row is None:
+            raise KeyError(str(campaign_id))
+        return Campaign(
+            id=row[0],
+            name=row[1],
+            authorized=row[2],
+            state=LifecycleState(row[3]),
+            created_at=row[4],
+            scope=Scope(
+                include=tuple(row[5] or ()),
+                exclude=tuple(row[6] or ()),
+            ),
+        )
+
     def save_asset(self, asset: Asset) -> None:
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
