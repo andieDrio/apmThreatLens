@@ -154,7 +154,13 @@ class PostgresRepository(
                 with self.connection.cursor() as cursor:
                     cursor.execute(
                         "INSERT INTO campaigns (id,name,authorized,state,created_at) VALUES (%s,%s,%s,%s,%s)",
-                        (campaign.id, campaign.name, campaign.authorized, campaign.state.value, campaign.created_at),
+                        (
+                            campaign.id,
+                            campaign.name,
+                            campaign.authorized,
+                            campaign.state.value,
+                            campaign.created_at,
+                        ),
                     )
                     cursor.execute("INSERT INTO scopes (campaign_id) VALUES (%s)", (campaign.id,))
                     cursor.executemany(
@@ -172,7 +178,16 @@ class PostgresRepository(
                     )
                     cursor.execute(
                         "INSERT INTO audit_events (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-                        (event.id, event.actor_user_id, event.action, event.resource_type, event.resource_id, event.outcome, event.detail, event.created_at),
+                        (
+                            event.id,
+                            event.actor_user_id,
+                            event.action,
+                            event.resource_type,
+                            event.resource_id,
+                            event.outcome,
+                            event.detail,
+                            event.created_at,
+                        ),
                     )
 
     def save_asset(self, asset: Asset) -> None:
