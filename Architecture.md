@@ -596,3 +596,16 @@ The read path is strictly read-only. It does not expose raw evidence, audit reco
 Focused regression coverage verifies authentication, READ authorization, bounded pagination, deterministic assessment fields, and missing-finding handling.
 
 **Validation status:** Gate 41 implementation and regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 41 can be declared complete.
+
+
+## 65. Architecture Gate 42 — Durable Attack-Path Relationship Validation Boundary — IMPLEMENTED
+
+Gate 42 establishes the PostgreSQL persistence boundary for explicit attack-path relationships. Relationships are stored separately from findings and require source/target assets plus at least one sealed evidence reference. Newly persisted relationships always begin unvalidated; the persistence layer does not accept client-controlled validation state.
+
+Relationship validation is a separate transactional operation. PostgreSQL locks the relationship row, re-verifies every referenced evidence digest, and requires every referenced evidence item to have a current VALIDATED evidence decision. Only then is the relationship marked validated with the authenticated validator identity and validation timestamp. Re-validating an already validated relationship is an audited no-op.
+
+The mutation and security audit event are committed atomically. The boundary does not infer network reachability, trust, application flow, or authenticated access from asset data, and it does not expose an alternate attack-path algorithm. The existing deterministic AttackPathAnalyzer remains the sole path-analysis engine.
+
+Focused PostgreSQL regression coverage verifies unvalidated creation, asset/evidence integrity, validation fail-closed behavior, audit binding, and idempotent validation.
+
+**Validation status:** Gate 42 implementation and regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 42 can be declared complete.
