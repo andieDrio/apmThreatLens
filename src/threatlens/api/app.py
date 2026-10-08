@@ -142,6 +142,22 @@ class ScanControlResponse(BaseModel):
     changed: bool
 
 
+class EvidenceReadModel(BaseModel):
+    id: str
+    kind: str
+    source: str
+    captured_at: str
+    sha256: str
+    metadata: dict[str, str]
+
+
+class EvidenceListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[EvidenceReadModel]
+
+
 @dataclass(frozen=True, slots=True)
 class APIContext:
     repository: object
@@ -258,6 +274,31 @@ def create_app(repository=None, auth_service=None, orchestrator=None) -> FastAPI
             normalized["created_at"] = item["created_at"].isoformat()
             items.append(CampaignReadModel(**normalized))
         return CampaignListResponse(
+            total=result["total"],
+            limit=result["limit"],
+            offset=result["offset"],
+            items=items,
+        )
+
+    @app.get("/api/v1/evidence", response_model=EvidenceListResponse)
+    def evidence(
+        current=Depends(require(Permission.READ)),
+        limit: int = Query(default=50, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+    ) -> EvidenceListResponse:
+        result = context.repository.evidence_read_model(limit=limit, offset=offset)
+        items = [
+            EvidenceReadModel(
+                id=item["id"],
+                kind=item["kind"],
+                source=item["source"],
+                captured_at=item["captured_at"].isoformat(),
+                sha256=item["sha256"],
+                metadata=dict(item["metadata"]),
+            )
+            for item in result["items"]
+        ]
+        return EvidenceListResponse(
             total=result["total"],
             limit=result["limit"],
             offset=result["offset"],
