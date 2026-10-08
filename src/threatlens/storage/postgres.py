@@ -64,6 +64,19 @@ CREATE TABLE IF NOT EXISTS scans (
     provider_name TEXT NOT NULL, state TEXT NOT NULL, queued_at TIMESTAMPTZ NOT NULL,
     started_at TIMESTAMPTZ, finished_at TIMESTAMPTZ, error TEXT
 );
+CREATE TABLE IF NOT EXISTS risk_assessments (
+    id UUID PRIMARY KEY,
+    finding_id UUID NOT NULL REFERENCES findings(id) ON DELETE CASCADE,
+    level TEXT NOT NULL,
+    score DOUBLE PRECISION NOT NULL CHECK (score >= 0 AND score <= 1),
+    context_json JSONB NOT NULL,
+    factors_json JSONB NOT NULL,
+    explanation_json JSONB NOT NULL,
+    inputs_used_json JSONB NOT NULL,
+    missing_inputs_json JSONB NOT NULL,
+    context_source TEXT,
+    created_at TIMESTAMPTZ NOT NULL
+);
 """
 
 
@@ -387,6 +400,117 @@ class PostgresRepository(
                         ),
                     )
                     return True, target_state, True
+
+    def finding_by_id(self, finding_id: UUID) -> Finding:
+        from threatlens.domain.models import FindingState, Severity
+
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT f.id, f.title, f.asset_id, f.state, f.severity,
+                          f.vulnerability_id, f.cwe, f.cve, f.cvss, f.confidence,
+                          f.source, f.detected_at, f.service_id, f.endpoint,
+                          f.parameter, f.location
+                   FROM findings f
+                   WHERE f.id=%s""",
+                (finding_id,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise KeyError(str(finding_id))
+            cursor.execute(
+                "SELECT evidence_id FROM finding_evidence WHERE finding_id=%s ORDER BY evidence_id",
+                (finding_id,),
+            )
+            evidence_ids = tuple(item[0] for item in cursor.fetchall())
+
+        return Finding(
+            id=row[0],
+            title=row[1],
+            asset_id=row[2],
+            evidence_ids=evidence_ids,
+            state=FindingState(row[3]),
+            severity=Severity(row[4]),
+            vulnerability_id=row[5],
+            cwe=row[6],
+            cve=row[7],
+            cvss=row[8],
+            confidence=row[9],
+            source=row[10],
+            detected_at=row[11],
+            service_id=row[12],
+            endpoint=row[13],
+            parameter=row[14],
+            location=row[15],
+        )
+
+    def save_risk_assessment_with_audit(
+        self, assessment, context: dict[str, object], actor_user_id: UUID
+    ) -> None:
+        from datetime import datetime
+        from threatlens.domain.models import AuditEvent
+
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        """INSERT INTO risk_assessments
+                           (id,finding_id,level,score,context_json,factors_json,
+                            explanation_json,inputs_used_json,missing_inputs_json,
+                            context_source,created_at)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        (
+                            UUID(assessment.finding_id),
+                            UUID(assessment.finding_id),
+                            assessment.level.value,
+                            assessment.score,
+                            json.dumps(context, sort_keys=True),
+                            json.dumps(
+                                [
+                                    {
+                                        "name": factor.name,
+                                        "score": factor.score,
+                                        "weight": factor.weight,
+                                        "rationale": factor.rationale,
+                                        "source": factor.source,
+                                    }
+                                    for factor in assessment.factors
+                                ],
+                                sort_keys=True,
+                            ),
+                            json.dumps(list(assessment.explanation)),
+                            json.dumps(list(assessment.inputs_used)),
+                            json.dumps(list(assessment.missing_inputs)),
+                            assessment.context_source,
+                            datetime.now(UTC),
+                        ),
+                    )
+                    event = AuditEvent(
+                        actor_user_id=actor_user_id,
+                        action="RISK_ASSESSMENT_CREATED",
+                        resource_type="FINDING",
+                        resource_id=UUID(assessment.finding_id),
+                        outcome="SUCCESS",
+                        detail=(
+                            f"risk_level={assessment.level.value};score={assessment.score:.4f};"
+                            f"context_source={assessment.context_source or 'none'}"
+                        ),
+                    )
+                    cursor.execute(
+                        "INSERT INTO audit_events "
+                        "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (
+                            event.id,
+                            event.actor_user_id,
+                            event.action,
+                            event.resource_type,
+                            event.resource_id,
+                            event.outcome,
+                            event.detail,
+                            event.created_at,
+                        ),
+                    )
+
 
     def count(self, table: str) -> int:
         allowed = {
