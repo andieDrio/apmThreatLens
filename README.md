@@ -51,7 +51,7 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 
 ### Current Architecture Gate
 
-Architecture Gate 37: Authenticated Scan Queue Control API. Gate 36 Authenticated Evidence Validation Lifecycle API is complete after explicit local validation. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
+Architecture Gate 38: Authenticated Campaign & Scope Control API. Gate 37 Authenticated Scan Queue Control API is complete after explicit local validation. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
 
 ### Architecture Gate 35 — Authenticated Evidence Read Model API — COMPLETE
 
@@ -228,10 +228,21 @@ The read model uses fixed PostgreSQL queries and deterministic ordering. It does
 **Validation status:** Gate 31 focused API regression tests are implemented. Local `pytest -q` and `ruff check .` are required before the gate can be declared complete.
 
 
-### Architecture Gate 37 — Authenticated Scan Queue Control API
+### Architecture Gate 37 — Authenticated Scan Queue Control API — COMPLETE
 
 Gate 37 exposes the existing `ScanOrchestrator.queue()` boundary through an authenticated HTTP control-plane endpoint: `POST /api/v1/campaigns/{campaign_id}/scans`. The endpoint requires ASSESS permission, resolves the persisted campaign and an explicitly registered provider, and delegates queueing to the orchestrator so campaign authorization, execution policy validation, scan creation, and audit persistence remain in one existing application boundary.
 
 The API only creates a QUEUED scan; it does not execute a provider, expand campaign scope, accept arbitrary provider implementations, or permit client-controlled audit identity. Provider selection is constrained to the injected `ProviderRegistry`, and the authenticated principal is passed unchanged to the orchestrator.
 
-**Validation status:** Gate 37 implementation and focused API regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 37 can be declared complete.
+Gate 37 is complete after explicit local validation.
+
+
+### Architecture Gate 38 — Authenticated Campaign & Scope Control API
+
+Gate 38 establishes the authenticated campaign authorization control boundary. `POST /api/v1/campaigns` requires ADMIN permission and requires an explicit authorization acknowledgement before a campaign can be persisted. The request is normalized through the existing immutable `Campaign` and `Scope` domain contracts, so blank names, empty include scope, and blank scope entries fail closed.
+
+Campaign persistence and the `CAMPAIGN_CREATED` security audit event are committed atomically by PostgreSQL. The authenticated principal is the audit actor; clients cannot select an arbitrary actor identity. The endpoint exposes the resulting authorized campaign and exact persisted include/exclude scope without introducing scope expansion or assessment execution.
+
+Assessment users cannot self-authorize new campaign scope through this boundary. Campaign creation is intentionally separated from ASSESS so authorization remains an administrative control-plane decision.
+
+**Validation status:** Gate 38 implementation and focused API regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 38 can be declared complete.
