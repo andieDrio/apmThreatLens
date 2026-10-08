@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from threatlens.auth.service import AuthenticationService, Permission
 from threatlens.evidence.service import EvidenceValidationService
+from threatlens.domain.models import Campaign, Scope
 from threatlens.evidence.validation import EvidenceValidationState
 from threatlens.orchestration.engine import ScanOrchestrator
 from threatlens.providers.runtime import ProviderRegistry
@@ -136,6 +137,17 @@ class PrincipalResponse(BaseModel):
     username: str
     role: str
     session_id: str
+
+
+class CampaignCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=256)
+    include: list[str] = Field(min_length=1, max_length=1000)
+    exclude: list[str] = Field(default_factory=list, max_length=1000)
+    authorized: bool
+
+
+class CampaignCreateResponse(CampaignReadModel):
+    pass
 
 
 class ScanQueueRequest(BaseModel):
@@ -319,6 +331,42 @@ def create_app(repository=None, auth_service=None, orchestrator=None, provider_r
             limit=result["limit"],
             offset=result["offset"],
             items=items,
+        )
+
+    @app.post(
+        "/api/v1/campaigns",
+        response_model=CampaignCreateResponse,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def create_campaign(
+        request: CampaignCreateRequest,
+        current=Depends(require(Permission.ADMIN)),
+    ) -> CampaignCreateResponse:
+        if not request.authorized:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="explicit campaign authorization is required",
+            )
+        try:
+            campaign = Campaign(
+                name=request.name,
+                scope=Scope(
+                    include=tuple(request.include),
+                    exclude=tuple(request.exclude),
+                ),
+                authorized=True,
+            )
+            context.repository.save_campaign_with_audit(campaign, current.user_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        return CampaignCreateResponse(
+            id=str(campaign.id),
+            name=campaign.name,
+            authorized=campaign.authorized,
+            state=campaign.state.value,
+            created_at=campaign.created_at.isoformat(),
+            include=list(campaign.scope.include),
+            exclude=list(campaign.scope.exclude),
         )
 
     @app.get("/api/v1/evidence", response_model=EvidenceListResponse)
