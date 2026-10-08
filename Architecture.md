@@ -516,7 +516,7 @@ Authentication and authorization remain delegated to AuthenticationService and t
 Gate 35 is complete after explicit local validation.
 
 
-## 59. Architecture Gate 36 — Authenticated Evidence Validation Lifecycle API — IMPLEMENTED
+## 59. Architecture Gate 36 — Authenticated Evidence Validation Lifecycle API — COMPLETE
 
 Gate 36 exposes the existing evidence-validation lifecycle through an authenticated application boundary without duplicating or bypassing the domain/persistence contracts. Validation creation is available at `POST /api/v1/evidence/{evidence_id}/validations`, while lifecycle transitions are available at `POST /api/v1/evidence/validations/{validation_id}/transition`. Both require the existing VALIDATE permission.
 
@@ -526,4 +526,17 @@ The application service delegates all integrity checks and lifecycle enforcement
 
 The API exposes no raw evidence content mutation, provider execution, arbitrary SQL, client-controlled validator identity, or alternate validation state machine. Concurrency remains governed by the existing PostgreSQL row-locking boundary.
 
-**Validation status:** Gate 36 implementation and focused API regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 36 can be declared complete.
+Gate 36 is complete after explicit local validation.
+
+
+## 60. Architecture Gate 37 — Authenticated Scan Queue Control API — IMPLEMENTED
+
+Gate 37 exposes the existing scan queueing application boundary through `POST /api/v1/campaigns/{campaign_id}/scans`. The endpoint requires the existing ASSESS permission, loads the authorized campaign from PostgreSQL, resolves the requested provider only through the injected `ProviderRegistry`, and delegates scan creation to `ScanOrchestrator.queue()`.
+
+The API returns only the newly persisted QUEUED execution identity, campaign identity, provider name, and lifecycle state. It does not execute the provider, mutate campaign scope, infer authorization, or accept arbitrary provider implementations. The authenticated principal is passed directly into the orchestrator, which remains responsible for campaign execution-policy validation and the atomic `SCAN_QUEUED` audit event.
+
+PostgreSQL adds a bounded `campaign_by_id()` repository lookup that reconstructs the persisted campaign and explicit include/exclude scope before orchestration. Missing campaigns and unregistered providers fail closed. Provider execution remains outside this HTTP queue-control gate.
+
+Focused API regression coverage verifies authentication, ASSESS authorization, principal propagation, campaign/provider lookup failures, malformed campaign identifiers, queued-state response, audit creation, and the absence of provider execution.
+
+**Validation status:** Gate 37 implementation and focused API regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 37 can be declared complete.
