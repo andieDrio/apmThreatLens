@@ -347,3 +347,8 @@ Gate 48 adds the admin-only, read-only `GET /api/v1/audit-events` endpoint backe
 Gate 52 hardens the production evidence/finding persistence boundary against late writes and misconfigured compatibility paths. PostgreSQL execution-bound writes lock the authoritative scan row, require the execution to remain RUNNING, and persist under the same transaction. The production repository declares execution fencing mandatory; ProviderHandoff and DurableFindingCorrelator fail closed when a fenced method is unavailable, and generic PostgreSQL evidence writes reject execution-bound evidence.
 
 **Validation status:** User confirmed `ruff check .`, `git diff --check`, `python -m pytest -q`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel` all completed successfully. The full test run contained many skips. The output does not identify whether the PostgreSQL-backed execution-fence tests were among the skipped tests, so run `python -m pytest -q -rs` and verify those tests actually execute before declaring the gate complete. Five Starlette deprecation warnings were reported; the wheel built successfully.
+
+
+### Gate 53 — Finding Remediation Idempotency (In Progress)
+
+The remediation endpoint now requires an `Idempotency-Key` and uses a durable PostgreSQL record bound to the authenticated actor and request fingerprint. Exact retries return the original result without repeating the audit write; conflicting reuse returns HTTP 409. This gate remains in progress pending local lint, test, PostgreSQL integration, and package-build validation.
