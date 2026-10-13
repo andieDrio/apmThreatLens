@@ -48,3 +48,18 @@ def test_logout_revokes_session(tmp_path):
     with pytest.raises(PermissionError, match="session is invalid"):
         auth.authenticate_session(token)
     repo.close()
+
+
+@pytest.mark.parametrize("iterations", ["0", "999999999", "10000"])
+def test_password_verifier_rejects_unsafe_pbkdf2_cost(iterations):
+    encoded = f"pbkdf2_sha256${iterations}${'00' * 16}${'00' * 32}"
+    assert not AuthenticationService._verify_password("password", encoded)
+
+
+def test_password_verifier_rejects_malformed_salt_or_digest():
+    assert not AuthenticationService._verify_password(
+        "password", "pbkdf2_sha256$600000$00$" + "00" * 32
+    )
+    assert not AuthenticationService._verify_password(
+        "password", "pbkdf2_sha256$600000$" + "00" * 16 + "$00"
+    )
