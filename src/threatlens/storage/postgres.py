@@ -1017,7 +1017,7 @@ class PostgresRepository(
         success_event: AuditEvent,
         noop_event: AuditEvent,
     ) -> tuple[bool, bool]:
-        """Apply a lifecycle command once per actor/key and atomically persist its audit/result."""
+        """Apply a lifecycle command once per actor/key and atomically persist its result."""
         import re
         from datetime import timedelta
 
@@ -1025,19 +1025,29 @@ class PostgresRepository(
             raise ValueError("unsupported scan lifecycle command")
         if not re.fullmatch(r"[A-Za-z0-9._:-]{16,128}", idempotency_key):
             raise ValueError("idempotency key must be 16..128 safe ASCII characters")
-        if len(request_hash) != 64:
+        if not re.fullmatch(r"[0-9a-f]{64}", request_hash):
             raise ValueError("request fingerprint must be a SHA-256 hex digest")
 
         with self._transaction_lock:
             with self.connection.transaction():
                 with self.connection.cursor() as cursor:
+
                     def insert_audit(event: AuditEvent) -> None:
                         cursor.execute(
                             """INSERT INTO audit_events
-                               (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at)
+                               (id, actor_user_id, action, resource_type, resource_id,
+                                outcome, detail, created_at)
                                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
-                            (event.id, event.actor_user_id, event.action, event.resource_type,
-                             event.resource_id, event.outcome, event.detail, event.created_at),
+                            (
+                                event.id,
+                                event.actor_user_id,
+                                event.action,
+                                event.resource_type,
+                                event.resource_id,
+                                event.outcome,
+                                event.detail,
+                                event.created_at,
+                            ),
                         )
 
                     cursor.execute(
@@ -1053,7 +1063,11 @@ class PostgresRepository(
                     )
                     existing = cursor.fetchone()
                     if existing is not None:
-                        if existing[0] != action or existing[1].strip() != request_hash or existing[2] != execution_id:
+                        if (
+                            existing[0] != action
+                            or existing[1].strip() != request_hash
+                            or existing[2] != execution_id
+                        ):
                             raise ValueError(
                                 "Idempotency-Key was already used for a different lifecycle command"
                             )
@@ -1071,24 +1085,41 @@ class PostgresRepository(
                     now = datetime.now(UTC)
                     changed = False
                     if action == "CANCEL":
-                        if row[0] in {LifecycleState.QUEUED.value, LifecycleState.RUNNING.value}:
+                        if row[0] in {
+                            LifecycleState.QUEUED.value,
+                            LifecycleState.RUNNING.value,
+                        }:
                             cursor.execute(
                                 """UPDATE scans SET state=%s, finished_at=%s
                                    WHERE execution_id=%s AND state IN (%s,%s)""",
-                                (LifecycleState.CANCELLED.value, now, execution_id,
-                                 LifecycleState.QUEUED.value, LifecycleState.RUNNING.value),
+                                (
+                                    LifecycleState.CANCELLED.value,
+                                    now,
+                                    execution_id,
+                                    LifecycleState.QUEUED.value,
+                                    LifecycleState.RUNNING.value,
+                                ),
                             )
                             changed = cursor.rowcount == 1
                         insert_audit(success_event if changed else noop_event)
                     else:
                         cutoff = now - timedelta(seconds=stale_after_seconds)
-                        if (row[0] == LifecycleState.RUNNING.value and row[1] is not None and row[1] <= cutoff):
+                        is_stale = (
+                            row[0] == LifecycleState.RUNNING.value
+                            and row[1] is not None
+                            and row[1] <= cutoff
+                        )
+                        if is_stale:
                             cursor.execute(
                                 """UPDATE scans SET state=%s, finished_at=%s, error=%s
                                    WHERE execution_id=%s AND state=%s""",
-                                (LifecycleState.FAILED.value, now,
-                                 "execution lease expired; provider execution could not be confirmed alive",
-                                 execution_id, LifecycleState.RUNNING.value),
+                                (
+                                    LifecycleState.FAILED.value,
+                                    now,
+                                    "execution lease expired; provider execution could not be confirmed alive",
+                                    execution_id,
+                                    LifecycleState.RUNNING.value,
+                                ),
                             )
                             changed = cursor.rowcount == 1
                         if changed:
@@ -1099,8 +1130,15 @@ class PostgresRepository(
                            (actor_user_id, idempotency_key, action, request_hash,
                             execution_id, changed, created_at)
                            VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-                        (actor_user_id, idempotency_key, action, request_hash,
-                         execution_id, changed, now),
+                        (
+                            actor_user_id,
+                            idempotency_key,
+                            action,
+                            request_hash,
+                            execution_id,
+                            changed,
+                            now,
+                        ),
                     )
                     return changed, True
 
