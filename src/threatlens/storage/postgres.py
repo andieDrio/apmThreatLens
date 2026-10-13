@@ -261,6 +261,38 @@ class PostgresRepository(
                     self._insert_audit_event(cursor, event)
                     return changed
 
+    def attack_path_relation_by_id(self, relation_id: UUID) -> dict[str, object]:
+        """Return a single durable relationship and its explicit evidence references."""
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT r.id, r.source_asset_id, r.target_asset_id, r.relationship_type,
+                          r.validated, r.validated_at, r.validated_by,
+                          COALESCE(
+                              array_agg(re.evidence_id ORDER BY re.evidence_id)
+                              FILTER (WHERE re.evidence_id IS NOT NULL),
+                              ARRAY[]::UUID[]
+                          )
+                   FROM attack_path_relations r
+                   LEFT JOIN attack_path_relation_evidence re ON re.relation_id = r.id
+                   WHERE r.id=%s
+                   GROUP BY r.id, r.source_asset_id, r.target_asset_id,
+                            r.relationship_type, r.validated, r.validated_at, r.validated_by""",
+                (relation_id,),
+            )
+            row = cursor.fetchone()
+        if row is None:
+            raise KeyError(str(relation_id))
+        return {
+            "id": row[0],
+            "source_asset_id": row[1],
+            "target_asset_id": row[2],
+            "relationship_type": row[3],
+            "validated": row[4],
+            "validated_at": row[5],
+            "validated_by": row[6],
+            "evidence_ids": list(row[7] or []),
+        }
+
     def save_campaign(self, campaign: Campaign) -> None:
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
