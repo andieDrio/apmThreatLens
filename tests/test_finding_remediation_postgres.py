@@ -1,3 +1,4 @@
+import pytest
 from threatlens.domain.models import Asset, Evidence, Finding, FindingState, Severity, User
 
 
@@ -187,3 +188,62 @@ def test_postgres_risk_assessment_persists_with_audit(postgres_repository):
     assert action == "RISK_ASSESSMENT_CREATED"
     assert outcome == "SUCCESS"
     assert actor_user_id == actor.id
+
+
+def test_postgres_finding_remediation_idempotency_replays_and_rejects_conflicts(
+    postgres_repository,
+):
+    repository = postgres_repository
+    actor = User(
+        username="remediator-idempotency",
+        password_hash="test-password-hash",
+        role="ANALYST",
+    )
+    repository.save_user(actor)
+    asset = Asset(canonical_id="host:10.0.0.53", asset_type="HOST", value="10.0.0.53")
+    repository.save_asset(asset)
+    evidence = Evidence(kind="test", content="evidence", source="test")
+    repository.save_evidence(evidence)
+    finding = Finding(
+        title="Idempotent remediation finding",
+        asset_id=asset.id,
+        evidence_ids=(evidence.id,),
+        state=FindingState.CONFIRMED,
+        severity=Severity.HIGH,
+        confidence=1.0,
+        source="test",
+    )
+    repository.save_finding(finding)
+    request_hash = "a" * 64
+
+    first = repository.transition_finding_remediation_idempotent(
+        finding_id=finding.id,
+        target_state=FindingState.MITIGATED,
+        actor_user_id=actor.id,
+        rationale="verified fix",
+        idempotency_key="postgres-remediate-key-001",
+        request_hash=request_hash,
+    )
+    audit_count = repository.count("audit_events")
+    replay = repository.transition_finding_remediation_idempotent(
+        finding_id=finding.id,
+        target_state=FindingState.MITIGATED,
+        actor_user_id=actor.id,
+        rationale="verified fix",
+        idempotency_key="postgres-remediate-key-001",
+        request_hash=request_hash,
+    )
+
+    assert first == (True, FindingState.MITIGATED, True, True)
+    assert replay == (True, FindingState.MITIGATED, True, False)
+    assert repository.count("audit_events") == audit_count
+
+    with pytest.raises(ValueError, match="different remediation request"):
+        repository.transition_finding_remediation_idempotent(
+            finding_id=finding.id,
+            target_state=FindingState.ACCEPTED_RISK,
+            actor_user_id=actor.id,
+            rationale="different request",
+            idempotency_key="postgres-remediate-key-001",
+            request_hash="b" * 64,
+        )
