@@ -377,53 +377,65 @@ class ScanOrchestrator:
                 queued_at=scan.queued_at,
             )
         heartbeat_stop = Event()
+        heartbeat_error: list[str] = []
 
         def heartbeat_loop() -> None:
             while not heartbeat_stop.wait(self.policy.heartbeat_interval_seconds):
-                self.repository.heartbeat_scan(scan.execution_id)
+                try:
+                    renewed = self.repository.heartbeat_scan(scan.execution_id)
+                    if renewed is False:
+                        raise RuntimeError(
+                            "heartbeat lease is no longer owned by this execution"
+                        )
+                except Exception as exc:
+                    heartbeat_error.append(f"{type(exc).__name__}: {exc}")
+                    event.set()
+                    heartbeat_stop.set()
+                    return
 
         heartbeat_thread = Thread(
             target=heartbeat_loop, name=f"threatlens-heartbeat-{scan.execution_id}", daemon=True
         )
-        self.repository.heartbeat_scan(scan.execution_id)
-        heartbeat_thread.start()
+        provider_error: str | None = None
         try:
+            renewed = self.repository.heartbeat_scan(scan.execution_id)
+            if renewed is False:
+                raise RuntimeError("initial heartbeat lease could not be established")
+            heartbeat_thread.start()
             provider.execute(campaign, scan.execution_id, event)
         except Exception as exc:
-            error = f"{type(exc).__name__}: {exc}"
-            self.repository.update_scan_state_if_current_with_audit(
-                scan.execution_id,
-                LifecycleState.RUNNING,
-                LifecycleState.FAILED,
-                AuditEvent(
-                    actor_user_id=principal.user_id,
-                    action="SCAN_FINALIZED",
-                    resource_type="SCAN",
-                    resource_id=scan.execution_id,
-                    outcome=LifecycleState.FAILED.value,
-                    detail=error,
-                ),
-                error=error,
-            )
-        else:
-            final_state = LifecycleState.CANCELLED if event.is_set() else LifecycleState.COMPLETED
-            if not self.repository.update_scan_state_if_current_with_audit(
-                scan.execution_id,
-                LifecycleState.RUNNING,
-                final_state,
-                AuditEvent(
-                    actor_user_id=principal.user_id,
-                    action="SCAN_FINALIZED",
-                    resource_type="SCAN",
-                    resource_id=scan.execution_id,
-                    outcome=final_state.value,
-                    detail="provider execution finalized",
-                ),
-            ):
-                final_state = self.repository.scan_state(scan.execution_id)
+            provider_error = f"{type(exc).__name__}: {exc}"
         finally:
             heartbeat_stop.set()
-            heartbeat_thread.join(0.1)
+            if heartbeat_thread.ident is not None:
+                heartbeat_thread.join(0.1)
+
+        if heartbeat_error:
+            error = f"heartbeat lease renewal failed: {heartbeat_error[0]}"
+        else:
+            error = provider_error
+
+        if error is not None:
+            final_state = LifecycleState.FAILED
+            detail = error
+        else:
+            final_state = LifecycleState.CANCELLED if event.is_set() else LifecycleState.COMPLETED
+            detail = "provider execution finalized"
+
+        self.repository.update_scan_state_if_current_with_audit(
+            scan.execution_id,
+            LifecycleState.RUNNING,
+            final_state,
+            AuditEvent(
+                actor_user_id=principal.user_id,
+                action="SCAN_FINALIZED",
+                resource_type="SCAN",
+                resource_id=scan.execution_id,
+                outcome=final_state.value,
+                detail=detail,
+            ),
+            error=error,
+        )
 
         return Scan(
             campaign_id=scan.campaign_id,
