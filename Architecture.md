@@ -699,3 +699,14 @@ Gate 52 adds PostgreSQL `save_evidence_for_execution` and `save_finding_for_exec
 Regression coverage has been added for rejection of late evidence, rejection of late uncorrelated and correlated findings, acceptance while RUNNING, and cross-connection serialization against a terminal transition.
 
 **Validation status:** Implementation and regression tests are committed to main. Local focused PostgreSQL tests, the full suite, Ruff, package build, diff checks, and security review remain pending. Gate 52 must remain IN PROGRESS until these checks are explicitly confirmed.
+
+
+## Architecture Gate 52 — Execution-Lease-Fenced Evidence and Finding Persistence
+
+Gate 52 strengthens the production persistence boundary so provider-originated evidence and findings cannot silently fall back to unfenced writes when an execution-aware method is missing. The PostgreSQL repository declares that execution fencing is mandatory. ProviderHandoff fails closed for evidence and finding persistence when that capability is absent, and DurableFindingCorrelator refuses its legacy correlation fallback for a repository that requires fencing. PostgreSQL also rejects evidence carrying execution provenance when it is sent through the generic, unfenced `save_evidence` method.
+
+The authoritative write methods continue to lock the scan row and verify RUNNING state in the same transaction as persistence. Correlated finding writes apply the same scan-row lock before correlation and merge operations. Legacy/in-memory adapters retain compatibility only when they do not declare that execution fencing is mandatory.
+
+Regression tests cover missing-fence fallbacks and rejection of execution-bound evidence on the unfenced repository method, alongside the existing late-write and terminal-transition concurrency tests.
+
+**Validation status:** The previous Gate 52 baseline passed Ruff, the full pytest suite, diff checks, and wheel build. The fail-closed security hardening and its new tests have now been committed to main; rerun the full local validation against this exact main revision before marking Gate 52 COMPLETE.
