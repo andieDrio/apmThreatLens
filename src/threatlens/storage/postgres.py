@@ -464,7 +464,7 @@ class PostgresRepository(
             "risk_levels": risk_levels,
         }
 
-    def save_campaign(self, campaign: Campaign) -> None
+    def save_campaign(self, campaign: Campaign) -> None:
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.execute(
