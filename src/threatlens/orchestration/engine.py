@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from hashlib import sha256
-import re
 from threading import BoundedSemaphore, Event, Thread
 from typing import Protocol
-from collections.abc import Callable
 from uuid import UUID
 
 from threatlens.auth import AuthenticationService, AuthenticatedPrincipal, Permission
