@@ -160,6 +160,65 @@ def test_postgres_scan_queue_idempotency_rejects_changed_request(postgres_reposi
     ).fetchone()[0] == 1
 
 
+
+def test_postgres_scan_idempotency_and_audit_are_atomic_on_audit_failure(
+    postgres_repository,
+):
+    repo = postgres_repository
+    campaign = make_campaign()
+    repo.save_campaign(campaign)
+    auth = AuthenticationService(repo)
+    auth.create_user("atomic-idempotency", "correct horse battery staple", Role.ANALYST)
+    principal, _ = auth.authenticate("atomic-idempotency", "correct horse battery staple")
+    orchestrator = ScanOrchestrator(repo, ExecutionPolicy(), auth)
+
+    class Provider:
+        name = "atomic-idempotency-provider"
+
+        def execute(self, campaign, execution_id, cancel_event):
+            raise AssertionError("queueing must not execute providers")
+
+    repo.connection.execute(
+        """
+        CREATE OR REPLACE FUNCTION fail_idempotent_queue_audit_fn()
+        RETURNS trigger AS $
+        BEGIN
+            IF NEW.action = 'SCAN_QUEUED' THEN
+                RAISE EXCEPTION 'injected idempotent queue audit failure';
+            END IF;
+            RETURN NEW;
+        END;
+        $ LANGUAGE plpgsql;
+        CREATE TRIGGER fail_idempotent_queue_audit
+        BEFORE INSERT ON audit_events
+        FOR EACH ROW EXECUTE FUNCTION fail_idempotent_queue_audit_fn()
+        """
+    )
+    repo.connection.commit()
+    key = "atomic-idempotency-key-0001"
+    with pytest.raises(Exception, match="injected idempotent queue audit failure"):
+        orchestrator.queue_idempotent(campaign, Provider(), key, principal=principal)
+    assert repo.count("scans") == 0
+    assert repo.connection.execute(
+        "SELECT COUNT(*) FROM scan_command_idempotency"
+    ).fetchone()[0] == 0
+
+    repo.connection.execute(
+        "DROP TRIGGER fail_idempotent_queue_audit ON audit_events; "
+        "DROP FUNCTION fail_idempotent_queue_audit_fn()"
+    )
+    repo.connection.commit()
+    scan, created = orchestrator.queue_idempotent(
+        campaign, Provider(), key, principal=principal
+    )
+    assert created is True
+    assert repo.scan_state(scan.execution_id) is LifecycleState.QUEUED
+    assert repo.count("scans") == 1
+    assert repo.connection.execute(
+        "SELECT COUNT(*) FROM scan_command_idempotency"
+    ).fetchone()[0] == 1
+
+
 def test_postgres_cross_instance_scan_queue_idempotency_has_single_winner(
     postgres_repository,
 ):
