@@ -93,6 +93,12 @@ class FakeOrchestrator:
             return True
         return False
 
+    def cancel_idempotent(self, execution_id, idempotency_key, principal=None):
+        return self.cancel(execution_id, principal), True
+
+    def recover_stale_idempotent(self, execution_id, idempotency_key, principal=None):
+        return self.recover_stale(execution_id, principal), True
+
 
 async def make_client(role=Role.ANALYST):
     repository = FakeRepository()
@@ -140,7 +146,10 @@ async def test_cancel_terminal_scan_reports_no_change():
         token = await login(client)
         response = await client.post(
             f"/api/v1/scans/{EXECUTION_ID}/cancel",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "scan-control-test-key-0001",
+            },
         )
     assert response.status_code == 200
     assert response.json() == {
@@ -158,7 +167,10 @@ async def test_cancel_requires_assess_permission():
         token = await login(client)
         response = await client.post(
             f"/api/v1/scans/{EXECUTION_ID}/cancel",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "scan-control-test-key-0001",
+            },
         )
     assert response.status_code == 403
 
@@ -170,7 +182,10 @@ async def test_cancel_routes_through_orchestrator_and_returns_persisted_state():
         token = await login(client)
         response = await client.post(
             f"/api/v1/scans/{EXECUTION_ID}/cancel",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "scan-control-test-key-0001",
+            },
         )
     assert response.status_code == 200
     assert response.json() == {
@@ -191,7 +206,10 @@ async def test_cancel_terminal_scan_is_idempotent_control_operation():
         token = await login(client)
         response = await client.post(
             f"/api/v1/scans/{EXECUTION_ID}/cancel",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "scan-control-test-key-0001",
+            },
         )
     assert response.status_code == 200
     assert response.json()["changed"] is False
@@ -206,7 +224,10 @@ async def test_recover_stale_requires_assess_permission():
         token = await login(client)
         response = await client.post(
             f"/api/v1/scans/{EXECUTION_ID}/recover-stale",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "scan-control-test-key-0001",
+            },
         )
     assert response.status_code == 403
 
@@ -219,7 +240,10 @@ async def test_recover_stale_transitions_running_scan_and_returns_changed():
         token = await login(client)
         response = await client.post(
             f"/api/v1/scans/{EXECUTION_ID}/recover-stale",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "scan-control-test-key-0001",
+            },
         )
     assert response.status_code == 200
     assert response.json()["changed"] is True
@@ -235,7 +259,10 @@ async def test_control_returns_not_found_for_unknown_scan():
         token = await login(client)
         response = await client.post(
             f"/api/v1/scans/{unknown}/cancel",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "scan-control-test-key-0001",
+            },
         )
     assert response.status_code == 404
 
@@ -247,6 +274,9 @@ async def test_control_rejects_malformed_execution_id():
         token = await login(client)
         response = await client.post(
             "/api/v1/scans/not-a-uuid/cancel",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "scan-control-test-key-0001",
+            },
         )
     assert response.status_code == 422
