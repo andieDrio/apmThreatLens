@@ -121,3 +121,5 @@ tbody tr:hover { background: #152331; }
   .metric-symbol { width: 26px; height: 26px; }
   .login-card { padding: 24px; }
 }
+
+.footer-note { font-size: 11px; text-align: center; margin-top: 28px; }
