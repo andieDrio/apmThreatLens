@@ -611,11 +611,17 @@ Focused PostgreSQL regression coverage verifies unvalidated creation, asset/evid
 **Validation status:** Gate 42 implementation and regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 42 can be declared complete.
 
 
-## 67. Architecture Gate 44 — Authenticated Attack-Path Relationship Read Model API — IMPLEMENTED
+## 68. Architecture Gate 45 — Authenticated Attack-Path Analysis API — IMPLEMENTED
+
+Gate 45 exposes the existing deterministic `AttackPathAnalyzer` through `POST /api/v1/attack-path/analyze`, requiring ASSESS permission. Callers must provide explicit entry and objective asset IDs. Duplicate IDs and overlapping entry/objective sets are rejected. The repository verifies requested assets exist and loads persisted relationship edges, evidence-backed findings, and the latest persisted risk assessment per finding. Graph inputs are bounded to 5,000 relationships and 10,000 findings; API controls bound entry/objective sets, hops, and returned paths. The analyzer remains deterministic and only follows validated, evidence-backed relationships. Successful analysis is audited with the authenticated principal. The API does not create findings, infer missing relationships, execute providers, or persist synthetic evidence.
+
+**Validation status:** Implementation and focused API tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 45 is declared complete.
+
+## 67. Architecture Gate 44 — Authenticated Attack-Path Relationship Read Model API — COMPLETE
 
 Gate 44 adds `GET /api/v1/attack-path/relations`, protected by READ permission. The endpoint uses bounded pagination (limit 1–100) and deterministic ordering by creation timestamp and ID descending. It returns explicit relationship metadata, validation actor/time, and evidence identifiers, but never raw evidence content. PostgreSQL is the authoritative read source. The API does not infer graph edges or run attack-path analysis.
 
-**Validation status:** Implementation and focused API regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` must pass before this gate is declared complete.
+**Validation status:** User confirmed local `pytest -q` and `ruff check .` passed. Gate 44 is complete.
 
 ## 66. Architecture Gate 43 — Authenticated Attack-Path Relationship Control API — COMPLETE
 
