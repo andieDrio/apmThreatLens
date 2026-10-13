@@ -601,6 +601,44 @@ class PostgresRepository(
                     ),
                 )
 
+    @staticmethod
+    def _require_running_execution(cursor, execution_id: UUID) -> None:
+        """Lock and verify the durable execution state before accepting provider output."""
+        cursor.execute(
+            "SELECT state FROM scans WHERE execution_id=%s FOR UPDATE",
+            (execution_id,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise KeyError(str(execution_id))
+        if row[0] != LifecycleState.RUNNING.value:
+            raise RuntimeError(
+                "provider output rejected because execution is not RUNNING"
+            )
+
+    def save_evidence_for_execution(
+        self, execution_id: UUID, evidence: Evidence
+    ) -> None:
+        """Persist evidence only while its source execution owns the RUNNING lease."""
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    self._require_running_execution(cursor, execution_id)
+                    cursor.execute(
+                        """INSERT INTO evidence
+                           (id,kind,content,source,captured_at,sha256,metadata_json)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                        (
+                            evidence.id,
+                            evidence.kind,
+                            evidence.content,
+                            evidence.source,
+                            evidence.captured_at,
+                            evidence.sha256,
+                            json.dumps(dict(evidence.metadata), sort_keys=True),
+                        ),
+                    )
+
     def save_evidence(self, evidence: Evidence) -> None:
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
@@ -648,6 +686,43 @@ class PostgresRepository(
                     "INSERT INTO finding_evidence (finding_id,evidence_id) VALUES (%s,%s)",
                     [(finding.id, evidence_id) for evidence_id in finding.evidence_ids],
                 )
+
+    def save_finding_for_execution(
+        self, execution_id: UUID, finding: Finding
+    ) -> None:
+        """Persist a finding only while its source execution owns the RUNNING lease."""
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    self._require_running_execution(cursor, execution_id)
+                    cursor.execute(
+                        """INSERT INTO findings
+                           (id,title,asset_id,state,severity,vulnerability_id,cwe,cve,cvss,
+                            confidence,source,detected_at,service_id,endpoint,parameter,location)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        (
+                            finding.id,
+                            finding.title,
+                            finding.asset_id,
+                            finding.state.value,
+                            finding.severity.value,
+                            finding.vulnerability_id,
+                            finding.cwe,
+                            finding.cve,
+                            finding.cvss,
+                            finding.confidence,
+                            finding.source,
+                            finding.detected_at,
+                            finding.service_id,
+                            finding.endpoint,
+                            finding.parameter,
+                            finding.location,
+                        ),
+                    )
+                    cursor.executemany(
+                        "INSERT INTO finding_evidence (finding_id,evidence_id) VALUES (%s,%s)",
+                        [(finding.id, evidence_id) for evidence_id in finding.evidence_ids],
+                    )
 
     def transition_finding_remediation_with_audit(
         self,
