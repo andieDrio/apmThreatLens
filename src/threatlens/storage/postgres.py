@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 from hashlib import sha256
 from datetime import UTC, datetime
 
-from threatlens.attack_paths.engine import AttackPathRelation
+from threatlens.attack_paths.engine import AttackPathRelation, AttackPathRelationType
 from threatlens.domain.models import (
     Asset,
     AuditEvent,
@@ -17,6 +17,7 @@ from threatlens.domain.models import (
     Evidence,
     Finding,
     FindingState,
+    Severity,
     Service,
     validate_finding_remediation_transition,
 )
@@ -339,7 +340,131 @@ class PostgresRepository(
             ],
         }
 
-    def save_campaign(self, campaign: Campaign) -> None:
+    def attack_path_analysis_inputs(
+        self,
+        *,
+        entry_asset_ids: tuple[UUID, ...],
+        objective_asset_ids: tuple[UUID, ...],
+    ) -> dict[str, object]:
+        """Load a bounded snapshot of explicit graph inputs for deterministic analysis."""
+        requested_asset_ids = tuple(set(entry_asset_ids) | set(objective_asset_ids))
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM assets WHERE id = ANY(%s)",
+                        (list(requested_asset_ids),),
+                    )
+                    if cursor.fetchone()[0] != len(requested_asset_ids):
+                        raise KeyError("attack-path analysis references a missing asset")
+
+                    cursor.execute("SELECT COUNT(*) FROM attack_path_relations")
+                    relation_count = int(cursor.fetchone()[0])
+                    if relation_count > 5000:
+                        raise ValueError(
+                            "attack-path graph exceeds the 5000 relationship analysis limit"
+                        )
+
+                    cursor.execute(
+                        """SELECT r.id, r.source_asset_id, r.target_asset_id,
+                                  r.relationship_type, r.validated,
+                                  COALESCE(
+                                      array_agg(re.evidence_id ORDER BY re.evidence_id)
+                                      FILTER (WHERE re.evidence_id IS NOT NULL),
+                                      ARRAY[]::UUID[]
+                                  )
+                           FROM attack_path_relations r
+                           LEFT JOIN attack_path_relation_evidence re
+                             ON re.relation_id = r.id
+                           GROUP BY r.id, r.source_asset_id, r.target_asset_id,
+                                    r.relationship_type, r.validated
+                           ORDER BY r.id"""
+                    )
+                    relation_rows = cursor.fetchall()
+                    graph_asset_ids = set(requested_asset_ids)
+                    graph_asset_ids.update(row[1] for row in relation_rows)
+                    graph_asset_ids.update(row[2] for row in relation_rows)
+
+                    cursor.execute(
+                        """SELECT f.id, f.title, f.asset_id, f.state, f.severity,
+                                  f.vulnerability_id, f.cwe, f.cve, f.cvss,
+                                  f.confidence, f.source, f.detected_at, f.service_id,
+                                  f.endpoint, f.parameter, f.location,
+                                  array_agg(fe.evidence_id ORDER BY fe.evidence_id)
+                           FROM findings f
+                           JOIN finding_evidence fe ON fe.finding_id = f.id
+                           WHERE f.asset_id = ANY(%s)
+                           GROUP BY f.id, f.title, f.asset_id, f.state, f.severity,
+                                    f.vulnerability_id, f.cwe, f.cve, f.cvss,
+                                    f.confidence, f.source, f.detected_at, f.service_id,
+                                    f.endpoint, f.parameter, f.location
+                           ORDER BY f.detected_at, f.id
+                           LIMIT 10001""",
+                        (list(graph_asset_ids),),
+                    )
+                    finding_rows = cursor.fetchall()
+                    if len(finding_rows) > 10000:
+                        raise ValueError(
+                            "attack-path graph exceeds the 10000 finding analysis limit"
+                        )
+
+                    finding_ids = [row[0] for row in finding_rows]
+                    risk_scores: dict[UUID, float] = {}
+                    risk_levels: dict[UUID, str] = {}
+                    if finding_ids:
+                        cursor.execute(
+                            """SELECT DISTINCT ON (finding_id)
+                                      finding_id, score, level
+                               FROM risk_assessments
+                               WHERE finding_id = ANY(%s)
+                               ORDER BY finding_id, created_at DESC, id DESC""",
+                            (finding_ids,),
+                        )
+                        for finding_id, score, level in cursor.fetchall():
+                            risk_scores[finding_id] = float(score)
+                            risk_levels[finding_id] = str(level)
+
+        relations = [
+            AttackPathRelation(
+                id=row[0],
+                source_asset_id=row[1],
+                target_asset_id=row[2],
+                relationship_type=AttackPathRelationType(row[3]),
+                validated=bool(row[4]),
+                evidence_ids=tuple(row[5] or ()),
+            )
+            for row in relation_rows
+        ]
+        findings = [
+            Finding(
+                id=row[0],
+                title=row[1],
+                asset_id=row[2],
+                state=FindingState(row[3]),
+                severity=Severity(row[4]),
+                vulnerability_id=row[5],
+                cwe=row[6],
+                cve=row[7],
+                cvss=row[8],
+                confidence=row[9],
+                source=row[10],
+                detected_at=row[11],
+                service_id=row[12],
+                endpoint=row[13],
+                parameter=row[14],
+                location=row[15],
+                evidence_ids=tuple(row[16] or ()),
+            )
+            for row in finding_rows
+        ]
+        return {
+            "relations": relations,
+            "findings": findings,
+            "risk_scores": risk_scores,
+            "risk_levels": risk_levels,
+        }
+
+    def save_campaign(self, campaign: Campaign) -> None
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.execute(
