@@ -19,6 +19,8 @@ from threatlens.domain.models import (
     FindingState,
     Severity,
     Service,
+    Scan,
+    LifecycleState,
     validate_finding_remediation_transition,
 )
 from threatlens.storage.auth import PostgresAuthMixin
@@ -1048,6 +1050,93 @@ class PostgresRepository(
                             event.created_at,
                         ),
                     )
+
+    def save_scan_with_audit_idempotent(
+        self,
+        scan: Scan,
+        event: AuditEvent,
+        actor_user_id: UUID,
+        idempotency_key: str,
+        request_hash: str,
+    ) -> tuple[Scan, bool]:
+        """Atomically persist a queued scan once per actor/key across repository instances."""
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                        (f"{actor_user_id}:{idempotency_key}",),
+                    )
+                    cursor.execute(
+                        """SELECT request_hash, execution_id
+                           FROM scan_command_idempotency
+                           WHERE actor_user_id=%s AND idempotency_key=%s
+                           FOR UPDATE""",
+                        (actor_user_id, idempotency_key),
+                    )
+                    existing = cursor.fetchone()
+                    if existing is not None:
+                        if existing[0].strip() != request_hash:
+                            raise ValueError(
+                                "Idempotency-Key was already used for a different scan request"
+                            )
+                        cursor.execute(
+                            """SELECT execution_id, campaign_id, provider_name, state,
+                                      queued_at, started_at, finished_at, heartbeat_at, error
+                               FROM scans WHERE execution_id=%s""",
+                            (existing[1],),
+                        )
+                        row = cursor.fetchone()
+                        if row is None:
+                            raise RuntimeError(
+                                "idempotency record references a missing scan execution"
+                            )
+                        return (
+                            Scan(
+                                execution_id=row[0],
+                                campaign_id=row[1],
+                                provider_name=row[2],
+                                state=LifecycleState(row[3]),
+                                queued_at=row[4],
+                                started_at=row[5],
+                                finished_at=row[6],
+                                heartbeat_at=row[7],
+                                error=row[8],
+                            ),
+                            False,
+                        )
+
+                    cursor.execute(
+                        """INSERT INTO scans
+                           (execution_id,campaign_id,provider_name,state,queued_at,
+                            started_at,finished_at,error,heartbeat_at)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        (
+                            scan.execution_id, scan.campaign_id, scan.provider_name,
+                            scan.state.value, scan.queued_at, scan.started_at,
+                            scan.finished_at, scan.error, scan.heartbeat_at,
+                        ),
+                    )
+                    cursor.execute(
+                        """INSERT INTO audit_events
+                           (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        (
+                            event.id, event.actor_user_id, event.action,
+                            event.resource_type, event.resource_id, event.outcome,
+                            event.detail, event.created_at,
+                        ),
+                    )
+                    cursor.execute(
+                        """INSERT INTO scan_command_idempotency
+                           (actor_user_id,idempotency_key,request_hash,execution_id,created_at)
+                           VALUES (%s,%s,%s,%s,%s)""",
+                        (
+                            actor_user_id, idempotency_key, request_hash,
+                            scan.execution_id, datetime.now(UTC),
+                        ),
+                    )
+        return scan, True
 
     def update_scan_state(self, execution_id: UUID, target, error: str | None = None) -> None:
         from datetime import datetime
