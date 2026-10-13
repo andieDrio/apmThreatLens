@@ -95,11 +95,12 @@ def test_registered_provider_fails_closed_when_heartbeat_lease_is_lost(
     postgres_repository, monkeypatch
 ) -> None:
     repo, orchestrator, campaign, principal = make_orchestrator(postgres_repository)
-    orchestrator.policy = ExecutionPolicy(
+    policy = ExecutionPolicy(
         timeout_seconds=1.0,
         heartbeat_interval_seconds=0.01,
         stale_after_seconds=0.1,
     )
+    orchestrator = ScanOrchestrator(repo, policy, orchestrator.authentication)
 
     class LeaseAwareProvider:
         name = "lease-aware-provider"
