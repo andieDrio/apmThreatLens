@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import ipaddress
+import json
 import math
 import os
 from dataclasses import dataclass
@@ -1125,6 +1126,14 @@ def create_app(
     def remediate_finding(
         finding_id: UUID,
         request: FindingRemediationRequest,
+        response: Response,
+        idempotency_key: str = Header(
+            ...,
+            alias="Idempotency-Key",
+            min_length=16,
+            max_length=128,
+            pattern=r"^[A-Za-z0-9._:-]{16,128}$",
+        ),
         current=Depends(require(Permission.REMEDIATE)),
     ) -> FindingRemediationResponse:
         try:
@@ -1136,14 +1145,29 @@ def create_app(
             ) from exc
 
         try:
-            changed, state, allowed = (
-                context.repository.transition_finding_remediation_with_audit(
+            request_hash = hashlib.sha256(
+                json.dumps(
+                    {
+                        "finding_id": str(finding_id),
+                        "state": target_state.value,
+                        "rationale": request.rationale,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ).encode("utf-8")
+            ).hexdigest()
+            changed, state, allowed, created = (
+                context.repository.transition_finding_remediation_idempotent(
                     finding_id=finding_id,
                     target_state=target_state,
                     actor_user_id=current.user_id,
                     rationale=request.rationale,
+                    idempotency_key=idempotency_key,
+                    request_hash=request_hash,
                 )
             )
+            response.headers["Idempotency-Replayed"] = "false" if created else "true"
         except KeyError as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
