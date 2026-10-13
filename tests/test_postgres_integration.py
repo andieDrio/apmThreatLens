@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from threading import Barrier, Thread
 from uuid import UUID, uuid4
 
 import pytest
@@ -20,6 +21,7 @@ from threatlens.domain.models import (
 from threatlens.evidence.validation import EvidenceValidation, EvidenceValidationState
 from threatlens.orchestration.engine import ScanOrchestrator
 from threatlens.providers.handoff import ProviderHandoff
+from threatlens.safety.policy import ExecutionPolicy
 from threatlens.providers.runtime import ProviderCapability, ProviderMetadata
 from threatlens.safety.policy import ExecutionPolicy
 from threatlens.storage.finding_correlation import DurableFindingCorrelator
@@ -115,6 +117,113 @@ def test_postgres_audit_events_read_model_is_bounded_ordered_and_excludes_detail
 def test_postgres_audit_events_read_model_empty(postgres_repository):
     result = postgres_repository.audit_events_read_model()
     assert result == {"total": 0, "limit": 50, "offset": 0, "items": []}
+
+
+
+def test_postgres_scan_queue_idempotency_rejects_changed_request(postgres_repository):
+    repo = postgres_repository
+    campaign = make_campaign()
+    repo.save_campaign(campaign)
+    auth = AuthenticationService(repo)
+    auth.create_user("idempotency-analyst", "correct horse battery staple", Role.ANALYST)
+    principal, _ = auth.authenticate("idempotency-analyst", "correct horse battery staple")
+    orchestrator = ScanOrchestrator(repo, ExecutionPolicy(), auth)
+
+    class Provider:
+        name = "idempotency-provider"
+
+        def execute(self, campaign, execution_id, cancel_event):
+            raise AssertionError("queueing must not execute providers")
+
+    class DifferentProvider:
+        name = "different-provider"
+
+        def execute(self, campaign, execution_id, cancel_event):
+            raise AssertionError("queueing must not execute providers")
+
+    first, created = orchestrator.queue_idempotent(
+        campaign, Provider(), "same-idempotency-key-0001", principal=principal
+    )
+    replay, replay_created = orchestrator.queue_idempotent(
+        campaign, Provider(), "same-idempotency-key-0001", principal=principal
+    )
+    assert created is True
+    assert replay_created is False
+    assert replay.execution_id == first.execution_id
+    with pytest.raises(ValueError, match="different scan request"):
+        orchestrator.queue_idempotent(
+            campaign, DifferentProvider(), "same-idempotency-key-0001", principal=principal
+        )
+    assert repo.count("scans") == 1
+    assert repo.connection.execute(
+        "SELECT COUNT(*) FROM audit_events WHERE action='SCAN_QUEUED'"
+    ).fetchone()[0] == 1
+
+
+def test_postgres_cross_instance_scan_queue_idempotency_has_single_winner(
+    postgres_repository,
+):
+    import os
+
+    repo = postgres_repository
+    campaign = make_campaign()
+    repo.save_campaign(campaign)
+    auth = AuthenticationService(repo)
+    auth.create_user("distributed-idempotency", "correct horse battery staple", Role.ANALYST)
+    principal, _ = auth.authenticate("distributed-idempotency", "correct horse battery staple")
+    dsn = os.getenv("THREATLENS_TEST_DATABASE_URL") or os.getenv("THREATLENS_DATABASE_URL")
+    assert dsn
+    repo2 = PostgresRepository(dsn)
+    repo2.initialize()
+    try:
+        auth2 = AuthenticationService(repo2)
+        principal2, _ = auth2.authenticate("distributed-idempotency", "correct horse battery staple")
+        orchestrator1 = ScanOrchestrator(repo, ExecutionPolicy(), auth)
+        orchestrator2 = ScanOrchestrator(repo2, ExecutionPolicy(), auth2)
+        barrier = Barrier(2)
+        results = []
+        errors = []
+
+        class Provider:
+            name = "distributed-idempotency-provider"
+
+            def execute(self, campaign, execution_id, cancel_event):
+                raise AssertionError("queueing must not execute providers")
+
+        def queue(orchestrator, worker_principal):
+            try:
+                barrier.wait(timeout=5)
+                results.append(
+                    orchestrator.queue_idempotent(
+                        campaign,
+                        Provider(),
+                        "distributed-idempotency-key-0001",
+                        principal=worker_principal,
+                    )
+                )
+            except Exception as exc:
+                errors.append(exc)
+
+        workers = [
+            Thread(target=queue, args=(orchestrator1, principal)),
+            Thread(target=queue, args=(orchestrator2, principal2)),
+        ]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(10)
+
+        assert all(not worker.is_alive() for worker in workers)
+        assert not errors
+        assert len(results) == 2
+        assert len({item[0].execution_id for item in results}) == 1
+        assert sorted(item[1] for item in results) == [False, True]
+        assert repo.count("scans") == 1
+        assert repo.connection.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE action='SCAN_QUEUED'"
+        ).fetchone()[0] == 1
+    finally:
+        repo2.close()
 
 
 def test_postgres_durable_correlation_merges_provider_findings(postgres_repository):
