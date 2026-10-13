@@ -937,6 +937,7 @@ class PostgresRepository(
             "evidence_validations",
             "users",
             "auth_sessions",
+            "auth_login_rate_limits",
             "audit_events",
             "risk_assessments",
             "attack_path_relations",
