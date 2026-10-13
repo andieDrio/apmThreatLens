@@ -236,7 +236,9 @@ def test_postgres_cross_instance_scan_queue_idempotency_has_single_winner(
     repo2.initialize()
     try:
         auth2 = AuthenticationService(repo2)
-        principal2, _ = auth2.authenticate("distributed-idempotency", "correct horse battery staple")
+        principal2, _ = auth2.authenticate(
+            "distributed-idempotency", "correct horse battery staple"
+        )
         orchestrator1 = ScanOrchestrator(repo, ExecutionPolicy(), auth)
         orchestrator2 = ScanOrchestrator(repo2, ExecutionPolicy(), auth2)
         barrier = Barrier(2)
