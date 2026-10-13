@@ -680,7 +680,7 @@ Code inspection confirmed that cancellation and stale-recovery endpoints did not
 
 Regression tests cover API replay, missing/malformed keys, conflicting command reuse, and PostgreSQL concurrency through separate connections. Existing provider completion and lifecycle compare-and-set behavior remains unchanged; commands do not rerun providers. Validation status: The user confirmed all checks succeeded, including Ruff after the E501 fix. Gate 50 is COMPLETE based on that confirmation. The command record, lifecycle mutation, and any audit event are transactionally coupled; same-key retries return the original result, and conflicting key reuse fails closed. Next cycle must re-fetch latest main and deeply inspect the repository to identify the next highest-priority unfinished architecture gap before defining Gate 51.
 
-## 74. Architecture Gate 51 — Fail-Closed Scan Heartbeat Lease Integrity — IN PROGRESS
+## 74. Architecture Gate 51 — Fail-Closed Scan Heartbeat Lease Integrity — COMPLETE
 
 The provider runtime previously treated heartbeat exceptions as warnings, ignored an explicit false return from the repository, and could continue executing after losing its durable RUNNING lease. This allowed a scan to remain active while another instance could legitimately recover its expired lease and mark it FAILED. The successful provider path also did not reliably stop the heartbeat worker, allowing heartbeat updates to continue after terminal finalization.
 
@@ -688,4 +688,12 @@ Gate 51 changes the runtime to treat heartbeat renewal exceptions and an explici
 
 Focused runtime and PostgreSQL-backed orchestration regression tests cover explicit lease loss, storage exceptions, failed lifecycle finalization, and heartbeat-worker shutdown after successful completion.
 
-**Validation status:** Implementation and regression tests are committed to main. Local focused tests, PostgreSQL-backed tests, the full suite, Ruff, package build, diff checks, and security review remain pending. Gate 51 must not be marked complete until these checks are explicitly confirmed.
+**Validation status:** The user confirmed Gate 51 clean and successful, including the package wheel build. Gate 51 is COMPLETE based on that explicit confirmation.
+
+## 75. Architecture Gate 52 — Execution-Lease-Fenced Evidence and Finding Persistence — IN PROGRESS
+
+Code inspection found that `ProviderHandoff` binds execution identity into evidence metadata and validates evidence references before persisting findings, but its repository contract does not require a durable check that the originating scan still owns a RUNNING execution lease. PostgreSQL `save_evidence` and `save_finding` are persistence operations independent of the scan lifecycle row. A provider that is slow to observe cooperative cancellation, or continues running after a stale-recovery decision, can therefore attempt late evidence or finding writes after its execution has lost authority.
+
+Gate 52 must enforce execution ownership at the PostgreSQL write boundary for provider-originated evidence and findings. The lease/state verification and output persistence must share one transaction and row-lock/conditional-write boundary; a separate check followed by a write is insufficient because it introduces a time-of-check/time-of-use race. Late writes from a cancelled, failed, completed, or stale-recovered execution must fail closed. Preserve evidence sealing, finding/evidence integrity, correlation semantics, the existing PostgreSQL-only active persistence path, and atomic audit/lifecycle contracts. Do not add a second production persistence path or trust execution identity supplied only in mutable metadata.
+
+**Validation status:** Gap identified by source inspection; implementation and regression coverage are not yet complete. Gate 52 must remain IN PROGRESS until focused provider-handoff tests, PostgreSQL concurrency/rollback tests, the full suite, Ruff, package build, diff checks, and a security review are explicitly confirmed.
