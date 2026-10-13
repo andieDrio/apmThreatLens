@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from hashlib import sha256
 from threading import BoundedSemaphore, Event, Thread
 from typing import Protocol
 from collections.abc import Callable
