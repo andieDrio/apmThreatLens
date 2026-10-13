@@ -51,7 +51,7 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 
 ### Current Architecture Gate
 
-Architecture Gate 45: Authenticated Attack-Path Analysis API. Gate 44 Authenticated Attack-Path Relationship Read Model API is complete after local pytest and Ruff validation. Gate 43 Authenticated Attack-Path Relationship Control API is complete after local pytest and Ruff validation. Gate 38 Authenticated Campaign & Scope Control API is complete after explicit local validation. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
+Architecture Gate 46: First Authenticated Dashboard UI Vertical Slice. Gate 45 Authenticated Attack-Path Analysis API is complete after the user confirmed local `python -m pytest -q && ruff check .` passed. Gate 46 implements the first responsive, authenticated dashboard backed by existing READ-protected APIs; local validation is pending. Gate 43 Authenticated Attack-Path Relationship Control API is complete after local pytest and Ruff validation. Gate 38 Authenticated Campaign & Scope Control API is complete after explicit local validation. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
 
 ### Architecture Gate 35 — Authenticated Evidence Read Model API — COMPLETE
 
@@ -295,11 +295,11 @@ Focused PostgreSQL regression coverage verifies unvalidated creation, asset/evid
 **Validation status:** Gate 42 implementation and regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 42 can be declared complete.
 
 
-### Architecture Gate 45 — Authenticated Attack-Path Analysis API — IMPLEMENTED
+### Architecture Gate 45 — Authenticated Attack-Path Analysis API — COMPLETE
 
 Gate 45 exposes the existing deterministic attack-path analyzer through an authenticated `POST /api/v1/attack-path/analyze` endpoint requiring ASSESS permission. Entry and objective assets are explicit; duplicate/overlapping inputs are rejected. The API uses only persisted relationships and evidence-backed findings, applies bounded graph/finding/path/hop limits, uses persisted risk assessments without inventing risk scores, and audits successful analysis with the authenticated actor. It returns computed paths without persisting fabricated findings or implying exploitability beyond the supplied validated graph.
 
-Local PostgreSQL-backed `pytest -q` and `ruff check .` must pass before this gate is complete.
+**Validation status:** User confirmed local `python -m pytest -q && ruff check .` passed. Gate 45 is complete.
 
 ### Architecture Gate 44 — Authenticated Attack-Path Relationship Read Model API — COMPLETE
 
@@ -316,3 +316,12 @@ Gate 43 exposes explicit attack-path relationship creation and validation throug
 The API does not infer connectivity, trust, or exploitability and does not execute attack-path analysis. The deterministic analyzer continues to consume only explicitly validated, evidence-backed relations.
 
 **Validation status:** Gate 43 implementation and regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 43 can be declared complete.
+
+
+### Architecture Gate 46 — First Authenticated Dashboard UI Vertical Slice — IMPLEMENTED
+
+Gate 46 introduces the first visible ThreatLens web UI. FastAPI serves the dashboard at `/` and its packaged static assets under `/ui/assets`. The responsive page provides a sign-in form and a read-only operational overview with campaign, asset, service, and finding counts; finding-severity and scan-lifecycle summaries; and bounded recent asset, finding, and scan tables. All operational data is loaded from the existing authenticated API read models. No synthetic findings, evidence, or scan activity are created.
+
+The browser holds the opaque access token in `sessionStorage`, sends it through the Authorization header, and clears it on sign-out or an expired session. The dashboard uses text-only DOM rendering for API values, same-origin requests, a restrictive Content Security Policy, `Cache-Control: no-store` on the HTML page, and security response headers. The static assets are included in the Python package so the UI is available outside a source checkout.
+
+**Validation status:** Dashboard route/static-asset regression tests are committed. Local PostgreSQL-backed `python -m pytest -q`, `ruff check .`, and package/build validation are required before Gate 46 is declared complete.
