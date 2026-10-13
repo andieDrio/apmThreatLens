@@ -690,7 +690,7 @@ Focused runtime and PostgreSQL-backed orchestration regression tests cover expli
 
 **Validation status:** The user confirmed Gate 51 clean and successful, including the package wheel build. Gate 51 is COMPLETE based on that explicit confirmation.
 
-## 75. Architecture Gate 52 — Execution-Lease-Fenced Evidence and Finding Persistence — IN PROGRESS
+## 75. Architecture Gate 52 — Execution-Lease-Fenced Evidence and Finding Persistence — VALIDATION REVIEW PENDING
 
 Code inspection found that `ProviderHandoff` bound execution identity into evidence metadata and validated evidence references, but the persistence contract did not verify that the originating scan still owned a RUNNING execution lease. A provider that was slow to observe cooperative cancellation could therefore attempt late evidence or finding writes after cancellation or stale recovery.
 
@@ -709,4 +709,4 @@ The authoritative write methods continue to lock the scan row and verify RUNNING
 
 Regression tests cover missing-fence fallbacks and rejection of execution-bound evidence on the unfenced repository method, alongside the existing late-write and terminal-transition concurrency tests.
 
-**Validation status:** COMPLETE. The user confirmed the exact local validation chain passed: `ruff check .`, `git diff --check`, `python -m pytest -q`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel`. The test suite completed without failures; skips and five Starlette deprecation warnings for `HTTP_422_UNPROCESSABLE_ENTITY` were reported. The package wheel built successfully.
+**Validation status:** The user confirmed `ruff check .`, `git diff --check`, `python -m pytest -q`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel` completed successfully. The suite contained many skips, and the output provided does not show whether the PostgreSQL-backed execution-fence regressions actually ran. Run `python -m pytest -q -rs` and confirm those regressions are not skipped before declaring Gate 52 complete. Five Starlette deprecation warnings were reported; the package wheel built successfully.
