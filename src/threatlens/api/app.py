@@ -234,6 +234,25 @@ class RiskAssessmentListResponse(BaseModel):
 
 
 
+class AttackPathRelationReadModel(BaseModel):
+    id: str
+    source_asset_id: str
+    target_asset_id: str
+    relationship_type: str
+    validated: bool
+    evidence_ids: list[str]
+    created_at: str
+    validated_at: str | None = None
+    validated_by: str | None = None
+
+
+class AttackPathRelationListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[AttackPathRelationReadModel]
+
+
 class EvidenceReadModel(BaseModel):
     id: str
     kind: str
@@ -529,6 +548,43 @@ def create_app(
             evidence_ids=[str(value) for value in item["evidence_ids"]],
             validated_at=item["validated_at"].isoformat() if item["validated_at"] else None,
             validated_by=str(item["validated_by"]) if item["validated_by"] else None,
+        )
+
+    @app.get(
+        "/api/v1/attack-path/relations",
+        response_model=AttackPathRelationListResponse,
+    )
+    def attack_path_relations(
+        current=Depends(require(Permission.READ)),
+        limit: int = Query(default=50, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+    ) -> AttackPathRelationListResponse:
+        result = context.repository.attack_path_relations_read_model(
+            limit=limit, offset=offset
+        )
+        items = [
+            AttackPathRelationReadModel(
+                id=str(item["id"]),
+                source_asset_id=str(item["source_asset_id"]),
+                target_asset_id=str(item["target_asset_id"]),
+                relationship_type=str(item["relationship_type"]),
+                validated=bool(item["validated"]),
+                evidence_ids=[str(value) for value in item["evidence_ids"]],
+                created_at=item["created_at"].isoformat(),
+                validated_at=(
+                    item["validated_at"].isoformat() if item["validated_at"] else None
+                ),
+                validated_by=(
+                    str(item["validated_by"]) if item["validated_by"] else None
+                ),
+            )
+            for item in result["items"]
+        ]
+        return AttackPathRelationListResponse(
+            total=result["total"],
+            limit=result["limit"],
+            offset=result["offset"],
+            items=items,
         )
 
     @app.get("/api/v1/evidence", response_model=EvidenceListResponse)
