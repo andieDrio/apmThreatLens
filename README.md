@@ -342,11 +342,11 @@ Gate 48 adds the admin-only, read-only `GET /api/v1/audit-events` endpoint backe
 **Validation status:** User confirmed 33 focused API/PostgreSQL integration tests passed, the full pytest suite passed, `ruff check .` passed, `git diff --check` passed, and the package wheel built successfully. Five existing Starlette deprecation warnings were reported during the full suite; they did not fail validation.
 
 
-### Architecture Gate 52 — Execution-Lease-Fenced Evidence and Finding Persistence — VALIDATION REVIEW PENDING
+### Architecture Gate 52 — Execution-Lease-Fenced Evidence and Finding Persistence — COMPLETE
 
 Gate 52 hardens the production evidence/finding persistence boundary against late writes and misconfigured compatibility paths. PostgreSQL execution-bound writes lock the authoritative scan row, require the execution to remain RUNNING, and persist under the same transaction. The production repository declares execution fencing mandatory; ProviderHandoff and DurableFindingCorrelator fail closed when a fenced method is unavailable, and generic PostgreSQL evidence writes reject execution-bound evidence.
 
-**Validation status:** User confirmed `ruff check .`, `git diff --check`, `python -m pytest -q`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel` all completed successfully. The full test run contained many skips. The output does not identify whether the PostgreSQL-backed execution-fence tests were among the skipped tests, so run `python -m pytest -q -rs` and verify those tests actually execute before declaring the gate complete. Five Starlette deprecation warnings were reported; the wheel built successfully.
+**Validation status:** The user confirmed all nine focused execution-fence tests passed, including the PostgreSQL-backed cases. The full suite, Ruff, diff checks, and package build had previously passed; Gate 52 is complete.
 
 
 ### Gate 53 — Finding Remediation Idempotency (In Progress)
