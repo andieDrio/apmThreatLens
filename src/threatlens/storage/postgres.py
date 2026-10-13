@@ -140,13 +140,13 @@ class PostgresRepository(
                 with self.connection.cursor() as cursor:
                     cursor.execute(
                         "SELECT COUNT(*) FROM assets WHERE id = ANY(%s)",
-                        ([str(relation.source_asset_id), str(relation.target_asset_id)],),
+                        ([relation.source_asset_id, relation.target_asset_id],),
                     )
                     if cursor.fetchone()[0] != 2:
                         raise KeyError("attack-path relation references missing asset")
                     cursor.execute(
                         "SELECT id, content, sha256 FROM evidence WHERE id = ANY(%s)",
-                        ([str(item) for item in relation.evidence_ids],),
+                        (list(relation.evidence_ids),),
                     )
                     rows = cursor.fetchall()
                     if len(rows) != len(relation.evidence_ids):
