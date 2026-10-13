@@ -25,6 +25,21 @@ class DurableFindingCorrelator:
         self.repository = repository
         self._initialize()
 
+    def persist_for_execution(self, execution_id: UUID, finding: Finding) -> Finding:
+        """Persist correlated provider output only while its execution lease is RUNNING."""
+        key = correlation_key(finding)
+        fenced_persist = getattr(
+            self.repository, "persist_correlated_finding_for_execution", None
+        )
+        if callable(fenced_persist):
+            return fenced_persist(execution_id, key, finding)
+        if callable(getattr(self.repository, "save_finding_for_execution", None)):
+            raise RuntimeError(
+                "repository does not support execution-fenced correlated findings"
+            )
+        # Compatibility for in-memory and legacy test repositories only.
+        return self.persist(finding)
+
     def persist(self, finding: Finding) -> Finding:
         key = correlation_key(finding)
         atomic_persist = getattr(self.repository, "persist_correlated_finding", None)
@@ -48,6 +63,12 @@ class DurableFindingCorrelator:
 
 class SQLiteFindingCorrelationMixin:
     """Persistence primitives used by DurableFindingCorrelator."""
+
+    def persist_correlated_finding_for_execution(
+        self, execution_id: UUID, key: str, finding: Finding
+    ) -> Finding:
+        """Fence correlated provider output by the durable scan lifecycle row."""
+        return self.persist_correlated_finding(key, finding, execution_id=execution_id)
 
     def initialize_finding_correlation(self) -> None:
         with self.connection:
@@ -136,16 +157,32 @@ class SQLiteFindingCorrelationMixin:
 class PostgresFindingCorrelationMixin:
     """PostgreSQL equivalents of the durable correlation primitives."""
 
-    def persist_correlated_finding(self, key: str, finding: Finding) -> Finding:
+    def persist_correlated_finding(
+        self, key: str, finding: Finding, execution_id: UUID | None = None
+    ) -> Finding:
         """Atomically correlate one key across PostgreSQL instances.
 
         A transaction-scoped advisory lock serializes all writers for the same
         deterministic correlation key, while the finding, correlation mapping,
-        and evidence links are committed in one transaction.
+        and evidence links are committed in one transaction. When execution_id
+        is supplied, the scan row is locked and must still be RUNNING in this
+        same transaction before any provider-originated write is accepted.
         """
         logical = correlate_findings((finding,))[0]
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
+                if execution_id is not None:
+                    cursor.execute(
+                        "SELECT state FROM scans WHERE execution_id=%s FOR UPDATE",
+                        (execution_id,),
+                    )
+                    execution = cursor.fetchone()
+                    if execution is None:
+                        raise KeyError(str(execution_id))
+                    if execution[0] != "RUNNING":
+                        raise RuntimeError(
+                            "provider output rejected because execution is not RUNNING"
+                        )
                 cursor.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (key,))
                 cursor.execute(
                     """SELECT f.id,f.title,f.asset_id,f.state,f.severity,f.vulnerability_id,
