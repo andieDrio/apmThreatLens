@@ -15,6 +15,7 @@ from threatlens.domain.models import (
     FindingState,
     LifecycleState,
     Scope,
+    Scan,
     Service,
     Severity,
 )
@@ -33,6 +34,25 @@ def make_campaign():
         scope=Scope(include=("198.51.100.10",)),
         authorized=True,
     )
+
+
+
+def running_execution(repo, campaign, provider_name):
+    scan = Scan(campaign_id=campaign.id, provider_name=provider_name)
+    repo.save_scan_with_audit(
+        scan,
+        AuditEvent(
+            action="SCAN_QUEUED",
+            resource_type="SCAN",
+            resource_id=scan.execution_id,
+            outcome="SUCCESS",
+            detail=f"provider={provider_name}",
+        ),
+    )
+    assert repo.update_scan_state_if_current(
+        scan.execution_id, LifecycleState.QUEUED, LifecycleState.RUNNING
+    )
+    return scan.execution_id
 
 
 def test_postgres_persists_domain_relationships(postgres_repository):
@@ -289,6 +309,10 @@ def test_postgres_cross_instance_scan_queue_idempotency_has_single_winner(
 
 def test_postgres_durable_correlation_merges_provider_findings(postgres_repository):
     repo = postgres_repository
+    campaign = make_campaign()
+    repo.save_campaign(campaign)
+    execution_a = running_execution(repo, campaign, "scanner-a")
+    execution_b = running_execution(repo, campaign, "scanner-b")
     asset = Asset(canonical_id="host:10.0.0.10", asset_type="ip", value="10.0.0.10")
     repo.save_asset(asset)
     a = ProviderMetadata(
@@ -304,8 +328,8 @@ def test_postgres_durable_correlation_merges_provider_findings(postgres_reposito
     correlator = DurableFindingCorrelator(repo)
     ha = ProviderHandoff(repo, correlator=correlator)
     hb = ProviderHandoff(repo, correlator=correlator)
-    ea = ha.persist_evidence(uuid4(), a, Evidence(kind="scan", content="a", source="a"))
-    eb = hb.persist_evidence(uuid4(), b, Evidence(kind="scan", content="b", source="b"))
+    ea = ha.persist_evidence(execution_a, a, Evidence(kind="scan", content="a", source="a"))
+    eb = hb.persist_evidence(execution_b, b, Evidence(kind="scan", content="b", source="b"))
 
     def make_finding(evidence_id, severity):
         return Finding(
@@ -319,8 +343,12 @@ def test_postgres_durable_correlation_merges_provider_findings(postgres_reposito
             confidence=0.8,
         )
 
-    first = ha.persist_finding(uuid4(), a, asset, make_finding(ea.id, Severity.MEDIUM), (ea,))
-    second = hb.persist_finding(uuid4(), b, asset, make_finding(eb.id, Severity.HIGH), (eb,))
+    first = ha.persist_finding(
+        execution_a, a, asset, make_finding(ea.id, Severity.MEDIUM), (ea,)
+    )
+    second = hb.persist_finding(
+        execution_b, b, asset, make_finding(eb.id, Severity.HIGH), (eb,)
+    )
     assert first.id == second.id
     assert repo.count("findings") == 1
     assert repo.count("finding_evidence") == 2
