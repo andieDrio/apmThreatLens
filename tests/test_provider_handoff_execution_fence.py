@@ -248,10 +248,13 @@ class _FenceRequiredLegacyRepository:
     def __init__(self) -> None:
         self.unfenced_writes = 0
 
-    def save_evidence(self, evidence) -> None:
+    def initialize_finding_correlation(self) -> None:
+        pass
+
+    def save_evidence(self, evidence: Evidence) -> None:
         self.unfenced_writes += 1
 
-    def save_finding(self, finding) -> None:
+    def save_finding(self, finding: Finding) -> None:
         self.unfenced_writes += 1
 
 
@@ -317,3 +320,23 @@ def test_postgres_rejects_execution_bound_evidence_on_unfenced_method(
         repository.save_evidence(evidence)
 
     assert count_rows(repository, "evidence") == 0
+
+
+
+def test_durable_correlator_fails_closed_when_required_fence_is_missing() -> None:
+    repository = _FenceRequiredLegacyRepository()
+    correlator = DurableFindingCorrelator(repository)
+    finding = Finding(
+        title="Must not persist through legacy correlator",
+        asset_id=Asset(
+            canonical_id="fqdn:correlator-unfenced.internal",
+            asset_type="fqdn",
+            value="correlator-unfenced.internal",
+        ).id,
+        evidence_ids=(Evidence(kind="http-response", content="e", source="raw").id,),
+    )
+
+    with pytest.raises(RuntimeError, match="execution-fenced correlated findings"):
+        correlator.persist_for_execution(uuid4(), finding)
+
+    assert repository.unfenced_writes == 0
