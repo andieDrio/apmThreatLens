@@ -24,6 +24,10 @@ class EvidenceFindingRepository(Protocol):
 
     def save_finding(self, finding: Finding) -> None: ...
 
+    def save_evidence_for_execution(self, execution_id: UUID, evidence: Evidence) -> None: ...
+
+    def save_finding_for_execution(self, execution_id: UUID, finding: Finding) -> None: ...
+
 
 class ProviderHandoff:
     """Validates and persists provider output without conflating raw evidence and findings."""
@@ -57,7 +61,13 @@ class ProviderHandoff:
             }
         )
         sealed = replace(sealed, metadata=metadata, source=provider.name)
-        self.repository.save_evidence(sealed)
+        fenced_save = getattr(self.repository, "save_evidence_for_execution", None)
+        if callable(fenced_save):
+            fenced_save(UUID(str(execution_id)), sealed)
+        else:
+            # Compatibility for in-memory and legacy test repositories. The active
+            # production PostgreSQL adapter always exposes the fenced method.
+            self.repository.save_evidence(sealed)
         return sealed
 
     def persist_intelligence_enriched_finding(
@@ -108,6 +118,20 @@ class ProviderHandoff:
             source=provider.name,
         )
         if self.correlator is not None:
+            fenced_persist = getattr(self.correlator, "persist_for_execution", None)
+            if callable(fenced_persist):
+                return fenced_persist(UUID(str(execution_id)), normalized)
+            if callable(getattr(self.repository, "save_finding_for_execution", None)):
+                raise RuntimeError(
+                    "finding correlator does not support execution-lease fencing"
+                )
+            # Compatibility for in-memory and legacy test repositories only.
             return self.correlator.persist(normalized)
-        self.repository.save_finding(normalized)
+        fenced_save = getattr(self.repository, "save_finding_for_execution", None)
+        if callable(fenced_save):
+            fenced_save(UUID(str(execution_id)), normalized)
+        else:
+            # Compatibility for in-memory and legacy test repositories. The active
+            # production PostgreSQL adapter always exposes the fenced method.
+            self.repository.save_finding(normalized)
         return normalized
