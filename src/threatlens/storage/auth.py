@@ -242,12 +242,16 @@ class PostgresAuthMixin:
                 )
 
     def user_by_username(self, username: str):
-        with self.connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT id,username,password_hash,role,active,created_at FROM users WHERE username=%s",
-                (username,),
-            )
-            row = cursor.fetchone()
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT id,username,password_hash,role,active,created_at "
+                        "FROM users WHERE username=%s",
+                        (username,),
+                    )
+                    row = cursor.fetchone()
+
         return (
             None
             if row is None
@@ -262,12 +266,16 @@ class PostgresAuthMixin:
         )
 
     def user_by_id(self, user_id: UUID):
-        with self.connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT id,username,password_hash,role,active,created_at FROM users WHERE id=%s",
-                (user_id,),
-            )
-            row = cursor.fetchone()
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT id,username,password_hash,role,active,created_at "
+                        "FROM users WHERE id=%s",
+                        (user_id,),
+                    )
+                    row = cursor.fetchone()
+
         return (
             None
             if row is None
@@ -292,12 +300,16 @@ class PostgresAuthMixin:
         return session_id
 
     def session_by_token_hash(self, token_hash: str):
-        with self.connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT id,user_id,expires_at,revoked FROM auth_sessions WHERE token_hash=%s",
-                (token_hash,),
-            )
-            row = cursor.fetchone()
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT id,user_id,expires_at,revoked "
+                        "FROM auth_sessions WHERE token_hash=%s",
+                        (token_hash,),
+                    )
+                    row = cursor.fetchone()
+
         return (
             None
             if row is None

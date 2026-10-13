@@ -1,6 +1,5 @@
 from threading import Barrier, Event, Thread
 from time import sleep
-from uuid import UUID
 
 import pytest
 
@@ -193,14 +192,14 @@ def test_queue_and_audit_are_atomic_on_audit_failure(postgres_repository) -> Non
     repo.connection.execute(
         """
         CREATE OR REPLACE FUNCTION fail_queue_audit_fn()
-        RETURNS trigger AS $
+        RETURNS trigger AS $$
         BEGIN
             IF NEW.action = 'SCAN_QUEUED' THEN
                 RAISE EXCEPTION 'injected queue audit failure';
             END IF;
             RETURN NEW;
         END;
-        $ LANGUAGE plpgsql;
+        $$ LANGUAGE plpgsql;
         CREATE TRIGGER fail_queue_audit
         BEFORE INSERT ON audit_events
         FOR EACH ROW EXECUTE FUNCTION fail_queue_audit_fn()
@@ -224,14 +223,14 @@ def test_successful_provider_is_not_marked_failed_when_finalization_persistence_
     repo.connection.execute(
         """
         CREATE OR REPLACE FUNCTION fail_finalization_audit_fn()
-        RETURNS trigger AS $
+        RETURNS trigger AS $$
         BEGIN
             IF NEW.action = 'SCAN_FINALIZED' THEN
                 RAISE EXCEPTION 'injected finalization audit failure';
             END IF;
             RETURN NEW;
         END;
-        $ LANGUAGE plpgsql;
+        $$ LANGUAGE plpgsql;
         CREATE TRIGGER fail_finalization_audit
         BEFORE INSERT ON audit_events
         FOR EACH ROW EXECUTE FUNCTION fail_finalization_audit_fn()
@@ -242,26 +241,26 @@ def test_successful_provider_is_not_marked_failed_when_finalization_persistence_
     scan_id = repo.connection.execute(
         "SELECT execution_id FROM scans ORDER BY queued_at DESC LIMIT 1"
     ).fetchone()[0]
-    assert repo.scan_state(UUID(scan_id)) is LifecycleState.RUNNING
+    assert repo.scan_state(scan_id) is LifecycleState.RUNNING
     repo.connection.execute(
         "DROP TRIGGER fail_finalization_audit ON audit_events; "
         "DROP FUNCTION fail_finalization_audit_fn()"
     )
     repo.connection.commit()
     repo.update_scan_state_if_current_with_audit(
-        UUID(scan_id),
+        scan_id,
         LifecycleState.RUNNING,
         LifecycleState.COMPLETED,
         AuditEvent(
             actor_user_id=principal.user_id,
             action="SCAN_FINALIZED",
             resource_type="SCAN",
-            resource_id=UUID(scan_id),
+            resource_id=scan_id,
             outcome=LifecycleState.COMPLETED.value,
             detail="recovered after persistence failure",
         ),
     )
-    assert repo.scan_state(UUID(scan_id)) is LifecycleState.COMPLETED
+    assert repo.scan_state(scan_id) is LifecycleState.COMPLETED
     assert repo.count("audit_events") >= 3
     repo.close()
 
@@ -272,14 +271,14 @@ def test_cancellation_and_audit_are_atomic_on_audit_failure(postgres_repository)
     repo.connection.execute(
         """
         CREATE OR REPLACE FUNCTION fail_cancel_audit_fn()
-        RETURNS trigger AS $
+        RETURNS trigger AS $$
         BEGIN
             IF NEW.action = 'SCAN_CANCELLED' THEN
                 RAISE EXCEPTION 'injected cancel audit failure';
             END IF;
             RETURN NEW;
         END;
-        $ LANGUAGE plpgsql;
+        $$ LANGUAGE plpgsql;
         CREATE TRIGGER fail_cancel_audit
         BEFORE INSERT ON audit_events
         FOR EACH ROW EXECUTE FUNCTION fail_cancel_audit_fn()

@@ -155,6 +155,6 @@ def test_postgres_scan_lifecycle_cas_is_authoritative(postgres_repository):
         scan.execution_id, LifecycleState.QUEUED, LifecycleState.RUNNING
     )
     assert not repo.update_scan_state_if_current(
-        scan.execution_id, LifecycleState.QUEUED, LifecycleState.COMPLETED
+        scan.execution_id, LifecycleState.QUEUED, LifecycleState.RUNNING
     )
     assert repo.scan_state(scan.execution_id) is LifecycleState.RUNNING

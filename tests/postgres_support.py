@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 import os
+
+import psycopg
 import pytest
 from threatlens.storage.postgres import PostgresRepository
 
@@ -16,12 +18,15 @@ def postgres_repository():
     with repository.connection.transaction():
         with repository.connection.cursor() as cursor:
             cursor.execute(
-                "TRUNCATE TABLE finding_evidence, finding_correlations, evidence_validations, risk_assessments, findings, evidence, services, scans, scope_entries, scopes, campaigns, auth_login_rate_limits, auth_sessions, audit_events, users CASCADE"
+                "TRUNCATE TABLE finding_evidence, finding_correlations, evidence_validations, risk_assessments, findings, evidence, services, assets, scans, scope_entries, scopes, campaigns, auth_login_rate_limits, auth_sessions, audit_events, users CASCADE"
             )
     yield repository
-    with repository.connection.transaction():
-        with repository.connection.cursor() as cursor:
-            cursor.execute(
-                "TRUNCATE TABLE finding_evidence, finding_correlations, evidence_validations, risk_assessments, findings, evidence, services, scans, scope_entries, scopes, campaigns, auth_login_rate_limits, auth_sessions, audit_events, users CASCADE"
-            )
-    repository.close()
+    try:
+        if not repository.connection.closed:
+            repository.close()
+    finally:
+        with psycopg.connect(dsn) as cleanup_connection:
+            with cleanup_connection.cursor() as cursor:
+                cursor.execute(
+                    "TRUNCATE TABLE finding_evidence, finding_correlations, evidence_validations, risk_assessments, findings, evidence, services, assets, scans, scope_entries, scopes, campaigns, auth_login_rate_limits, auth_sessions, audit_events, users CASCADE"
+                )
