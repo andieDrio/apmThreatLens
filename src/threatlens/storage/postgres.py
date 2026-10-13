@@ -105,6 +105,9 @@ class PostgresRepository(
 ):
     """PostgreSQL implementation of the current persistence boundary."""
 
+    # Provider-originated writes must use methods that lock and verify the scan lease.
+    requires_execution_fence = True
+
     def __init__(self, dsn: str) -> None:
         self._transaction_lock = RLock()
         try:
@@ -640,6 +643,10 @@ class PostgresRepository(
                     )
 
     def save_evidence(self, evidence: Evidence) -> None:
+        if evidence.metadata.get("execution_id"):
+            raise RuntimeError(
+                "execution-bound evidence must use save_evidence_for_execution"
+            )
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.execute(
