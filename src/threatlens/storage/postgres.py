@@ -130,6 +130,25 @@ class PostgresRepository(
             cursor.execute("ALTER TABLE findings ADD COLUMN IF NOT EXISTS parameter TEXT")
             cursor.execute("ALTER TABLE findings ADD COLUMN IF NOT EXISTS location TEXT")
         self.connection.commit()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """CREATE TABLE IF NOT EXISTS finding_remediation_idempotency (
+                    actor_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    idempotency_key TEXT NOT NULL,
+                    finding_id UUID NOT NULL REFERENCES findings(id) ON DELETE CASCADE,
+                    request_hash CHAR(64) NOT NULL,
+                    changed BOOLEAN NOT NULL,
+                    state TEXT NOT NULL,
+                    allowed BOOLEAN NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL,
+                    PRIMARY KEY (actor_user_id, idempotency_key)
+                )"""
+            )
+            cursor.execute(
+                """CREATE INDEX IF NOT EXISTS idx_finding_remediation_idempotency_created
+                   ON finding_remediation_idempotency (created_at)"""
+            )
+        self.connection.commit()
         self.initialize_finding_correlation()
         self.initialize_evidence_validation()
         self.initialize_auth()
@@ -731,6 +750,69 @@ class PostgresRepository(
                         [(finding.id, evidence_id) for evidence_id in finding.evidence_ids],
                     )
 
+    def transition_finding_remediation_idempotent(
+        self,
+        finding_id: UUID,
+        target_state: FindingState,
+        actor_user_id: UUID,
+        rationale: str,
+        idempotency_key: str,
+        request_hash: str,
+    ) -> tuple[bool, FindingState, bool, bool]:
+        """Apply remediation once per actor/key and persist its result atomically."""
+        import re
+
+        if not re.fullmatch(r"[A-Za-z0-9._:-]{16,128}", idempotency_key):
+            raise ValueError("idempotency key must be 16..128 safe ASCII characters")
+        if not re.fullmatch(r"[0-9a-f]{64}", request_hash):
+            raise ValueError("request fingerprint must be a SHA-256 hex digest")
+
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                        (f"finding-remediation:{actor_user_id}:{idempotency_key}",),
+                    )
+                    cursor.execute(
+                        """SELECT finding_id, request_hash, changed, state, allowed
+                           FROM finding_remediation_idempotency
+                           WHERE actor_user_id=%s AND idempotency_key=%s
+                           FOR UPDATE""",
+                        (actor_user_id, idempotency_key),
+                    )
+                    existing = cursor.fetchone()
+                    if existing is not None:
+                        if existing[0] != finding_id or existing[1].strip() != request_hash:
+                            raise ValueError(
+                                "Idempotency-Key was already used for a different remediation request"
+                            )
+                        return bool(existing[2]), FindingState(existing[3]), bool(existing[4]), False
+
+                    changed, state, allowed = self.transition_finding_remediation_with_audit(
+                        finding_id=finding_id,
+                        target_state=target_state,
+                        actor_user_id=actor_user_id,
+                        rationale=rationale,
+                    )
+                    cursor.execute(
+                        """INSERT INTO finding_remediation_idempotency
+                           (actor_user_id, idempotency_key, finding_id, request_hash,
+                            changed, state, allowed, created_at)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        (
+                            actor_user_id,
+                            idempotency_key,
+                            finding_id,
+                            request_hash,
+                            changed,
+                            state.value,
+                            allowed,
+                            datetime.now(UTC),
+                        ),
+                    )
+                    return changed, state, allowed, True
+
     def transition_finding_remediation_with_audit(
         self,
         finding_id: UUID,
@@ -1022,6 +1104,7 @@ class PostgresRepository(
             "auth_sessions",
             "auth_login_rate_limits",
             "scan_lifecycle_command_idempotency",
+            "finding_remediation_idempotency",
             "audit_events",
             "risk_assessments",
             "attack_path_relations",
