@@ -57,6 +57,28 @@ class FakeRepository:
     def save_audit_event(self, event: AuditEvent):
         self.audit_events.append(event)
 
+    def audit_events_read_model(self, limit=50, offset=0):
+        ordered = sorted(
+            self.audit_events, key=lambda event: (event.created_at, str(event.id)), reverse=True
+        )
+        return {
+            "total": len(ordered),
+            "limit": limit,
+            "offset": offset,
+            "items": [
+                {
+                    "id": str(event.id),
+                    "actor_user_id": str(event.actor_user_id) if event.actor_user_id else None,
+                    "action": event.action[:128],
+                    "resource_type": event.resource_type[:128],
+                    "resource_id": str(event.resource_id) if event.resource_id else None,
+                    "outcome": event.outcome[:32],
+                    "created_at": event.created_at,
+                }
+                for event in ordered[offset : offset + limit]
+            ],
+        }
+
     def assets_read_model(self, limit=50, offset=0):
         return {
             "total": 1,
@@ -170,6 +192,7 @@ async def client():
     repository = FakeRepository()
     auth = AuthenticationService(repository)
     auth.create_user("analyst", "correct-horse-battery-123", Role.ANALYST)
+    auth.create_user("admin", "correct-horse-battery-123", Role.ADMIN)
     app = create_app(repository=repository, auth_service=auth)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -444,3 +467,74 @@ async def test_assets_read_model_rejects_unbounded_limit(client):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_audit_events_read_model_requires_authentication(client):
+    response = await client.get("/api/v1/audit-events")
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_audit_events_read_model_requires_admin_permission(client):
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "analyst", "password": "correct-horse-battery-123"},
+    )
+    response = await client.get(
+        "/api/v1/audit-events",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_audit_events_read_model_is_bounded_and_excludes_free_text_details(client):
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin", "password": "correct-horse-battery-123"},
+    )
+    token = login.json()["access_token"]
+    response = await client.get(
+        "/api/v1/audit-events?limit=1&offset=0",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] >= 2
+    assert payload["limit"] == 1
+    assert payload["offset"] == 0
+    assert len(payload["items"]) == 1
+    assert set(payload["items"][0]) == {
+        "id", "actor_user_id", "action", "resource_type", "resource_id", "outcome", "created_at"
+    }
+    assert "detail" not in payload["items"][0]
+    assert "password_hash" not in payload["items"][0]
+    assert "token_hash" not in payload["items"][0]
+
+
+@pytest.mark.anyio
+async def test_audit_events_read_model_rejects_invalid_pagination(client):
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin", "password": "correct-horse-battery-123"},
+    )
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    assert (await client.get("/api/v1/audit-events?limit=101", headers=headers)).status_code == 422
+    assert (await client.get("/api/v1/audit-events?limit=0", headers=headers)).status_code == 422
+    assert (await client.get("/api/v1/audit-events?offset=-1", headers=headers)).status_code == 422
+
+
+@pytest.mark.anyio
+async def test_audit_events_read_model_empty_page_is_stable(client):
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin", "password": "correct-horse-battery-123"},
+    )
+    response = await client.get(
+        "/api/v1/audit-events?limit=1&offset=1000",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["items"] == []
