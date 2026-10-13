@@ -23,7 +23,7 @@ from threatlens.orchestration.engine import ScanOrchestrator
 from threatlens.providers.handoff import ProviderHandoff
 from threatlens.safety.policy import ExecutionPolicy
 from threatlens.providers.runtime import ProviderCapability, ProviderMetadata
-from threatlens.safety.policy import ExecutionPolicy
+from threatlens.storage.postgres import PostgresRepository
 from threatlens.storage.finding_correlation import DurableFindingCorrelator
 
 
@@ -181,14 +181,14 @@ def test_postgres_scan_idempotency_and_audit_are_atomic_on_audit_failure(
     repo.connection.execute(
         """
         CREATE OR REPLACE FUNCTION fail_idempotent_queue_audit_fn()
-        RETURNS trigger AS $
+        RETURNS trigger AS $$
         BEGIN
             IF NEW.action = 'SCAN_QUEUED' THEN
                 RAISE EXCEPTION 'injected idempotent queue audit failure';
             END IF;
             RETURN NEW;
         END;
-        $ LANGUAGE plpgsql;
+        $$ LANGUAGE plpgsql;
         CREATE TRIGGER fail_idempotent_queue_audit
         BEFORE INSERT ON audit_events
         FOR EACH ROW EXECUTE FUNCTION fail_idempotent_queue_audit_fn()
