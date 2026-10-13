@@ -1116,7 +1116,8 @@ class PostgresRepository(
                                 (
                                     LifecycleState.FAILED.value,
                                     now,
-                                    "execution lease expired; provider execution could not be confirmed alive",
+                                    "execution lease expired; provider execution could not be "
+                                    "confirmed alive",
                                     execution_id,
                                     LifecycleState.RUNNING.value,
                                 ),
