@@ -1,3 +1,6 @@
+import os
+from threading import Barrier, Thread
+
 import pytest
 
 from threatlens.domain.models import (
@@ -12,6 +15,7 @@ from threatlens.domain.models import (
 from threatlens.providers.handoff import ProviderHandoff
 from threatlens.providers.runtime import ProviderCapability, ProviderMetadata
 from threatlens.storage.finding_correlation import DurableFindingCorrelator
+from threatlens.storage.postgres import PostgresRepository
 
 
 def provider_metadata() -> ProviderMetadata:
@@ -133,3 +137,92 @@ def test_postgres_correlator_rejects_finding_after_execution_is_terminal(
         )
 
     assert count_rows(repository, "findings") == before
+
+
+
+def test_postgres_handoff_accepts_output_while_execution_is_running(
+    postgres_repository,
+) -> None:
+    repository = postgres_repository
+    scan = running_scan(repository)
+    asset = Asset(
+        canonical_id="fqdn:lease-active.internal",
+        asset_type="fqdn",
+        value="lease-active.internal",
+    )
+    repository.save_asset(asset)
+    handoff = ProviderHandoff(repository)
+    evidence = handoff.persist_evidence(
+        scan.execution_id,
+        provider_metadata(),
+        Evidence(kind="http-response", content="active response", source="raw"),
+    )
+    finding = Finding(
+        title="Active finding",
+        asset_id=asset.id,
+        evidence_ids=(evidence.id,),
+    )
+
+    persisted = handoff.persist_finding(
+        scan.execution_id, provider_metadata(), asset, finding, (evidence,)
+    )
+
+    assert persisted.source == "lease-fence-test"
+    assert count_rows(repository, "evidence") == 1
+    assert count_rows(repository, "findings") == 1
+
+
+def test_postgres_output_write_serializes_with_terminal_transition(
+    postgres_repository,
+) -> None:
+    repository = postgres_repository
+    scan = running_scan(repository)
+    dsn = os.getenv("THREATLENS_TEST_DATABASE_URL") or os.getenv(
+        "THREATLENS_DATABASE_URL"
+    )
+    assert dsn
+    other_repository = PostgresRepository(dsn)
+    other_repository.initialize()
+    barrier = Barrier(2)
+    outcomes: list[str] = []
+    handoff = ProviderHandoff(repository)
+
+    def write_output() -> None:
+        barrier.wait(timeout=5)
+        try:
+            handoff.persist_evidence(
+                scan.execution_id,
+                provider_metadata(),
+                Evidence(kind="http-response", content="racing response", source="raw"),
+            )
+        except RuntimeError as exc:
+            assert "execution is not RUNNING" in str(exc)
+            outcomes.append("rejected")
+        else:
+            outcomes.append("written")
+
+    def cancel_execution() -> None:
+        barrier.wait(timeout=5)
+        changed = other_repository.update_scan_state_if_current(
+            scan.execution_id, LifecycleState.RUNNING, LifecycleState.CANCELLED
+        )
+        assert changed
+        outcomes.append("cancelled")
+
+    writer = Thread(target=write_output)
+    canceller = Thread(target=cancel_execution)
+    try:
+        writer.start()
+        canceller.start()
+        writer.join(10)
+        canceller.join(10)
+        assert not writer.is_alive()
+        assert not canceller.is_alive()
+        assert sorted(outcomes) in (
+            ["cancelled", "rejected"],
+            ["cancelled", "written"],
+        )
+        assert repository.scan_state(scan.execution_id) is LifecycleState.CANCELLED
+        assert count_rows(repository, "evidence") == (1 if "written" in outcomes else 0)
+    finally:
+        other_repository.close()
