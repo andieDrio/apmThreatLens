@@ -91,6 +91,47 @@ def test_registered_provider_path_uses_runtime_and_observer(postgres_repository)
     repo.close()
 
 
+def test_registered_provider_fails_closed_when_heartbeat_lease_is_lost(
+    postgres_repository, monkeypatch
+) -> None:
+    repo, orchestrator, campaign, principal = make_orchestrator(postgres_repository)
+    orchestrator.policy = ExecutionPolicy(
+        timeout_seconds=1.0,
+        heartbeat_interval_seconds=0.01,
+        stale_after_seconds=0.1,
+    )
+
+    class LeaseAwareProvider:
+        name = "lease-aware-provider"
+
+        def execute(self, campaign, execution_id, cancel_event) -> None:
+            while not cancel_event.wait(0.005):
+                pass
+
+    monkeypatch.setattr(repo, "heartbeat_scan", lambda execution_id: False)
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderMetadata(
+            name="lease-aware-provider",
+            version="1.0.0",
+            capabilities=frozenset({ProviderCapability.NETWORK}),
+        ),
+        LeaseAwareProvider(),
+    )
+    observed = []
+
+    result = orchestrator.run_registered(
+        campaign, "lease-aware-provider", registry, observer=observed.append, principal=principal
+    )
+
+    assert result.state is LifecycleState.FAILED
+    assert repo.scan_state(result.execution_id) is LifecycleState.FAILED
+    assert any(
+        event.event_type.value == "ERROR" and "heartbeat" in event.message
+        for event in observed
+    )
+
+
 def test_provider_failure_is_persisted_and_does_not_escape_as_success(postgres_repository) -> None:
     repo, orchestrator, campaign, principal = make_orchestrator(postgres_repository)
     result = orchestrator.run(campaign, FailingProvider(), principal=principal)
