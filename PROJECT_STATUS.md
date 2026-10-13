@@ -2,17 +2,17 @@
 
 **Last updated:** 2026-10-13  
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 52  
-**Current gate:** Gate 52 — Execution-Lease-Fenced Evidence and Finding Persistence  
-**Current status:** Validation commands pass; PostgreSQL-backed test skip review pending
+**Highest architecture gate reached:** Gate 53  
+**Current gate:** Gate 53 — Durable Idempotency for Finding Remediation Commands  
+**Current status:** Gate 52 validated; Gate 53 implementation on working branch, validation pending
 
 ## Executive Summary
 
 APM ThreatLens is an authorized VAPT orchestration platform with a PostgreSQL-backed persistence boundary, authenticated scan lifecycle controls, controlled assessment providers, evidence-first handoff, finding correlation, risk assessment, attack-path analysis, evidence validation, remediation tracking, audit read models, and an initial authenticated dashboard.
 
-The highest numbered gate reached is 52. This does **not** mean that 52 gates are all complete: gate numbering includes historical and differently validated entries. Gates 49, 50, and 51 are recorded as complete based on prior user-confirmed validation. Gate 52 is implemented on `main`; the user confirmed the lint, diff, pytest command, and wheel build completed successfully on 2026-10-13. The pytest output contains many skips, so confirm whether the PostgreSQL-backed execution-fence regressions actually ran before marking the gate complete.
+The highest numbered gate reached is 53. Gate numbering includes historical and differently validated entries. Gates 49–51 were previously confirmed complete. On 2026-10-13, the user confirmed all nine focused execution-fence tests passed, including the PostgreSQL-backed cases, completing Gate 52 validation. Gate 53 is being implemented on branch `gate-53-remediation-idempotency`; it is not complete until validation results are available.
 
-## Current Gate — Gate 52
+## Completed Gate — Gate 52
 
 ### Objective
 
@@ -111,3 +111,27 @@ The user confirmed successful local validation on 2026-10-13 after the latest im
 ## Next Required Action
 
 The validation commands passed, but Gate 52 remains pending until `python -m pytest -q -rs` confirms that the required PostgreSQL-backed execution-fence regressions were not skipped. Once confirmed, re-fetch latest `main`, inspect the implementation, and select the next highest-priority unfinished architecture gap; do not assume Gate 53's objective from numbering alone.
+
+
+## Current Gate — Gate 53: Durable Idempotency for Finding Remediation Commands
+
+### Objective
+
+Make remediation retries safe across application instances without creating duplicate state transitions or audit events.
+
+### Implemented on working branch
+
+- The remediation endpoint requires a bounded safe-ASCII `Idempotency-Key` and emits `Idempotency-Replayed`.
+- The request fingerprint binds finding ID, target state, and rationale.
+- PostgreSQL serializes actor/key requests using a transaction-scoped advisory lock and stores the original result durably.
+- Exact retries return the stored result; conflicting reuse returns HTTP 409.
+- The existing remediation transition and audit operation remains the authoritative mutation boundary.
+- API and PostgreSQL regression tests cover key enforcement, replay, audit stability, and conflicts.
+
+### Validation status
+
+**Pending.** Changes are on the working branch only. Ruff, `git diff --check`, focused tests, the full test suite, PostgreSQL integration tests, and wheel build have not been run by this assistant environment. Do not merge or mark Gate 53 complete until the user runs and confirms these checks.
+
+## Next Required Action
+
+Fetch the latest branch, inspect the diff, fix all lint/test/runtime failures in Gate 53, then run focused PostgreSQL tests, the full suite, Ruff, diff checks, and package build. Do not start Gate 54 until Gate 53 is fully validated and explicitly confirmed.
