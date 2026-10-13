@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
+from hashlib import sha256
 from threading import RLock
 from uuid import UUID, uuid4
-
-from hashlib import sha256
-from datetime import UTC, datetime
 
 from threatlens.attack_paths.engine import AttackPathRelation, AttackPathRelationType
 from threatlens.domain.models import (
@@ -17,10 +16,10 @@ from threatlens.domain.models import (
     Evidence,
     Finding,
     FindingState,
-    Severity,
-    Service,
-    Scan,
     LifecycleState,
+    Scan,
+    Service,
+    Severity,
     validate_finding_remediation_transition,
 )
 from threatlens.storage.auth import PostgresAuthMixin
