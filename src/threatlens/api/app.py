@@ -1203,38 +1203,54 @@ def create_app(
 
     @app.post("/api/v1/scans/{execution_id}/cancel", response_model=ScanControlResponse)
     def cancel_scan(
-        execution_id: UUID, current=Depends(require(Permission.ASSESS))
+        execution_id: UUID,
+        response: Response,
+        idempotency_key: str = Header(
+            ..., alias="Idempotency-Key", min_length=16, max_length=128,
+            pattern=r"^[A-Za-z0-9._:-]{16,128}$",
+        ),
+        current=Depends(require(Permission.ASSESS)),
     ) -> ScanControlResponse:
         try:
-            changed = context.orchestrator.cancel(execution_id, principal=current)
+            changed, created = context.orchestrator.cancel_idempotent(
+                execution_id, idempotency_key, principal=current
+            )
             state = context.repository.scan_state(execution_id)
+            response.headers["Idempotency-Replayed"] = "false" if created else "true"
         except KeyError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="scan not found"
-            ) from exc
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="scan not found") from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         return ScanControlResponse(
-            execution_id=str(execution_id),
-            action="CANCEL",
-            state=state.value,
-            changed=changed,
+            execution_id=str(execution_id), action="CANCEL", state=state.value, changed=changed
         )
 
     @app.post("/api/v1/scans/{execution_id}/recover-stale", response_model=ScanControlResponse)
     def recover_stale_scan(
-        execution_id: UUID, current=Depends(require(Permission.ASSESS))
+        execution_id: UUID,
+        response: Response,
+        idempotency_key: str = Header(
+            ..., alias="Idempotency-Key", min_length=16, max_length=128,
+            pattern=r"^[A-Za-z0-9._:-]{16,128}$",
+        ),
+        current=Depends(require(Permission.ASSESS)),
     ) -> ScanControlResponse:
         try:
-            changed = context.orchestrator.recover_stale(execution_id, principal=current)
+            changed, created = context.orchestrator.recover_stale_idempotent(
+                execution_id, idempotency_key, principal=current
+            )
             state = context.repository.scan_state(execution_id)
+            response.headers["Idempotency-Replayed"] = "false" if created else "true"
         except KeyError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="scan not found"
-            ) from exc
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="scan not found") from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         return ScanControlResponse(
-            execution_id=str(execution_id),
-            action="RECOVER_STALE",
-            state=state.value,
-            changed=changed,
+            execution_id=str(execution_id), action="RECOVER_STALE", state=state.value, changed=changed
         )
 
     @app.get("/api/v1/me", response_model=PrincipalResponse)
