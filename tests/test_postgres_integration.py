@@ -6,6 +6,7 @@ from psycopg.errors import ForeignKeyViolation
 from threatlens.auth import AuthenticationService, Role
 from threatlens.domain.models import (
     Asset,
+    AuditEvent,
     Campaign,
     Evidence,
     Finding,
@@ -70,6 +71,41 @@ def test_postgres_auth_persistence(postgres_repository):
     auth.create_user("postgres-analyst", "correct horse battery staple", Role.ANALYST)
     assert postgres_repository.count("users") == 1
     assert postgres_repository.count("audit_events") >= 1
+
+
+def test_postgres_audit_events_read_model_is_bounded_ordered_and_excludes_detail(
+    postgres_repository,
+):
+    repo = postgres_repository
+    older = AuditEvent(
+        action="OLDER_EVENT",
+        resource_type="AUTH",
+        outcome="SUCCESS",
+        detail="password=must-not-be-exposed",
+    )
+    newer = AuditEvent(
+        action="NEWER_EVENT",
+        resource_type="AUTH",
+        outcome="DENIED",
+        detail="session_token=must-not-be-exposed",
+    )
+    repo.save_audit_event(older)
+    repo.save_audit_event(newer)
+
+    result = repo.audit_events_read_model(limit=1, offset=0)
+    assert result["total"] == 2
+    assert result["limit"] == 1
+    assert result["offset"] == 0
+    assert result["items"][0]["id"] == str(newer.id)
+    assert result["items"][0]["action"] == "NEWER_EVENT"
+    assert "detail" not in result["items"][0]
+    assert "password" not in str(result["items"][0])
+    assert "session_token" not in str(result["items"][0])
+
+
+def test_postgres_audit_events_read_model_empty(postgres_repository):
+    result = postgres_repository.audit_events_read_model()
+    assert result == {"total": 0, "limit": 50, "offset": 0, "items": []}
 
 
 def test_postgres_durable_correlation_merges_provider_findings(postgres_repository):
