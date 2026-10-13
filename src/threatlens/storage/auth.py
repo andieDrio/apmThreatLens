@@ -192,16 +192,6 @@ class PostgresAuthMixin:
                     created_at TIMESTAMPTZ NOT NULL,
                     PRIMARY KEY (actor_user_id, idempotency_key)
                 )""")
-                cursor.execute("""CREATE TABLE IF NOT EXISTS scan_lifecycle_command_idempotency (
-                    actor_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    idempotency_key TEXT NOT NULL CHECK (length(idempotency_key) BETWEEN 16 AND 128),
-                    action TEXT NOT NULL CHECK (action IN ('CANCEL', 'RECOVER_STALE')),
-                    request_hash CHAR(64) NOT NULL,
-                    execution_id UUID NOT NULL REFERENCES scans(execution_id) ON DELETE CASCADE,
-                    changed BOOLEAN NOT NULL,
-                    created_at TIMESTAMPTZ NOT NULL,
-                    PRIMARY KEY (actor_user_id, idempotency_key)
-                )""")
                 cursor.execute(
                     "CREATE INDEX IF NOT EXISTS idx_audit_events_created_id "
                     "ON audit_events (created_at DESC, id DESC)"
