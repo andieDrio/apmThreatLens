@@ -125,7 +125,7 @@ class ScanOrchestrator:
         if not re.fullmatch(r"[A-Za-z0-9._:-]{16,128}", idempotency_key):
             raise ValueError("idempotency key must be 16..128 safe ASCII characters")
         request_hash = sha256(
-            f"{campaign.id}\n{provider.name}".encode("utf-8")
+            f"{campaign.id}\n{provider.name}".encode()
         ).hexdigest()
         scan = Scan(campaign_id=campaign.id, provider_name=provider.name)
         event = AuditEvent(
