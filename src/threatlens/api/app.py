@@ -280,6 +280,23 @@ class EvidenceListResponse(BaseModel):
     items: list[EvidenceReadModel]
 
 
+class AuditEventReadModel(BaseModel):
+    id: str
+    actor_user_id: str | None = None
+    action: str
+    resource_type: str
+    resource_id: str | None = None
+    outcome: str
+    created_at: str
+
+
+class AuditEventListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[AuditEventReadModel]
+
+
 class AttackPathAnalysisRequest(BaseModel):
     entry_asset_ids: list[UUID] = Field(min_length=1, max_length=100)
     objective_asset_ids: list[UUID] = Field(min_length=1, max_length=100)
@@ -807,6 +824,32 @@ def create_app(
             for item in result["items"]
         ]
         return EvidenceListResponse(
+            total=result["total"],
+            limit=result["limit"],
+            offset=result["offset"],
+            items=items,
+        )
+
+    @app.get("/api/v1/audit-events", response_model=AuditEventListResponse)
+    def audit_events(
+        current=Depends(require(Permission.ADMIN)),
+        limit: int = Query(default=50, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+    ) -> AuditEventListResponse:
+        result = context.repository.audit_events_read_model(limit=limit, offset=offset)
+        items = [
+            AuditEventReadModel(
+                id=item["id"],
+                actor_user_id=item["actor_user_id"],
+                action=item["action"],
+                resource_type=item["resource_type"],
+                resource_id=item["resource_id"],
+                outcome=item["outcome"],
+                created_at=item["created_at"].isoformat(),
+            )
+            for item in result["items"]
+        ]
+        return AuditEventListResponse(
             total=result["total"],
             limit=result["limit"],
             offset=result["offset"],
