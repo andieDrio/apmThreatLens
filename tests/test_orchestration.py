@@ -133,6 +133,38 @@ def test_registered_provider_fails_closed_when_heartbeat_lease_is_lost(
     )
 
 
+def test_direct_provider_path_fails_closed_when_heartbeat_lease_is_lost(
+    postgres_repository, monkeypatch
+) -> None:
+    repo, orchestrator, campaign, principal = make_orchestrator(postgres_repository)
+    policy = ExecutionPolicy(
+        timeout_seconds=1.0,
+        heartbeat_interval_seconds=0.01,
+        stale_after_seconds=0.1,
+    )
+    orchestrator = ScanOrchestrator(repo, policy, orchestrator.authentication)
+    heartbeat_calls = 0
+
+    def heartbeat(execution_id):
+        nonlocal heartbeat_calls
+        heartbeat_calls += 1
+        return heartbeat_calls == 1
+
+    class LeaseAwareProvider:
+        name = "direct-lease-aware-provider"
+
+        def execute(self, campaign, execution_id, cancel_event) -> None:
+            while not cancel_event.wait(0.005):
+                pass
+
+    monkeypatch.setattr(repo, "heartbeat_scan", heartbeat)
+    result = orchestrator.run(campaign, LeaseAwareProvider(), principal=principal)
+
+    assert heartbeat_calls >= 2
+    assert result.state is LifecycleState.FAILED
+    assert repo.scan_state(result.execution_id) is LifecycleState.FAILED
+
+
 def test_provider_failure_is_persisted_and_does_not_escape_as_success(postgres_repository) -> None:
     repo, orchestrator, campaign, principal = make_orchestrator(postgres_repository)
     result = orchestrator.run(campaign, FailingProvider(), principal=principal)
