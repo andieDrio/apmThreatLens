@@ -173,6 +173,10 @@ class PostgresAuthMixin:
                     attempts INTEGER NOT NULL CHECK (attempts > 0)
                 )""")
                 cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_audit_events_created_id "
+                    "ON audit_events (created_at DESC, id DESC)"
+                )
+                cursor.execute(
                     "CREATE INDEX IF NOT EXISTS idx_auth_login_rate_limits_window "
                     "ON auth_login_rate_limits (window_started_at)"
                 )
@@ -343,3 +347,42 @@ class PostgresAuthMixin:
                             event.created_at,
                         ),
                     )
+
+    def audit_events_read_model(self, limit: int = 50, offset: int = 0) -> dict[str, object]:
+        """Return bounded audit metadata without exposing free-text event details."""
+        if not 1 <= limit <= 100:
+            raise ValueError("limit must be within 1..100")
+        if offset < 0:
+            raise ValueError("offset cannot be negative")
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute("SELECT COUNT(*) FROM audit_events")
+                    total = int(cursor.fetchone()[0])
+                    cursor.execute(
+                        """SELECT id, actor_user_id, LEFT(action, 128),
+                                  LEFT(resource_type, 128), resource_id, LEFT(outcome, 32),
+                                  created_at
+                           FROM audit_events
+                           ORDER BY created_at DESC, id DESC
+                           LIMIT %s OFFSET %s""",
+                        (limit, offset),
+                    )
+                    rows = cursor.fetchall()
+        return {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "items": [
+                {
+                    "id": str(row[0]),
+                    "actor_user_id": str(row[1]) if row[1] else None,
+                    "action": row[2],
+                    "resource_type": row[3],
+                    "resource_id": str(row[4]) if row[4] else None,
+                    "outcome": row[5],
+                    "created_at": row[6],
+                }
+                for row in rows
+            ],
+        }

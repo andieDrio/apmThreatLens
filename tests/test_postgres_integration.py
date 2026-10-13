@@ -1,4 +1,5 @@
-from uuid import uuid4
+from datetime import UTC, datetime
+from uuid import UUID, uuid4
 
 import pytest
 from psycopg.errors import ForeignKeyViolation
@@ -6,6 +7,7 @@ from psycopg.errors import ForeignKeyViolation
 from threatlens.auth import AuthenticationService, Role
 from threatlens.domain.models import (
     Asset,
+    AuditEvent,
     Campaign,
     Evidence,
     Finding,
@@ -70,6 +72,49 @@ def test_postgres_auth_persistence(postgres_repository):
     auth.create_user("postgres-analyst", "correct horse battery staple", Role.ANALYST)
     assert postgres_repository.count("users") == 1
     assert postgres_repository.count("audit_events") >= 1
+
+
+def test_postgres_audit_events_read_model_is_bounded_ordered_and_excludes_detail(
+    postgres_repository,
+):
+    repo = postgres_repository
+    created_at = datetime(2026, 10, 13, tzinfo=UTC)
+    older = AuditEvent(
+        action="OLDER_EVENT",
+        resource_type="AUTH",
+        outcome="SUCCESS",
+        detail="password=must-not-be-exposed",
+        id=UUID(int=1),
+        created_at=created_at,
+    )
+    newer = AuditEvent(
+        action="NEWER_EVENT",
+        resource_type="AUTH",
+        outcome="DENIED",
+        detail="session_token=must-not-be-exposed",
+        id=UUID(int=2),
+        created_at=created_at,
+    )
+    repo.save_audit_event(older)
+    repo.save_audit_event(newer)
+
+    first_page = repo.audit_events_read_model(limit=1, offset=0)
+    assert first_page["total"] == 2
+    assert first_page["limit"] == 1
+    assert first_page["offset"] == 0
+    assert first_page["items"][0]["id"] == str(newer.id)
+    assert first_page["items"][0]["action"] == "NEWER_EVENT"
+    assert "detail" not in first_page["items"][0]
+    assert "password" not in str(first_page["items"][0])
+    assert "session_token" not in str(first_page["items"][0])
+
+    second_page = repo.audit_events_read_model(limit=1, offset=1)
+    assert second_page["items"][0]["id"] == str(older.id)
+
+
+def test_postgres_audit_events_read_model_empty(postgres_repository):
+    result = postgres_repository.audit_events_read_model()
+    assert result == {"total": 0, "limit": 50, "offset": 0, "items": []}
 
 
 def test_postgres_durable_correlation_merges_provider_findings(postgres_repository):

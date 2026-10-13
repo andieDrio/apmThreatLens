@@ -647,7 +647,7 @@ A focused regression test checks the dashboard response, security headers, and s
 **Validation status:** User confirmed local `python -m pytest -q`, `ruff check .`, and package wheel build passed. Gate 46 is complete.
 
 
-## 70. Architecture Gate 47 — Durable Login Abuse Protection — IMPLEMENTED
+## 70. Architecture Gate 47 — Durable Login Abuse Protection — COMPLETE
 
 Gate 47 protects the login boundary before password verification. The API uses the direct transport peer address and normalized username to derive SHA-256 pseudonymous bucket fingerprints without persisting raw identifiers; these hashes are not treated as anonymization. It deliberately ignores `X-Forwarded-For` and related client-controlled forwarding headers unless a separate trusted-proxy boundary is explicitly designed. PostgreSQL stores only the bucket fingerprint, window start, and attempt count. Atomic upserts provide cross-instance serialization, with a five-attempt per username/direct-peer limit and a 30-attempt per direct-peer limit over a 60-second window anchored to the first attempt. Old buckets are pruned, and blocked requests receive HTTP 429 plus a Retry-After header. A `LOGIN_RATE_LIMITED` audit event is written only at the threshold crossing to avoid unbounded audit amplification.
 
@@ -655,4 +655,15 @@ Password verification now validates the PBKDF2 encoding before derivation: itera
 
 The boundary fails closed if durable rate-limit persistence fails; it does not silently fall back to per-process counters. Regression coverage checks rate-limit behavior before valid-password verification, ignored forwarded headers, bounded password-hash parameters, durable PostgreSQL counters, and window expiry.
 
-**Validation status:** Implementation and focused regression tests are committed. Local PostgreSQL-backed `python -m pytest -q`, `ruff check .`, and package wheel build validation are required before Gate 47 is complete.
+**Validation status:** Gate 47 is complete after the user confirmed local PostgreSQL-backed tests, Ruff, and package build checks passed.
+
+
+## 71. Architecture Gate 48 — Authenticated Security Audit Read Model API — COMPLETE
+
+Gate 48 exposes the existing PostgreSQL audit history through the read-only `GET /api/v1/audit-events` endpoint guarded by the existing `Permission.ADMIN` authorization boundary. It reuses the existing audit persistence and authentication system and introduces no second audit engine, mutation endpoint, or alternate persistence path.
+
+The read model enforces bounded pagination (`limit=1..100`, `offset>=0`), parameterized fixed SQL, and deterministic `created_at DESC, id DESC` ordering. Its explicit allowlist returns event identifiers, actor/resource identifiers, action, resource type, outcome, and timestamp while excluding free-text `detail`, password hashes, session-token hashes, credentials, and secret material. Returned text fields are bounded, and an index supports the ordering.
+
+API tests cover authentication, ADMIN authorization, pagination bounds, empty pages, response-field allowlisting, and secret-disclosure regression. PostgreSQL integration tests cover empty results, deterministic ordering, pagination, and omission of free-text details.
+
+**Validation status:** User confirmed 33 focused API/PostgreSQL integration tests passed, the full pytest suite passed, `ruff check .` passed, `git diff --check` passed, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel` built the package successfully. Five existing Starlette deprecation warnings were reported during the full suite; they did not fail validation.
