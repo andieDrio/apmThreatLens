@@ -65,8 +65,11 @@ class ProviderHandoff:
         if callable(fenced_save):
             fenced_save(UUID(str(execution_id)), sealed)
         else:
-            # Compatibility for in-memory and legacy test repositories. The active
-            # production PostgreSQL adapter always exposes the fenced method.
+            if getattr(self.repository, "requires_execution_fence", False):
+                raise RuntimeError(
+                    "repository requires execution-fenced evidence persistence"
+                )
+            # Compatibility for in-memory and legacy test repositories only.
             self.repository.save_evidence(sealed)
         return sealed
 
@@ -121,7 +124,9 @@ class ProviderHandoff:
             fenced_persist = getattr(self.correlator, "persist_for_execution", None)
             if callable(fenced_persist):
                 return fenced_persist(UUID(str(execution_id)), normalized)
-            if callable(getattr(self.repository, "save_finding_for_execution", None)):
+            if getattr(self.repository, "requires_execution_fence", False) or callable(
+                getattr(self.repository, "save_finding_for_execution", None)
+            ):
                 raise RuntimeError(
                     "finding correlator does not support execution-lease fencing"
                 )
@@ -131,7 +136,10 @@ class ProviderHandoff:
         if callable(fenced_save):
             fenced_save(UUID(str(execution_id)), normalized)
         else:
-            # Compatibility for in-memory and legacy test repositories. The active
-            # production PostgreSQL adapter always exposes the fenced method.
+            if getattr(self.repository, "requires_execution_fence", False):
+                raise RuntimeError(
+                    "repository requires execution-fenced finding persistence"
+                )
+            # Compatibility for in-memory and legacy test repositories only.
             self.repository.save_finding(normalized)
         return normalized
