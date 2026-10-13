@@ -13,7 +13,19 @@ class FakeRepository:
         self.users = {}
         self.sessions = {}
         self.audit_events = []
+        self.login_attempts = {}
         self.campaigns = []
+
+    def record_login_attempts(self, bucket_keys, now, window_seconds=60):
+        result = {}
+        for key in sorted(set(bucket_keys)):
+            started, count = self.login_attempts.get(key, (now, 0))
+            if (now - started).total_seconds() >= window_seconds:
+                started, count = now, 0
+            count += 1
+            self.login_attempts[key] = (started, count)
+            result[key] = (count, started)
+        return result
 
     def save_user(self, user: User):
         self.users[user.username] = user
