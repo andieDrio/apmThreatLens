@@ -71,6 +71,12 @@ class ScanRepository(Protocol):
         self, execution_id: UUID, success_event: AuditEvent, noop_event: AuditEvent
     ) -> bool: ...
 
+    def execute_scan_lifecycle_command(
+        self, execution_id: UUID, action: str, actor_user_id: UUID,
+        idempotency_key: str, request_hash: str, stale_after_seconds: float,
+        success_event: AuditEvent, noop_event: AuditEvent,
+    ) -> tuple[bool, bool]: ...
+
 
 @dataclass(slots=True)
 class ScanOrchestrator:
@@ -178,6 +184,48 @@ class ScanOrchestrator:
                 outcome="NOOP",
                 detail="scan already terminal",
             ),
+        )
+
+    def recover_stale_idempotent(
+        self, execution_id: UUID, idempotency_key: str,
+        principal: AuthenticatedPrincipal | None = None,
+    ) -> tuple[bool, bool]:
+        """Recover a stale execution once per authenticated idempotency key."""
+        self.authentication.authorize(principal, Permission.ASSESS)
+        if not re.fullmatch(r"[A-Za-z0-9._:-]{16,128}", idempotency_key):
+            raise ValueError("idempotency key must be 16..128 safe ASCII characters")
+        request_hash = sha256(
+            f"RECOVER_STALE\n{execution_id}\n{self.policy.stale_after_seconds}".encode()
+        ).hexdigest()
+        return self.repository.execute_scan_lifecycle_command(
+            execution_id, "RECOVER_STALE", principal.user_id, idempotency_key,
+            request_hash, self.policy.stale_after_seconds,
+            AuditEvent(actor_user_id=principal.user_id, action="SCAN_RECOVERED_STALE",
+                resource_type="SCAN", resource_id=execution_id, outcome="SUCCESS",
+                detail="execution heartbeat lease expired"),
+            AuditEvent(actor_user_id=principal.user_id, action="SCAN_RECOVERED_STALE",
+                resource_type="SCAN", resource_id=execution_id, outcome="NOOP",
+                detail="execution heartbeat lease has not expired"),
+        )
+
+    def cancel_idempotent(
+        self, execution_id: UUID, idempotency_key: str,
+        principal: AuthenticatedPrincipal | None = None,
+    ) -> tuple[bool, bool]:
+        """Cancel a scan once per authenticated idempotency key."""
+        self.authentication.authorize(principal, Permission.ASSESS)
+        if not re.fullmatch(r"[A-Za-z0-9._:-]{16,128}", idempotency_key):
+            raise ValueError("idempotency key must be 16..128 safe ASCII characters")
+        request_hash = sha256(f"CANCEL\n{execution_id}".encode()).hexdigest()
+        return self.repository.execute_scan_lifecycle_command(
+            execution_id, "CANCEL", principal.user_id, idempotency_key,
+            request_hash, self.policy.stale_after_seconds,
+            AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED",
+                resource_type="SCAN", resource_id=execution_id, outcome="SUCCESS",
+                detail="scan cancellation requested"),
+            AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED",
+                resource_type="SCAN", resource_id=execution_id, outcome="NOOP",
+                detail="scan already terminal"),
         )
 
     def run_registered(
