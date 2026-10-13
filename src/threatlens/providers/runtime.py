@@ -270,7 +270,7 @@ class ExecutionRuntime:
         finding_count = sum(e.event_type is ProviderEventType.FINDING for e in event_snapshot)
         return ExecutionResult(
             success=not timed_out and error is None and not cancel_event.is_set(),
-            cancelled=cancel_event.is_set() and not timed_out,
+            cancelled=cancel_event.is_set() and not timed_out and not heartbeat_failure,
             timed_out=timed_out,
             worker_still_running=worker.is_alive(),
             error=error,
