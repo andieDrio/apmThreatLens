@@ -1,5 +1,6 @@
 import os
 from threading import Barrier, Thread
+from uuid import uuid4
 
 import pytest
 
@@ -257,7 +258,7 @@ class _FenceRequiredLegacyRepository:
 def test_handoff_fails_closed_when_production_repository_lacks_evidence_fence() -> None:
     repository = _FenceRequiredLegacyRepository()
     handoff = ProviderHandoff(repository)
-    execution_id = __import__("uuid").uuid4()
+    execution_id = uuid4()
 
     with pytest.raises(RuntimeError, match="requires execution-fenced evidence"):
         handoff.persist_evidence(
