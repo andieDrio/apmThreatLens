@@ -6,7 +6,7 @@ import pytest
 
 from threatlens.api.app import create_app
 from threatlens.auth.service import AuthenticationService, Role
-from threatlens.domain.models import AuditEvent, Campaign, Scope, Scan, User
+from threatlens.domain.models import AuditEvent, Campaign, LifecycleState, Scope, Scan, User
 from threatlens.providers.runtime import ProviderMetadata, ProviderRegistry, ProviderCapability
 
 
@@ -36,6 +36,8 @@ class FakeRepository:
         }
         self.queued = []
         self.idempotency_records = {}
+        self.scan_states = {}
+        self.lifecycle_records = {}
 
     def record_login_attempts(self, bucket_keys, now, window_seconds=60):
         result = {}
@@ -85,7 +87,34 @@ class FakeRepository:
 
     def save_scan_with_audit(self, scan: Scan, event: AuditEvent):
         self.queued.append(scan)
+        self.scan_states[scan.execution_id] = scan.state
         self.audit_events.append(event)
+
+    def scan_state(self, execution_id):
+        if execution_id not in self.scan_states:
+            raise KeyError(str(execution_id))
+        return self.scan_states[execution_id]
+
+    def execute_scan_lifecycle_command(
+        self, execution_id, action, actor_user_id, idempotency_key,
+        request_hash, stale_after_seconds, success_event, noop_event,
+    ):
+        key = (actor_user_id, idempotency_key)
+        existing = self.lifecycle_records.get(key)
+        if existing is not None:
+            if existing[:3] != (action, request_hash, execution_id):
+                raise ValueError("Idempotency-Key was already used for a different lifecycle command")
+            return existing[3], False
+        if execution_id not in self.scan_states:
+            raise KeyError(str(execution_id))
+        changed = False
+        if action == "CANCEL":
+            if self.scan_states[execution_id] in {LifecycleState.QUEUED, LifecycleState.RUNNING}:
+                self.scan_states[execution_id] = LifecycleState.CANCELLED
+                changed = True
+            self.audit_events.append(success_event if changed else noop_event)
+        self.lifecycle_records[key] = (action, request_hash, execution_id, changed)
+        return changed, True
 
     def save_scan_with_audit_idempotent(
         self, scan, event, actor_user_id, idempotency_key, request_hash
@@ -97,6 +126,7 @@ class FakeRepository:
                 raise ValueError("Idempotency-Key was already used for a different scan request")
             return existing[1], False
         self.queued.append(scan)
+        self.scan_states[scan.execution_id] = scan.state
         self.audit_events.append(event)
         self.idempotency_records[key] = (request_hash, scan)
         return scan, True
@@ -137,6 +167,32 @@ class FakeOrchestrator:
         request_hash = sha256(f"{campaign.id}\n{provider.name}".encode()).hexdigest()
         return self.repository.save_scan_with_audit_idempotent(
             scan, event, principal.user_id, idempotency_key, request_hash
+        )
+
+    def cancel_idempotent(self, execution_id, idempotency_key, principal=None):
+        request_hash = sha256(f"CANCEL\n{execution_id}".encode()).hexdigest()
+        return self.repository.execute_scan_lifecycle_command(
+            execution_id, "CANCEL", principal.user_id, idempotency_key,
+            request_hash, 300,
+            AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED",
+                resource_type="SCAN", resource_id=execution_id, outcome="SUCCESS",
+                detail="scan cancellation requested"),
+            AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED",
+                resource_type="SCAN", resource_id=execution_id, outcome="NOOP",
+                detail="scan already terminal"),
+        )
+
+    def recover_stale_idempotent(self, execution_id, idempotency_key, principal=None):
+        request_hash = sha256(f"RECOVER_STALE\n{execution_id}\n300.0".encode()).hexdigest()
+        return self.repository.execute_scan_lifecycle_command(
+            execution_id, "RECOVER_STALE", principal.user_id, idempotency_key,
+            request_hash, 300,
+            AuditEvent(actor_user_id=principal.user_id, action="SCAN_RECOVERED_STALE",
+                resource_type="SCAN", resource_id=execution_id, outcome="SUCCESS",
+                detail="execution heartbeat lease expired"),
+            AuditEvent(actor_user_id=principal.user_id, action="SCAN_RECOVERED_STALE",
+                resource_type="SCAN", resource_id=execution_id, outcome="NOOP",
+                detail="execution heartbeat lease has not expired"),
         )
 
 
@@ -350,6 +406,69 @@ async def test_queue_requires_valid_idempotency_key():
                 "Idempotency-Key": "bad key",
             },
             json={"provider_name": "test-provider"},
+        )
+    assert missing.status_code == 422
+    assert malformed.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_cancel_replays_lifecycle_command_without_duplicate_audit():
+    client, repository, _ = make_client()
+    async with client:
+        token = await login(client)
+        queued = await client.post(
+            f"/api/v1/campaigns/{CAMPAIGN_ID}/scans",
+            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "queue-before-cancel-0001"},
+            json={"provider_name": "test-provider"},
+        )
+        execution_id = queued.json()["execution_id"]
+        headers = {"Authorization": f"Bearer {token}", "Idempotency-Key": "cancel-replay-command-0001"}
+        first = await client.post(f"/api/v1/scans/{execution_id}/cancel", headers=headers)
+        replay = await client.post(f"/api/v1/scans/{execution_id}/cancel", headers=headers)
+    assert first.status_code == replay.status_code == 200
+    assert first.json()["changed"] is replay.json()["changed"] is True
+    assert first.headers["idempotency-replayed"] == "false"
+    assert replay.headers["idempotency-replayed"] == "true"
+    assert replay.json()["state"] == "CANCELLED"
+    assert sum(event.action == "SCAN_CANCELLED" for event in repository.audit_events) == 1
+
+
+@pytest.mark.anyio
+async def test_lifecycle_idempotency_key_conflict_returns_409():
+    client, _, _ = make_client()
+    async with client:
+        token = await login(client)
+        queued = await client.post(
+            f"/api/v1/campaigns/{CAMPAIGN_ID}/scans",
+            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "queue-before-conflict-0001"},
+            json={"provider_name": "test-provider"},
+        )
+        execution_id = queued.json()["execution_id"]
+        headers = {"Authorization": f"Bearer {token}", "Idempotency-Key": "lifecycle-conflict-key-0001"}
+        first = await client.post(f"/api/v1/scans/{execution_id}/cancel", headers=headers)
+        conflict = await client.post(f"/api/v1/scans/{execution_id}/recover-stale", headers=headers)
+    assert first.status_code == 200
+    assert conflict.status_code == 409
+
+
+@pytest.mark.anyio
+async def test_lifecycle_control_requires_valid_idempotency_key():
+    client, _, _ = make_client()
+    async with client:
+        token = await login(client)
+        queued = await client.post(
+            f"/api/v1/campaigns/{CAMPAIGN_ID}/scans",
+            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "queue-before-missing-0001"},
+            json={"provider_name": "test-provider"},
+        )
+        execution_id = queued.json()["execution_id"]
+        missing = await client.post(
+            f"/api/v1/scans/{execution_id}/cancel",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        malformed = await client.post(
+            f"/api/v1/scans/{execution_id}/cancel",
+            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "bad key"},
         )
     assert missing.status_code == 422
     assert malformed.status_code == 422
