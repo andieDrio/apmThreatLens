@@ -10,6 +10,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from threatlens.auth.service import AuthenticationService, Permission
+from threatlens.attack_paths.engine import AttackPathRelation, AttackPathRelationType
 from threatlens.evidence.service import EvidenceValidationService
 from threatlens.domain.models import Campaign, FindingState, Scope
 from threatlens.evidence.validation import EvidenceValidationState
@@ -249,6 +250,24 @@ class EvidenceListResponse(BaseModel):
     items: list[EvidenceReadModel]
 
 
+class AttackPathRelationCreateRequest(BaseModel):
+    source_asset_id: UUID
+    target_asset_id: UUID
+    relationship_type: str = Field(min_length=1, max_length=64)
+    evidence_ids: list[UUID] = Field(min_length=1, max_length=100)
+
+
+class AttackPathRelationResponse(BaseModel):
+    id: str
+    source_asset_id: str
+    target_asset_id: str
+    relationship_type: str
+    validated: bool
+    evidence_ids: list[str]
+    validated_at: str | None = None
+    validated_by: str | None = None
+
+
 class EvidenceValidationRequest(BaseModel):
     evidence_id: UUID | None = None
     state: str
@@ -437,6 +456,79 @@ def create_app(
             created_at=campaign.created_at.isoformat(),
             include=list(campaign.scope.include),
             exclude=list(campaign.scope.exclude),
+        )
+
+    @app.post(
+        "/api/v1/attack-path/relations",
+        response_model=AttackPathRelationResponse,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def create_attack_path_relation(
+        request: AttackPathRelationCreateRequest,
+        current=Depends(require(Permission.ASSESS)),
+    ) -> AttackPathRelationResponse:
+        try:
+            relation_type = AttackPathRelationType(request.relationship_type)
+            relation = AttackPathRelation(
+                source_asset_id=request.source_asset_id,
+                target_asset_id=request.target_asset_id,
+                relationship_type=relation_type,
+                evidence_ids=tuple(request.evidence_ids),
+            )
+            context.repository.save_attack_path_relation_with_audit(
+                relation, current.user_id
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(exc),
+            ) from exc
+        return AttackPathRelationResponse(
+            id=str(relation.id),
+            source_asset_id=str(relation.source_asset_id),
+            target_asset_id=str(relation.target_asset_id),
+            relationship_type=relation.relationship_type.value,
+            validated=False,
+            evidence_ids=[str(item) for item in relation.evidence_ids],
+        )
+
+    @app.post(
+        "/api/v1/attack-path/relations/{relation_id}/validate",
+        response_model=AttackPathRelationResponse,
+    )
+    def validate_attack_path_relation(
+        relation_id: UUID,
+        current=Depends(require(Permission.VALIDATE)),
+    ) -> AttackPathRelationResponse:
+        try:
+            context.repository.validate_attack_path_relation_with_audit(
+                relation_id, current.user_id
+            )
+            item = context.repository.attack_path_relation_by_id(relation_id)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="attack-path relationship not found",
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+            ) from exc
+        return AttackPathRelationResponse(
+            id=str(item["id"]),
+            source_asset_id=str(item["source_asset_id"]),
+            target_asset_id=str(item["target_asset_id"]),
+            relationship_type=str(item["relationship_type"]),
+            validated=bool(item["validated"]),
+            evidence_ids=[str(value) for value in item["evidence_ids"]],
+            validated_at=item["validated_at"].isoformat() if item["validated_at"] else None,
+            validated_by=str(item["validated_by"]) if item["validated_by"] else None,
         )
 
     @app.get("/api/v1/evidence", response_model=EvidenceListResponse)
