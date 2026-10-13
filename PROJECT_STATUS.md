@@ -62,7 +62,8 @@ The full test run reported five Starlette deprecation warnings for `HTTP_422_UNP
 - **Improved:** execution-bound evidence cannot be sent through the generic PostgreSQL evidence-write method.
 - **Preserved:** scan-row lock and `RUNNING` state verification share the persistence transaction, serializing provider writes against cancellation/recovery/terminal transitions.
 - **Compatibility:** legacy and in-memory repositories can retain unfenced fallback only when they do not declare that execution fencing is mandatory.
-- **Still to verify:** local tests against the exact latest `main` revision and a final inspection for direct provider writes outside `ProviderHandoff`.
+- **Call-path review:** inspected all 15 provider source modules on `main`; the only direct `save_evidence`, `save_finding`, or legacy `persist` calls were the compatibility branches inside `ProviderHandoff`. No provider module was found writing directly around that boundary.
+- **Still to verify:** local tests against the exact latest `main` revision.
 
 ## Recent Completed Gates
 
@@ -90,6 +91,22 @@ The full test run reported five Starlette deprecation warnings for `HTTP_422_UNP
 2. Keep generated Python bytecode/build artifacts out of commits. The repository currently tracks some `.pyc` files, so tests may modify them; clean them before checking final Git status.
 3. Consider a dedicated follow-up cleanup to stop tracking generated `__pycache__`/`.pyc` artifacts and add/verify ignore rules. Do not mix that cleanup into Gate 52 unless it is necessary to validate this gate.
 4. After Gate 52 is validated, inspect the next highest-priority unfinished architecture gap from the latest `main`; do not assume Gate 53's objective until that inspection is complete.
+
+
+## Gate 52 Main-Branch Change References
+
+The following implementation and report commits were pushed directly to `main` during this cycle:
+
+- `c9aa400` — fail closed on unfenced provider handoff
+- `06e6e6e` — guard unfenced execution evidence writes
+- `96176aa` — require fenced durable finding correlation
+- `0c66c72`, `59f6397`, `bead258`, `c699bd6` — regression tests and test cleanup
+- `e4281df` — README Gate 52 status
+- `322714a` — Architecture.md Gate 52 security hardening
+- `8f86db0` — require per-cycle project status reporting
+- `f8e57d3` — add this living project status report
+
+The branch head should be checked again before local validation; the most recent test edit was committed after the initial report was created.
 
 ## Next Required Action
 
