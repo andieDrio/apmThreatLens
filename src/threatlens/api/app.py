@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from threatlens.auth.service import AuthenticationService, Permission
@@ -373,6 +376,29 @@ def create_app(
         redoc_url="/redoc",
     )
     app.state.context = context
+
+    ui_directory = Path(__file__).resolve().parent.parent / "ui"
+    app.mount(
+        "/ui/assets",
+        StaticFiles(directory=ui_directory / "assets"),
+        name="ui-assets",
+    )
+
+    @app.get("/", include_in_schema=False)
+    def dashboard_ui() -> FileResponse:
+        return FileResponse(
+            ui_directory / "index.html",
+            headers={
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+                "Referrer-Policy": "same-origin",
+                "Content-Security-Policy": (
+                    "default-src 'self'; script-src 'self'; style-src 'self'; "
+                    "connect-src 'self'; img-src 'self' data:; object-src 'none'; "
+                    "base-uri 'none'; frame-ancestors 'none'"
+                ),
+            },
+        )
 
     @app.get("/health")
     def health() -> dict[str, str]:
