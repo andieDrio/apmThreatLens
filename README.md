@@ -51,7 +51,7 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 
 ### Current Architecture Gate
 
-Architecture Gate 42: Durable Attack-Path Relationship Validation Boundary. Gate 38 Authenticated Campaign & Scope Control API is complete after explicit local validation. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
+Architecture Gate 43: Authenticated Attack-Path Relationship Control API. Gate 38 Authenticated Campaign & Scope Control API is complete after explicit local validation. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
 
 ### Architecture Gate 35 — Authenticated Evidence Read Model API — COMPLETE
 
@@ -293,3 +293,14 @@ The mutation and security audit event are committed atomically. The boundary doe
 Focused PostgreSQL regression coverage verifies unvalidated creation, asset/evidence integrity, validation fail-closed behavior, audit binding, and idempotent validation.
 
 **Validation status:** Gate 42 implementation and regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 42 can be declared complete.
+
+
+### Architecture Gate 43 — Authenticated Attack-Path Relationship Control API — IMPLEMENTED
+
+Gate 43 exposes explicit attack-path relationship creation and validation through the authenticated API. `POST /api/v1/attack-path/relations` requires ASSESS permission and accepts only a source asset, target asset, enumerated relationship type, and bounded evidence references. The persistence boundary verifies both assets and sealed evidence integrity and always stores the relation as unvalidated.
+
+`POST /api/v1/attack-path/relations/{relation_id}/validate` requires VALIDATE permission. PostgreSQL remains authoritative for row locking, evidence digest verification, current evidence-validation decisions, and atomic security audit persistence. The response is reconstructed from the durable relationship record; client input cannot set validation state or validator identity.
+
+The API does not infer connectivity, trust, or exploitability and does not execute attack-path analysis. The deterministic analyzer continues to consume only explicitly validated, evidence-backed relations.
+
+**Validation status:** Gate 43 implementation and regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 43 can be declared complete.
