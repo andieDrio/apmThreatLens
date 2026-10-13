@@ -239,7 +239,6 @@ async def test_attack_path_relation_validation_returns_not_found():
     assert response.status_code == 404
 
 
-
 @pytest.mark.anyio
 async def test_attack_path_relation_read_model_requires_authentication():
     client, _ = make_client()
