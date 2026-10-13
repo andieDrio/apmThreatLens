@@ -32,3 +32,24 @@ async def test_dashboard_ui_serves_static_assets_with_security_headers():
     assert "localStorage" not in script.text
     assert stylesheet.status_code == 200
     assert ".metric-grid" in stylesheet.text
+
+
+@pytest.mark.anyio
+async def test_login_fails_closed_without_durable_rate_limiter():
+    app = create_app(
+        repository=object(),
+        auth_service=object(),
+        orchestrator=object(),
+        provider_registry=object(),
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/v1/auth/login",
+            json={"username": "operator", "password": "correct-horse-battery-123"},
+        )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "durable login protection unavailable"
