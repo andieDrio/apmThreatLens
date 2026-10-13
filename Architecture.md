@@ -611,6 +611,12 @@ Focused PostgreSQL regression coverage verifies unvalidated creation, asset/evid
 **Validation status:** Gate 42 implementation and regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 42 can be declared complete.
 
 
+## 67. Architecture Gate 44 — Authenticated Attack-Path Relationship Read Model API — IMPLEMENTED
+
+Gate 44 adds `GET /api/v1/attack-path/relations`, protected by READ permission. The endpoint uses bounded pagination (limit 1–100) and deterministic ordering by creation timestamp and ID descending. It returns explicit relationship metadata, validation actor/time, and evidence identifiers, but never raw evidence content. PostgreSQL is the authoritative read source. The API does not infer graph edges or run attack-path analysis.
+
+**Validation status:** Implementation and focused API regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` must pass before this gate is declared complete.
+
 ## 66. Architecture Gate 43 — Authenticated Attack-Path Relationship Control API — IMPLEMENTED
 
 Gate 43 exposes explicit attack-path relationship creation and validation through the authenticated API. `POST /api/v1/attack-path/relations` requires ASSESS permission and accepts only a source asset, target asset, enumerated relationship type, and bounded evidence references. The persistence boundary verifies both assets and sealed evidence integrity and always stores the relation as unvalidated.
