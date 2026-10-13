@@ -136,7 +136,7 @@ class ExecutionRuntime:
         executor: ProviderExecutor,
         cancel_event: Event,
         observer: Callable[[ProviderEvent], None] | None = None,
-        heartbeat: Callable[[], None] | None = None,
+        heartbeat: Callable[[], bool | None] | None = None,
     ) -> ExecutionResult:
         context = ExecutionContext(campaign.id, execution_id, metadata, self.policy, cancel_event)
         events: list[ProviderEvent] = []
@@ -146,6 +146,7 @@ class ExecutionRuntime:
         heartbeat_stop = Event()
         provider_error: list[str] = []
         heartbeat_error: list[str] = []
+        heartbeat_failed = Event()
 
         def emit(event_type: ProviderEventType, message: str = "", **attributes: str) -> None:
             event = ProviderEvent(
@@ -184,15 +185,20 @@ class ExecutionRuntime:
                 if heartbeat is None:
                     continue
                 try:
-                    heartbeat()
+                    renewed = heartbeat()
+                    if renewed is False:
+                        raise RuntimeError("heartbeat lease is no longer owned by this execution")
                 except Exception as exc:
                     heartbeat_error.append(f"{type(exc).__name__}: {exc}")
+                    heartbeat_failed.set()
+                    cancel_event.set()
                     emit(
-                        ProviderEventType.WARNING,
-                        "execution heartbeat update failed",
+                        ProviderEventType.ERROR,
+                        "execution heartbeat lease lost; cancellation requested",
                         error=heartbeat_error[-1],
                     )
                     heartbeat_stop.set()
+                    return
 
         def invoke() -> None:
             try:
@@ -214,8 +220,17 @@ class ExecutionRuntime:
         except BaseException:
             self._concurrency_gate.release()
             raise
-        completed_in_time = done.wait(self.policy.timeout_seconds)
-        timed_out = not completed_in_time
+        deadline = started + self.policy.timeout_seconds
+        completed_in_time = False
+        while not heartbeat_failed.is_set():
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                break
+            if done.wait(min(remaining, 0.05)):
+                completed_in_time = True
+                break
+        heartbeat_failure = heartbeat_failed.is_set()
+        timed_out = not completed_in_time and not heartbeat_failure
         error: str | None = provider_error[0] if provider_error else None
 
         if timed_out:
@@ -227,6 +242,15 @@ class ExecutionRuntime:
                 "TimeoutError: provider exceeded "
                 f"{self.policy.timeout_seconds:.3f}s execution budget"
             )
+            if worker.is_alive():
+                error += "; provider worker did not stop within cancellation grace period"
+            emit(ProviderEventType.ERROR, error)
+        elif heartbeat_failure:
+            cancel_event.set()
+            heartbeat_stop.set()
+            worker.join(self.policy.cancellation_grace_seconds)
+            heartbeat_worker.join(0.1)
+            error = heartbeat_error[0]
             if worker.is_alive():
                 error += "; provider worker did not stop within cancellation grace period"
             emit(ProviderEventType.ERROR, error)
