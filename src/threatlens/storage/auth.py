@@ -167,6 +167,16 @@ class PostgresAuthMixin:
                     action TEXT NOT NULL, resource_type TEXT NOT NULL, resource_id UUID,
                     outcome TEXT NOT NULL, detail TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL
                 )""")
+                cursor.execute("""CREATE TABLE IF NOT EXISTS scan_command_idempotency (
+                    actor_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    idempotency_key TEXT NOT NULL
+                        CHECK (length(idempotency_key) BETWEEN 16 AND 128),
+                    request_hash CHAR(64) NOT NULL,
+                    execution_id UUID NOT NULL UNIQUE
+                        REFERENCES scans(execution_id) ON DELETE CASCADE,
+                    created_at TIMESTAMPTZ NOT NULL,
+                    PRIMARY KEY (actor_user_id, idempotency_key)
+                )""")
                 cursor.execute("""CREATE TABLE IF NOT EXISTS auth_login_rate_limits (
                     bucket_key TEXT PRIMARY KEY,
                     window_started_at TIMESTAMPTZ NOT NULL,
