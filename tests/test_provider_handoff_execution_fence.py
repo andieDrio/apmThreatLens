@@ -6,6 +6,7 @@ import pytest
 from threatlens.domain.models import (
     Asset,
     Campaign,
+    AuditEvent,
     Evidence,
     Finding,
     LifecycleState,
@@ -34,7 +35,16 @@ def running_scan(repository) -> Scan:
     )
     repository.save_campaign(campaign)
     scan = Scan(campaign_id=campaign.id, provider_name="lease-fence-test")
-    repository.save_scan(scan)
+    repository.save_scan_with_audit(
+        scan,
+        AuditEvent(
+            action="SCAN_QUEUED",
+            resource_type="SCAN",
+            resource_id=scan.execution_id,
+            outcome="SUCCESS",
+            detail="provider=lease-fence-test",
+        ),
+    )
     assert repository.update_scan_state_if_current(
         scan.execution_id, LifecycleState.QUEUED, LifecycleState.RUNNING
     )
