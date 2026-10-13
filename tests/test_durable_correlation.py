@@ -1,6 +1,5 @@
 import os
 from threading import Barrier, Thread
-from uuid import uuid4
 
 from threatlens.domain.models import (
     Asset,
