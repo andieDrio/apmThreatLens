@@ -30,6 +30,10 @@ class ScanExecutor(Protocol):
 class ScanRepository(Protocol):
     def save_scan(self, scan: Scan) -> None: ...
     def save_scan_with_audit(self, scan: Scan, event: AuditEvent) -> None: ...
+    def save_scan_with_audit_idempotent(
+        self, scan: Scan, event: AuditEvent, actor_user_id: UUID,
+        idempotency_key: str, request_hash: str,
+    ) -> tuple[Scan, bool]: ...
 
     def update_scan_state(
         self, execution_id: UUID, target: LifecycleState, error: str | None = None
@@ -103,6 +107,36 @@ class ScanOrchestrator:
             ),
         )
         return scan
+
+    def queue_idempotent(
+        self,
+        campaign: Campaign,
+        provider: ScanExecutor,
+        idempotency_key: str,
+        principal: AuthenticatedPrincipal | None = None,
+    ) -> tuple[Scan, bool]:
+        """Queue once per authenticated principal and idempotency key across instances."""
+        validate_campaign_execution(campaign, self.policy)
+        self.authentication.authorize(principal, Permission.ASSESS)
+        if not provider.name.strip():
+            raise ValueError("provider.name cannot be blank")
+        if not 16 <= len(idempotency_key) <= 128:
+            raise ValueError("idempotency key must be within 16..128 characters")
+        request_hash = sha256(
+            f"{campaign.id}\n{provider.name}".encode("utf-8")
+        ).hexdigest()
+        scan = Scan(campaign_id=campaign.id, provider_name=provider.name)
+        event = AuditEvent(
+            actor_user_id=principal.user_id,
+            action="SCAN_QUEUED",
+            resource_type="SCAN",
+            resource_id=scan.execution_id,
+            outcome="SUCCESS",
+            detail=f"provider={provider.name}",
+        )
+        return self.repository.save_scan_with_audit_idempotent(
+            scan, event, principal.user_id, idempotency_key, request_hash
+        )
 
     def recover_stale(
         self, execution_id: UUID, principal: AuthenticatedPrincipal | None = None
