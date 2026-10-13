@@ -134,7 +134,7 @@ class FakeOrchestrator:
             outcome="SUCCESS",
             detail=f"provider={provider.name}",
         )
-        request_hash = sha256(f"{campaign.id}\n{provider.name}".encode("utf-8")).hexdigest()
+        request_hash = sha256(f"{campaign.id}\n{provider.name}".encode()).hexdigest()
         return self.repository.save_scan_with_audit_idempotent(
             scan, event, principal.user_id, idempotency_key, request_hash
         )
