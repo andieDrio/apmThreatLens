@@ -28,5 +28,5 @@ def postgres_repository():
         with psycopg.connect(dsn) as cleanup_connection:
             with cleanup_connection.cursor() as cursor:
                 cursor.execute(
-                    "TRUNCATE TABLE finding_evidence, finding_correlations, evidence_validations, risk_assessments, findings, evidence, services, assets, scans, scope_entries, scopes, campaigns, auth_login_rate_limits, auth_sessions, audit_events, users CASCADE"
+                    "TRUNCATE TABLE finding_evidence, finding_correlations, evidence_validations, risk_assessments, findings, evidence, services, assets, scan_command_idempotency, scans, scope_entries, scopes, campaigns, auth_login_rate_limits, auth_sessions, audit_events, users CASCADE"
                 )
