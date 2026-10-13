@@ -167,6 +167,64 @@ class PostgresAuthMixin:
                     action TEXT NOT NULL, resource_type TEXT NOT NULL, resource_id UUID,
                     outcome TEXT NOT NULL, detail TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL
                 )""")
+                cursor.execute("""CREATE TABLE IF NOT EXISTS auth_login_rate_limits (
+                    bucket_key TEXT PRIMARY KEY,
+                    window_started_at TIMESTAMPTZ NOT NULL,
+                    attempts INTEGER NOT NULL CHECK (attempts > 0)
+                )""")
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_auth_login_rate_limits_window "
+                    "ON auth_login_rate_limits (window_started_at)"
+                )
+
+    def record_login_attempts(
+        self,
+        bucket_keys: tuple[str, ...],
+        now: datetime,
+        window_seconds: int = 60,
+    ) -> dict[str, tuple[int, datetime]]:
+        """Atomically increment privacy-preserving login buckets across all app instances."""
+        if not bucket_keys or len(bucket_keys) > 4:
+            raise ValueError("one to four login rate-limit buckets are required")
+        if not 30 <= window_seconds <= 300:
+            raise ValueError("login rate-limit window must be within 30..300 seconds")
+        if any(not key or len(key) > 128 or any(ch.isspace() for ch in key) for key in bucket_keys):
+            raise ValueError("invalid login rate-limit bucket key")
+        result: dict[str, tuple[int, datetime]] = {}
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        "DELETE FROM auth_login_rate_limits "
+                        "WHERE window_started_at < %s - INTERVAL '10 minutes'",
+                        (now,),
+                    )
+                    for bucket_key in sorted(set(bucket_keys)):
+                        cursor.execute(
+                            """INSERT INTO auth_login_rate_limits
+                                   (bucket_key, window_started_at, attempts)
+                               VALUES (%s, %s, 1)
+                               ON CONFLICT (bucket_key) DO UPDATE SET
+                                   attempts = CASE
+                                       WHEN auth_login_rate_limits.window_started_at
+                                            + (%s * INTERVAL '1 second')
+                                            <= EXCLUDED.window_started_at
+                                       THEN 1
+                                       ELSE auth_login_rate_limits.attempts + 1
+                                   END,
+                                   window_started_at = CASE
+                                       WHEN auth_login_rate_limits.window_started_at
+                                            + (%s * INTERVAL '1 second')
+                                            <= EXCLUDED.window_started_at
+                                       THEN EXCLUDED.window_started_at
+                                       ELSE auth_login_rate_limits.window_started_at
+                                   END
+                               RETURNING attempts, window_started_at""",
+                            (bucket_key, now, window_seconds, window_seconds),
+                        )
+                        attempts, window_started_at = cursor.fetchone()
+                        result[bucket_key] = (int(attempts), window_started_at)
+        return result
 
     def save_user(self, user: User) -> None:
         with self.connection.transaction():
