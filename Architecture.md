@@ -655,7 +655,7 @@ Password verification now validates the PBKDF2 encoding before derivation: itera
 
 The boundary fails closed if durable rate-limit persistence fails; it does not silently fall back to per-process counters. Regression coverage checks rate-limit behavior before valid-password verification, ignored forwarded headers, bounded password-hash parameters, durable PostgreSQL counters, and window expiry.
 
-**Validation status:** Implementation and focused regression tests are committed. Local PostgreSQL-backed `python -m pytest -q`, `ruff check .`, and package wheel build validation are required before Gate 47 is complete.
+**Validation status:** Gate 47 is complete after the user confirmed local PostgreSQL-backed tests, Ruff, and package build checks passed.
 
 
 ## 71. Architecture Gate 48 — Authenticated Security Audit Read Model API — IN PROGRESS
