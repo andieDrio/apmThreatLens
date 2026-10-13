@@ -64,12 +64,6 @@ class DurableFindingCorrelator:
 class SQLiteFindingCorrelationMixin:
     """Persistence primitives used by DurableFindingCorrelator."""
 
-    def persist_correlated_finding_for_execution(
-        self, execution_id: UUID, key: str, finding: Finding
-    ) -> Finding:
-        """Fence correlated provider output by the durable scan lifecycle row."""
-        return self.persist_correlated_finding(key, finding, execution_id=execution_id)
-
     def initialize_finding_correlation(self) -> None:
         with self.connection:
             self.connection.execute(
@@ -280,6 +274,12 @@ class PostgresFindingCorrelationMixin:
                     [(existing.id, evidence_id) for evidence_id in merged.evidence_ids],
                 )
                 return merged
+
+    def persist_correlated_finding_for_execution(
+        self, execution_id: UUID, key: str, finding: Finding
+    ) -> Finding:
+        """Fence correlated provider output by the durable scan lifecycle row."""
+        return self.persist_correlated_finding(key, finding, execution_id=execution_id)
 
     def initialize_finding_correlation(self) -> None:
         with self.connection.transaction():
