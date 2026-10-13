@@ -117,8 +117,8 @@
       const track = document.createElement("div");
       track.className = "bar-track";
       const bar = document.createElement("div");
-      bar.className = `bar-fill ${palette[label] || "bar-neutral"}`;
-      bar.style.width = `${total ? Math.max(0, Math.min(100, value / total * 100)) : 0}%`;
+      const percentage = total ? Math.round(Math.max(0, Math.min(100, value / total * 100)) / 5) * 5 : 0;
+      bar.className = `bar-fill width-${percentage} ${palette[label] || "bar-neutral"}`;
       track.appendChild(bar);
       item.append(top, track);
       container.appendChild(item);
