@@ -89,3 +89,8 @@ Exactly one highest-priority next objective.
 
 ### RECOMMENDATIONS
 Only materially useful recommendations.
+
+
+## Mandatory Project Status Report
+
+After every implementation/update cycle, maintain `PROJECT_STATUS.md` on `main`. Record the current gate and its exact state, root cause, implementation summary, changed files, validation commands and results, security-review findings, commit references, unresolved blockers, user-facing feedback/recommendations, and the single next priority. Distinguish the highest gate number reached from the number of gates fully validated; never inflate completion counts or mark a gate complete based only on code being committed. Update README.md and Architecture.md when the active gate's status or architecture changes. Local validation must be reported only after the user or an available execution environment confirms it against the exact revision.
