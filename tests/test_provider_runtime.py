@@ -104,6 +104,34 @@ def test_runtime_cancels_cooperatively_on_timeout() -> None:
     assert result.events[-1].event_type is ProviderEventType.ERROR
 
 
+def test_runtime_stops_heartbeat_after_successful_completion() -> None:
+    heartbeat_calls = 0
+    lock = Lock()
+
+    def heartbeat() -> None:
+        nonlocal heartbeat_calls
+        with lock:
+            heartbeat_calls += 1
+
+    runtime = ExecutionRuntime(
+        ExecutionPolicy(
+            timeout_seconds=1.0,
+            heartbeat_interval_seconds=0.01,
+            stale_after_seconds=0.1,
+        )
+    )
+    result = runtime.execute(
+        campaign(), uuid4(), metadata("observable"), ObservableProvider(), Event(),
+        heartbeat=heartbeat,
+    )
+    assert result.success
+    with lock:
+        calls_at_return = heartbeat_calls
+    sleep(0.05)
+    with lock:
+        assert heartbeat_calls == calls_at_return
+
+
 class StubbornProvider:
     name = "stubborn"
 
