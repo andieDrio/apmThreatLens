@@ -450,8 +450,14 @@ def create_app(
         client_key = "client:" + hashlib.sha256(peer_host.encode("utf-8")).hexdigest()
         identity_material = f"{peer_host}\0{normalized_username}".encode("utf-8")
         identity_key = "identity:" + hashlib.sha256(identity_material).hexdigest()
+        rate_limiter = getattr(context.repository, "record_login_attempts", None)
+        if not callable(rate_limiter):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="durable login protection unavailable",
+            )
         now = datetime.now(UTC)
-        attempts = context.repository.record_login_attempts(
+        attempts = rate_limiter(
             (client_key, identity_key), now=now, window_seconds=60
         )
         limits = {client_key: 30, identity_key: 5}
