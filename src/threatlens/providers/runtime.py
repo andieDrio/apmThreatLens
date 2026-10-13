@@ -229,6 +229,8 @@ class ExecutionRuntime:
             if done.wait(min(remaining, 0.05)):
                 completed_in_time = True
                 break
+        heartbeat_stop.set()
+        heartbeat_worker.join(0.1)
         heartbeat_failure = heartbeat_failed.is_set()
         timed_out = not completed_in_time and not heartbeat_failure
         error: str | None = provider_error[0] if provider_error else None
