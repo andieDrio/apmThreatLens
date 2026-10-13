@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import httpx
@@ -68,7 +69,7 @@ class FakeRepository:
     def attack_path_relations_read_model(self, limit=50, offset=0):
         ordered = sorted(
             self.relations.values(),
-            key=lambda item: (item.get("created_at") or "", str(item["id"])),
+            key=lambda item: str(item.get("created_at") or ""),
             reverse=True,
         )
         items = ordered[offset : offset + limit]
@@ -257,9 +258,7 @@ async def test_attack_path_relation_read_model_returns_bounded_explicit_relation
         "target_asset_id": repository.target_asset_id,
         "relationship_type": "NETWORK_REACHABILITY",
         "validated": True,
-        "created_at": __import__("datetime").datetime(
-            2026, 10, 13, tzinfo=__import__("datetime").UTC
-        ),
+        "created_at": datetime(2026, 10, 13, tzinfo=UTC),
         "validated_at": None,
         "validated_by": None,
         "evidence_ids": [repository.evidence_id],
