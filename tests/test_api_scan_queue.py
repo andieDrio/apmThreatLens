@@ -96,14 +96,23 @@ class FakeRepository:
         return self.scan_states[execution_id]
 
     def execute_scan_lifecycle_command(
-        self, execution_id, action, actor_user_id, idempotency_key,
-        request_hash, stale_after_seconds, success_event, noop_event,
+        self,
+        execution_id,
+        action,
+        actor_user_id,
+        idempotency_key,
+        request_hash,
+        stale_after_seconds,
+        success_event,
+        noop_event,
     ):
         key = (actor_user_id, idempotency_key)
         existing = self.lifecycle_records.get(key)
         if existing is not None:
             if existing[:3] != (action, request_hash, execution_id):
-                raise ValueError("Idempotency-Key was already used for a different lifecycle command")
+                raise ValueError(
+                    "Idempotency-Key was already used for a different lifecycle command"
+                )
             return existing[3], False
         if execution_id not in self.scan_states:
             raise KeyError(str(execution_id))
@@ -172,27 +181,55 @@ class FakeOrchestrator:
     def cancel_idempotent(self, execution_id, idempotency_key, principal=None):
         request_hash = sha256(f"CANCEL\n{execution_id}".encode()).hexdigest()
         return self.repository.execute_scan_lifecycle_command(
-            execution_id, "CANCEL", principal.user_id, idempotency_key,
-            request_hash, 300,
-            AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED",
-                resource_type="SCAN", resource_id=execution_id, outcome="SUCCESS",
-                detail="scan cancellation requested"),
-            AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED",
-                resource_type="SCAN", resource_id=execution_id, outcome="NOOP",
-                detail="scan already terminal"),
+            execution_id,
+            "CANCEL",
+            principal.user_id,
+            idempotency_key,
+            request_hash,
+            300,
+            AuditEvent(
+                actor_user_id=principal.user_id,
+                action="SCAN_CANCELLED",
+                resource_type="SCAN",
+                resource_id=execution_id,
+                outcome="SUCCESS",
+                detail="scan cancellation requested",
+            ),
+            AuditEvent(
+                actor_user_id=principal.user_id,
+                action="SCAN_CANCELLED",
+                resource_type="SCAN",
+                resource_id=execution_id,
+                outcome="NOOP",
+                detail="scan already terminal",
+            ),
         )
 
     def recover_stale_idempotent(self, execution_id, idempotency_key, principal=None):
         request_hash = sha256(f"RECOVER_STALE\n{execution_id}\n300.0".encode()).hexdigest()
         return self.repository.execute_scan_lifecycle_command(
-            execution_id, "RECOVER_STALE", principal.user_id, idempotency_key,
-            request_hash, 300,
-            AuditEvent(actor_user_id=principal.user_id, action="SCAN_RECOVERED_STALE",
-                resource_type="SCAN", resource_id=execution_id, outcome="SUCCESS",
-                detail="execution heartbeat lease expired"),
-            AuditEvent(actor_user_id=principal.user_id, action="SCAN_RECOVERED_STALE",
-                resource_type="SCAN", resource_id=execution_id, outcome="NOOP",
-                detail="execution heartbeat lease has not expired"),
+            execution_id,
+            "RECOVER_STALE",
+            principal.user_id,
+            idempotency_key,
+            request_hash,
+            300,
+            AuditEvent(
+                actor_user_id=principal.user_id,
+                action="SCAN_RECOVERED_STALE",
+                resource_type="SCAN",
+                resource_id=execution_id,
+                outcome="SUCCESS",
+                detail="execution heartbeat lease expired",
+            ),
+            AuditEvent(
+                actor_user_id=principal.user_id,
+                action="SCAN_RECOVERED_STALE",
+                resource_type="SCAN",
+                resource_id=execution_id,
+                outcome="NOOP",
+                detail="execution heartbeat lease has not expired",
+            ),
         )
 
 
@@ -330,6 +367,7 @@ async def test_queue_does_not_execute_provider():
         )
     assert response.status_code == 201
     assert orchestrator.calls[0][1].name == "test-provider"
+
 
 @pytest.mark.anyio
 async def test_queue_replays_same_idempotency_key_without_duplicate_scan():
@@ -507,12 +545,8 @@ async def test_stale_recovery_replays_noop_result_without_repeated_audit():
             "Authorization": f"Bearer {token}",
             "Idempotency-Key": "recover-stale-replay-0001",
         }
-        first = await client.post(
-            f"/api/v1/scans/{execution_id}/recover-stale", headers=headers
-        )
-        replay = await client.post(
-            f"/api/v1/scans/{execution_id}/recover-stale", headers=headers
-        )
+        first = await client.post(f"/api/v1/scans/{execution_id}/recover-stale", headers=headers)
+        replay = await client.post(f"/api/v1/scans/{execution_id}/recover-stale", headers=headers)
     assert first.status_code == replay.status_code == 200
     assert first.json()["changed"] is replay.json()["changed"] is False
     assert first.headers["idempotency-replayed"] == "false"
