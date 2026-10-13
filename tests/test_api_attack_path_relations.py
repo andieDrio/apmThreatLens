@@ -6,7 +6,8 @@ import pytest
 
 from threatlens.api.app import create_app
 from threatlens.auth.service import AuthenticationService, Role
-from threatlens.domain.models import AuditEvent
+from threatlens.attack_paths.engine import AttackPathRelation, AttackPathRelationType
+from threatlens.domain.models import AuditEvent, Finding, Severity
 
 
 class FakeRepository:
@@ -18,6 +19,12 @@ class FakeRepository:
         self.source_asset_id = uuid4()
         self.target_asset_id = uuid4()
         self.evidence_id = uuid4()
+        self.analysis_snapshot = {
+            "relations": [],
+            "findings": [],
+            "risk_scores": {},
+            "risk_levels": {},
+        }
 
     def save_user(self, user):
         self.users[user.username] = user
@@ -65,6 +72,12 @@ class FakeRepository:
         item["validated"] = True
         item["validated_by"] = actor_user_id
         return True
+
+    def attack_path_analysis_inputs(self, *, entry_asset_ids, objective_asset_ids):
+        known_assets = {self.source_asset_id, self.target_asset_id}
+        if not set(entry_asset_ids + objective_asset_ids).issubset(known_assets):
+            raise KeyError("missing asset")
+        return self.analysis_snapshot
 
     def attack_path_relations_read_model(self, limit=50, offset=0):
         ordered = sorted(
@@ -282,3 +295,104 @@ async def test_attack_path_relation_read_model_returns_bounded_explicit_relation
     assert body["items"][0]["evidence_ids"] == [str(repository.evidence_id)]
     assert "content" not in body["items"][0]
     assert invalid_limit.status_code == 422
+
+
+
+@pytest.mark.anyio
+async def test_attack_path_analysis_requires_assess_permission():
+    client, repository = make_client(Role.VIEWER)
+    async with client:
+        token = await login(client)
+        response = await client.post(
+            "/api/v1/attack-path/analyze",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "entry_asset_ids": [str(repository.source_asset_id)],
+                "objective_asset_ids": [str(repository.target_asset_id)],
+            },
+        )
+    assert response.status_code == 403
+    assert not any(
+        event.action == "ATTACK_PATH_ANALYSIS_COMPLETED"
+        for event in repository.audit_events
+    )
+
+
+@pytest.mark.anyio
+async def test_attack_path_analysis_uses_validated_evidence_backed_graph_and_audits_actor():
+    client, repository = make_client()
+    relation = AttackPathRelation(
+        source_asset_id=repository.source_asset_id,
+        target_asset_id=repository.target_asset_id,
+        relationship_type=AttackPathRelationType.NETWORK_REACHABILITY,
+        evidence_ids=(repository.evidence_id,),
+        validated=True,
+    )
+    finding = Finding(
+        title="Exposed administrative service",
+        asset_id=repository.target_asset_id,
+        evidence_ids=(repository.evidence_id,),
+        severity=Severity.HIGH,
+        confidence=0.95,
+        source="test-provider",
+    )
+    repository.analysis_snapshot = {
+        "relations": [relation],
+        "findings": [finding],
+        "risk_scores": {finding.id: 0.82},
+        "risk_levels": {finding.id: "HIGH"},
+    }
+    async with client:
+        token = await login(client)
+        response = await client.post(
+            "/api/v1/attack-path/analyze",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "entry_asset_ids": [str(repository.source_asset_id)],
+                "objective_asset_ids": [str(repository.target_asset_id)],
+                "max_hops": 4,
+                "max_paths": 10,
+            },
+        )
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["paths"]) == 1
+    assert body["paths"][0]["asset_ids"] == [
+        str(repository.source_asset_id),
+        str(repository.target_asset_id),
+    ]
+    assert body["paths"][0]["relation_ids"] == [str(relation.id)]
+    assert body["paths"][0]["finding_ids"] == [str(finding.id)]
+    assert body["paths"][0]["score"] == 0.82
+    event = repository.audit_events[-1]
+    assert event.action == "ATTACK_PATH_ANALYSIS_COMPLETED"
+    assert event.actor_user_id == repository.users["operator"].id
+
+
+@pytest.mark.anyio
+async def test_attack_path_analysis_rejects_duplicate_or_overlapping_asset_sets():
+    client, repository = make_client()
+    async with client:
+        token = await login(client)
+        headers = {"Authorization": f"Bearer {token}"}
+        duplicate = await client.post(
+            "/api/v1/attack-path/analyze",
+            headers=headers,
+            json={
+                "entry_asset_ids": [
+                    str(repository.source_asset_id),
+                    str(repository.source_asset_id),
+                ],
+                "objective_asset_ids": [str(repository.target_asset_id)],
+            },
+        )
+        overlapping = await client.post(
+            "/api/v1/attack-path/analyze",
+            headers=headers,
+            json={
+                "entry_asset_ids": [str(repository.source_asset_id)],
+                "objective_asset_ids": [str(repository.source_asset_id)],
+            },
+        )
+    assert duplicate.status_code == 422
+    assert overlapping.status_code == 422
