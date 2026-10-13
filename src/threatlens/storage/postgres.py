@@ -1053,7 +1053,11 @@ class PostgresRepository(
                     )
                     existing = cursor.fetchone()
                     if existing is not None:
-                        if existing[0] != action or existing[1].strip() != request_hash or existing[2] != execution_id:
+                        if (
+                            existing[0] != action
+                            or existing[1].strip() != request_hash
+                            or existing[2] != execution_id
+                        ):
                             raise ValueError(
                                 "Idempotency-Key was already used for a different lifecycle command"
                             )
