@@ -709,4 +709,4 @@ The authoritative write methods continue to lock the scan row and verify RUNNING
 
 Regression tests cover missing-fence fallbacks and rejection of execution-bound evidence on the unfenced repository method, alongside the existing late-write and terminal-transition concurrency tests.
 
-**Validation status:** The previous Gate 52 baseline passed Ruff, the full pytest suite, diff checks, and wheel build. The fail-closed security hardening and its new tests have now been committed to main; rerun the full local validation against this exact main revision before marking Gate 52 COMPLETE.
+**Validation status:** COMPLETE. The user confirmed the exact local validation chain passed: `ruff check .`, `git diff --check`, `python -m pytest -q`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel`. The test suite completed without failures; skips and five Starlette deprecation warnings for `HTTP_422_UNPROCESSABLE_ENTITY` were reported. The package wheel built successfully.
