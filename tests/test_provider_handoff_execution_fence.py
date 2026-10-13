@@ -236,3 +236,83 @@ def test_postgres_output_write_serializes_with_terminal_transition(
         assert count_rows(repository, "evidence") == (1 if "written" in outcomes else 0)
     finally:
         other_repository.close()
+
+
+
+class _FenceRequiredLegacyRepository:
+    """Simulate a production repository missing the execution-fenced methods."""
+
+    requires_execution_fence = True
+
+    def __init__(self) -> None:
+        self.unfenced_writes = 0
+
+    def save_evidence(self, evidence) -> None:
+        self.unfenced_writes += 1
+
+    def save_finding(self, finding) -> None:
+        self.unfenced_writes += 1
+
+
+def test_handoff_fails_closed_when_production_repository_lacks_evidence_fence() -> None:
+    repository = _FenceRequiredLegacyRepository()
+    handoff = ProviderHandoff(repository)
+    execution_id = __import__("uuid").uuid4()
+
+    with pytest.raises(RuntimeError, match="requires execution-fenced evidence"):
+        handoff.persist_evidence(
+            execution_id,
+            provider_metadata(),
+            Evidence(kind="http-response", content="must not persist", source="raw"),
+        )
+
+    assert repository.unfenced_writes == 0
+
+
+def test_handoff_fails_closed_when_production_repository_lacks_finding_fence() -> None:
+    repository = _FenceRequiredLegacyRepository()
+    handoff = ProviderHandoff(repository)
+    asset = Asset(
+        canonical_id="fqdn:unfenced.internal",
+        asset_type="fqdn",
+        value="unfenced.internal",
+    )
+    evidence = Evidence(
+        kind="http-response",
+        content="existing evidence",
+        source="raw",
+    )
+    finding = Finding(
+        title="Must not persist without fence",
+        asset_id=asset.id,
+        evidence_ids=(evidence.id,),
+    )
+
+    with pytest.raises(RuntimeError, match="requires execution-fenced finding"):
+        handoff.persist_finding(
+            __import__("uuid").uuid4(),
+            provider_metadata(),
+            asset,
+            finding,
+            (evidence,),
+        )
+
+    assert repository.unfenced_writes == 0
+
+
+def test_postgres_rejects_execution_bound_evidence_on_unfenced_method(
+    postgres_repository,
+) -> None:
+    repository = postgres_repository
+    scan = running_scan(repository)
+    evidence = Evidence(
+        kind="http-response",
+        content="execution-bound evidence",
+        source="lease-fence-test",
+        metadata={"execution_id": str(scan.execution_id)},
+    )
+
+    with pytest.raises(RuntimeError, match="must use save_evidence_for_execution"):
+        repository.save_evidence(evidence)
+
+    assert count_rows(repository, "evidence") == 0
