@@ -340,3 +340,10 @@ Password-hash verification now rejects malformed PBKDF2 encodings, unexpected sa
 Gate 48 adds the admin-only, read-only `GET /api/v1/audit-events` endpoint backed by the existing PostgreSQL `audit_events` table. The read model enforces bounded pagination (`limit=1..100`, `offset>=0`), parameterized SQL, deterministic `created_at DESC, id DESC` ordering, and an ordering index. Its explicit response allowlist excludes free-text event details and secret-bearing fields. API regression tests cover authentication, ADMIN authorization, pagination bounds, empty pages, and response-field allowlisting; PostgreSQL integration tests cover empty results, deterministic ordering, pagination, and detail omission.
 
 **Validation status:** User confirmed 33 focused API/PostgreSQL integration tests passed, the full pytest suite passed, `ruff check .` passed, `git diff --check` passed, and the package wheel built successfully. Five existing Starlette deprecation warnings were reported during the full suite; they did not fail validation.
+
+
+### Architecture Gate 52 — Execution-Lease-Fenced Evidence and Finding Persistence — COMPLETE
+
+Gate 52 hardens the production evidence/finding persistence boundary against late writes and misconfigured compatibility paths. PostgreSQL execution-bound writes lock the authoritative scan row, require the execution to remain RUNNING, and persist under the same transaction. The production repository declares execution fencing mandatory; ProviderHandoff and DurableFindingCorrelator fail closed when a fenced method is unavailable, and generic PostgreSQL evidence writes reject execution-bound evidence.
+
+**Validation status:** User confirmed the exact local validation chain passed: `ruff check .`, `git diff --check`, `python -m pytest -q`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel`. The full test suite reported skips and five Starlette deprecation warnings for `HTTP_422_UNPROCESSABLE_ENTITY`; no failures were reported. The wheel built successfully.
