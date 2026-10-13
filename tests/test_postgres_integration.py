@@ -456,3 +456,67 @@ def test_postgres_lifecycle_command_idempotency_serializes_cross_instance_retrie
             )
     finally:
         repo2.close()
+
+
+def test_postgres_lifecycle_idempotency_and_audit_are_atomic_on_audit_failure(
+    postgres_repository,
+):
+    repo = postgres_repository
+    campaign = make_campaign()
+    repo.save_campaign(campaign)
+    auth = AuthenticationService(repo)
+    auth.create_user("lifecycle-atomic", "correct horse battery staple", Role.ANALYST)
+    principal, _ = auth.authenticate("lifecycle-atomic", "correct horse battery staple")
+    orchestrator = ScanOrchestrator(repo, ExecutionPolicy(), auth)
+
+    class Provider:
+        name = "lifecycle-atomic-provider"
+
+        def execute(self, campaign, execution_id, cancel_event):
+            raise AssertionError("queueing must not execute providers")
+
+    scan, _ = orchestrator.queue_idempotent(
+        campaign, Provider(), "lifecycle-atomic-queue-0001", principal=principal
+    )
+    assert repo.update_scan_state_if_current(
+        scan.execution_id, LifecycleState.QUEUED, LifecycleState.RUNNING
+    )
+    repo.connection.execute(
+        """
+        CREATE OR REPLACE FUNCTION fail_lifecycle_cancel_audit_fn()
+        RETURNS trigger AS $$
+        BEGIN
+            IF NEW.action = 'SCAN_CANCELLED' THEN
+                RAISE EXCEPTION 'injected lifecycle audit failure';
+            END IF;
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        CREATE TRIGGER fail_lifecycle_cancel_audit
+        BEFORE INSERT ON audit_events
+        FOR EACH ROW EXECUTE FUNCTION fail_lifecycle_cancel_audit_fn()
+        """
+    )
+    repo.connection.commit()
+
+    key = "lifecycle-atomic-cancel-0001"
+    with pytest.raises(Exception, match="injected lifecycle audit failure"):
+        orchestrator.cancel_idempotent(scan.execution_id, key, principal=principal)
+    assert repo.scan_state(scan.execution_id) is LifecycleState.RUNNING
+    assert repo.count("scan_lifecycle_command_idempotency") == 0
+
+    repo.connection.execute(
+        "DROP TRIGGER fail_lifecycle_cancel_audit ON audit_events; "
+        "DROP FUNCTION fail_lifecycle_cancel_audit_fn()"
+    )
+    repo.connection.commit()
+    changed, created = orchestrator.cancel_idempotent(
+        scan.execution_id, key, principal=principal
+    )
+    assert changed is True
+    assert created is True
+    assert repo.scan_state(scan.execution_id) is LifecycleState.CANCELLED
+    assert repo.count("scan_lifecycle_command_idempotency") == 1
+    assert repo.connection.execute(
+        "SELECT COUNT(*) FROM audit_events WHERE action='SCAN_CANCELLED'"
+    ).fetchone()[0] == 1
