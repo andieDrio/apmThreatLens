@@ -131,7 +131,8 @@ async def test_attack_path_relation_creation_is_explicit_and_unvalidated():
     assert body["validated"] is False
     assert body["relationship_type"] == "NETWORK_REACHABILITY"
     assert body["evidence_ids"] == [str(repository.evidence_id)]
-    assert repository.relations[next(iter(repository.relations))]["actor_user_id"] == repository.users["operator"].id
+    relation = repository.relations[next(iter(repository.relations))]
+    assert relation["actor_user_id"] == repository.users["operator"].id
 
 
 @pytest.mark.anyio
