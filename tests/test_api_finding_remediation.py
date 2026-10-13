@@ -201,7 +201,7 @@ async def test_finding_remediation_rejects_invalid_transition_and_audits_denial(
         token = await login(client)
         response = await client.post(
             f"/api/v1/findings/{finding_id}/remediation",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "remediate-test-key-0001"},
             json={"state": "MITIGATED", "rationale": "fix verified"},
         )
     assert response.status_code == 409
@@ -220,7 +220,7 @@ async def test_finding_remediation_is_idempotent_for_terminal_target():
         token = await login(client)
         response = await client.post(
             f"/api/v1/findings/{finding_id}/remediation",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "remediate-test-key-0001"},
             json={"state": "MITIGATED", "rationale": "already verified"},
         )
     assert response.status_code == 200
@@ -237,7 +237,7 @@ async def test_finding_remediation_returns_not_found():
         token = await login(client)
         response = await client.post(
             f"/api/v1/findings/{missing_id}/remediation",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "remediate-test-key-0001"},
             json={"state": "MITIGATED", "rationale": "fix verified"},
         )
     assert response.status_code == 404
