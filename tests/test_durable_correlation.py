@@ -96,7 +96,9 @@ def test_durable_correlation_survives_new_correlator_instance(postgres_repositor
     h = ProviderHandoff(repo, correlator=c)
     execution_a = running_execution(repo, a.name)
     execution_b = running_execution(repo, b.name)
-    e = h.persist_evidence(execution_a, a, Evidence(kind="scan", content="same", source="scanner-a"))
+    e = h.persist_evidence(
+        execution_a, a, Evidence(kind="scan", content="same", source="scanner-a")
+    )
     original = h.persist_finding(execution_a, a, asset, finding(asset, e.id), (e,))
     restarted = DurableFindingCorrelator(repo)
     e2 = ProviderHandoff(repo, correlator=restarted).persist_evidence(
