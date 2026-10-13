@@ -241,8 +241,12 @@ async def test_invalid_credentials_fail_closed(client):
 @pytest.mark.anyio
 async def test_login_rate_limit_blocks_before_password_verification(client):
     payload = {"username": "analyst", "password": "wrong-password"}
-    for _ in range(5):
-        response = await client.post("/api/v1/auth/login", json=payload)
+    for attempt in range(5):
+        response = await client.post(
+            "/api/v1/auth/login",
+            json=payload,
+            headers={"X-Forwarded-For": f"198.51.100.{attempt + 1}"},
+        )
         assert response.status_code == 401
 
     blocked = await client.post(
