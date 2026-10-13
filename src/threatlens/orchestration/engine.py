@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from hashlib import sha256
+import re
 from threading import BoundedSemaphore, Event, Thread
 from typing import Protocol
 from collections.abc import Callable
@@ -121,8 +122,8 @@ class ScanOrchestrator:
         self.authentication.authorize(principal, Permission.ASSESS)
         if not provider.name.strip():
             raise ValueError("provider.name cannot be blank")
-        if not 16 <= len(idempotency_key) <= 128:
-            raise ValueError("idempotency key must be within 16..128 characters")
+        if not re.fullmatch(r"[A-Za-z0-9._:-]{16,128}", idempotency_key):
+            raise ValueError("idempotency key must be 16..128 safe ASCII characters")
         request_hash = sha256(
             f"{campaign.id}\n{provider.name}".encode("utf-8")
         ).hexdigest()
