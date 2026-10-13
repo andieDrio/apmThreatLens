@@ -65,6 +65,20 @@ class FakeRepository:
         item["validated_by"] = actor_user_id
         return True
 
+    def attack_path_relations_read_model(self, limit=50, offset=0):
+        ordered = sorted(
+            self.relations.values(),
+            key=lambda item: (item.get("created_at") or "", str(item["id"])),
+            reverse=True,
+        )
+        items = ordered[offset : offset + limit]
+        return {
+            "total": len(ordered),
+            "limit": limit,
+            "offset": offset,
+            "items": items,
+        }
+
     def attack_path_relation_by_id(self, relation_id):
         item = self.relations.get(relation_id)
         if item is None:
@@ -222,3 +236,51 @@ async def test_attack_path_relation_validation_returns_not_found():
             headers={"Authorization": f"Bearer {token}"},
         )
     assert response.status_code == 404
+
+
+
+@pytest.mark.anyio
+async def test_attack_path_relation_read_model_requires_authentication():
+    client, _ = make_client()
+    async with client:
+        response = await client.get("/api/v1/attack-path/relations")
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_attack_path_relation_read_model_returns_bounded_explicit_relationships():
+    client, repository = make_client(Role.VIEWER)
+    relation_id = uuid4()
+    repository.relations[relation_id] = {
+        "id": relation_id,
+        "source_asset_id": repository.source_asset_id,
+        "target_asset_id": repository.target_asset_id,
+        "relationship_type": "NETWORK_REACHABILITY",
+        "validated": True,
+        "created_at": __import__("datetime").datetime(
+            2026, 10, 13, tzinfo=__import__("datetime").UTC
+        ),
+        "validated_at": None,
+        "validated_by": None,
+        "evidence_ids": [repository.evidence_id],
+    }
+    async with client:
+        token = await login(client)
+        response = await client.get(
+            "/api/v1/attack-path/relations?limit=10&offset=0",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        invalid_limit = await client.get(
+            "/api/v1/attack-path/relations?limit=101",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["limit"] == 10
+    assert body["offset"] == 0
+    assert body["items"][0]["id"] == str(relation_id)
+    assert body["items"][0]["validated"] is True
+    assert body["items"][0]["evidence_ids"] == [str(repository.evidence_id)]
+    assert "content" not in body["items"][0]
+    assert invalid_limit.status_code == 422
