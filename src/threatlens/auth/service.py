@@ -66,13 +66,27 @@ class AuthenticationService:
     def _verify_password(password: str, encoded: str) -> bool:
         try:
             scheme, iteration_text, salt_hex, digest_hex = encoded.split("$")
-            if scheme != "pbkdf2_sha256":
+            if (
+                scheme != "pbkdf2_sha256"
+                or not iteration_text.isascii()
+                or not iteration_text.isdigit()
+                or len(iteration_text) > 7
+                or len(salt_hex) != 32
+                or len(digest_hex) != 64
+            ):
                 return False
-            expected = AuthenticationService._hash_password(
-                password, bytes.fromhex(salt_hex), int(iteration_text)
+            iterations = int(iteration_text)
+            if not 100_000 <= iterations <= 1_000_000:
+                return False
+            salt = bytes.fromhex(salt_hex)
+            expected_digest = bytes.fromhex(digest_hex)
+            if len(salt) != 16 or len(expected_digest) != 32:
+                return False
+            actual_digest = hashlib.pbkdf2_hmac(
+                "sha256", password.encode("utf-8"), salt, iterations
             )
-            return hmac.compare_digest(expected, encoded)
-        except (ValueError, TypeError):
+            return hmac.compare_digest(actual_digest, expected_digest)
+        except (ValueError, TypeError, AttributeError):
             return False
 
     def create_user(self, username: str, password: str, role: Role = Role.VIEWER) -> User:
