@@ -291,7 +291,7 @@ def test_handoff_fails_closed_when_production_repository_lacks_finding_fence() -
 
     with pytest.raises(RuntimeError, match="requires execution-fenced finding"):
         handoff.persist_finding(
-            __import__("uuid").uuid4(),
+            uuid4(),
             provider_metadata(),
             asset,
             finding,
