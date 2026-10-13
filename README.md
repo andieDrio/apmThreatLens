@@ -333,4 +333,10 @@ Gate 47 adds a PostgreSQL-backed login-attempt limiter with a 60-second lockout 
 
 Password-hash verification now rejects malformed PBKDF2 encodings, unexpected salt/digest lengths, and iteration counts outside 100,000–1,000,000 before running the expensive derivation. The current 600,000-iteration password hashes remain supported.
 
-**Validation status:** Focused API, password-hash, and PostgreSQL persistence tests are committed. Local PostgreSQL-backed `python -m pytest -q`, `ruff check .`, and package/build validation remain required before Gate 47 is complete.
+**Validation status:** Gate 47 is complete after the user confirmed local PostgreSQL-backed tests, Ruff, and package build checks passed.
+
+### Architecture Gate 48 — Authenticated Security Audit Read Model API — COMPLETE
+
+Gate 48 adds the admin-only, read-only `GET /api/v1/audit-events` endpoint backed by the existing PostgreSQL `audit_events` table. The read model enforces bounded pagination (`limit=1..100`, `offset>=0`), parameterized SQL, deterministic `created_at DESC, id DESC` ordering, and an ordering index. Its explicit response allowlist excludes free-text event details and secret-bearing fields. API regression tests cover authentication, ADMIN authorization, pagination bounds, empty pages, and response-field allowlisting; PostgreSQL integration tests cover empty results, deterministic ordering, pagination, and detail omission.
+
+**Validation status:** User confirmed 33 focused API/PostgreSQL integration tests passed, the full pytest suite passed, `ruff check .` passed, `git diff --check` passed, and the package wheel built successfully. Five existing Starlette deprecation warnings were reported during the full suite; they did not fail validation.
