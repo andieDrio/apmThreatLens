@@ -783,17 +783,28 @@ class PostgresRepository(
                     )
                     existing = cursor.fetchone()
                     if existing is not None:
-                        if existing[0] != finding_id or existing[1].strip() != request_hash:
+                        if (
+                            existing[0] != finding_id
+                            or existing[1].strip() != request_hash
+                        ):
                             raise ValueError(
-                                "Idempotency-Key was already used for a different remediation request"
+                                "Idempotency-Key was already used for a different "
+                                "remediation request"
                             )
-                        return bool(existing[2]), FindingState(existing[3]), bool(existing[4]), False
+                        return (
+                            bool(existing[2]),
+                            FindingState(existing[3]),
+                            bool(existing[4]),
+                            False,
+                        )
 
-                    changed, state, allowed = self.transition_finding_remediation_with_audit(
+                    changed, state, allowed = (
+                        self.transition_finding_remediation_with_audit(
                         finding_id=finding_id,
                         target_state=target_state,
                         actor_user_id=actor_user_id,
-                        rationale=rationale,
+                            rationale=rationale,
+                        )
                     )
                     cursor.execute(
                         """INSERT INTO finding_remediation_idempotency
