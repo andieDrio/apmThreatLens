@@ -636,7 +636,7 @@ Focused API regression tests cover permission boundaries, explicit relationship 
 **Validation status:** User confirmed local `pytest -q` and `ruff check .` passed. Gate 43 is complete.
 
 
-## 69. Architecture Gate 46 — First Authenticated Dashboard UI Vertical Slice — IMPLEMENTED
+## 69. Architecture Gate 46 — First Authenticated Dashboard UI Vertical Slice — COMPLETE
 
 Gate 46 introduces the first visible web interface without replacing or bypassing the existing application and authorization boundaries. FastAPI serves the dashboard document at `/` and packaged static assets at `/ui/assets`. The responsive dashboard provides a sign-in screen and read-only panels for persisted campaign, asset, service, finding, severity, and scan lifecycle data by calling the existing READ-protected endpoints for dashboard summary, assets, findings, scans, and the authenticated principal.
 
@@ -644,4 +644,15 @@ The page does not create scans, findings, relationships, or evidence. Session to
 
 A focused regression test checks the dashboard response, security headers, and static asset delivery.
 
-**Validation status:** Implementation and focused regression test are committed. Local PostgreSQL-backed `python -m pytest -q`, `ruff check .`, and package/build validation remain required before Gate 46 is complete.
+**Validation status:** User confirmed local `python -m pytest -q`, `ruff check .`, and package wheel build passed. Gate 46 is complete.
+
+
+## 70. Architecture Gate 47 — Durable Login Abuse Protection — IMPLEMENTED
+
+Gate 47 protects the login boundary before password verification. The API uses the direct transport peer address and normalized username to derive non-reversible SHA-256 bucket fingerprints; it deliberately ignores `X-Forwarded-For` and related client-controlled forwarding headers unless a separate trusted-proxy boundary is explicitly designed. PostgreSQL stores only the bucket fingerprint, window start, and attempt count. Atomic upserts provide cross-instance serialization, with a five-attempt per username/direct-peer limit and a 30-attempt per direct-peer limit over a 60-second rolling window. Old buckets are pruned, and blocked requests receive HTTP 429 plus a Retry-After header. A `LOGIN_RATE_LIMITED` audit event is written only at the threshold crossing to avoid unbounded audit amplification.
+
+Password verification now validates the PBKDF2 encoding before derivation: iteration counts must be within 100,000–1,000,000, salt length must be 16 bytes, and digest length must be 32 bytes. This retains compatibility with the current 600,000-iteration hashes while preventing malformed stored values from selecting unbounded derivation cost.
+
+The boundary fails closed if durable rate-limit persistence fails; it does not silently fall back to per-process counters. Regression coverage checks rate-limit behavior before valid-password verification, ignored forwarded headers, bounded password-hash parameters, durable PostgreSQL counters, and window expiry.
+
+**Validation status:** Implementation and focused regression tests are committed. Local PostgreSQL-backed `python -m pytest -q`, `ruff check .`, and package wheel build validation are required before Gate 47 is complete.
