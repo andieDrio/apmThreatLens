@@ -418,11 +418,17 @@ async def test_cancel_replays_lifecycle_command_without_duplicate_audit():
         token = await login(client)
         queued = await client.post(
             f"/api/v1/campaigns/{CAMPAIGN_ID}/scans",
-            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "queue-before-cancel-0001"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "queue-before-cancel-0001",
+            },
             json={"provider_name": "test-provider"},
         )
         execution_id = queued.json()["execution_id"]
-        headers = {"Authorization": f"Bearer {token}", "Idempotency-Key": "cancel-replay-command-0001"}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Idempotency-Key": "cancel-replay-command-0001",
+        }
         first = await client.post(f"/api/v1/scans/{execution_id}/cancel", headers=headers)
         replay = await client.post(f"/api/v1/scans/{execution_id}/cancel", headers=headers)
     assert first.status_code == replay.status_code == 200
@@ -440,11 +446,17 @@ async def test_lifecycle_idempotency_key_conflict_returns_409():
         token = await login(client)
         queued = await client.post(
             f"/api/v1/campaigns/{CAMPAIGN_ID}/scans",
-            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "queue-before-conflict-0001"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "queue-before-conflict-0001",
+            },
             json={"provider_name": "test-provider"},
         )
         execution_id = queued.json()["execution_id"]
-        headers = {"Authorization": f"Bearer {token}", "Idempotency-Key": "lifecycle-conflict-key-0001"}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Idempotency-Key": "lifecycle-conflict-key-0001",
+        }
         first = await client.post(f"/api/v1/scans/{execution_id}/cancel", headers=headers)
         conflict = await client.post(f"/api/v1/scans/{execution_id}/recover-stale", headers=headers)
     assert first.status_code == 200
@@ -458,7 +470,10 @@ async def test_lifecycle_control_requires_valid_idempotency_key():
         token = await login(client)
         queued = await client.post(
             f"/api/v1/campaigns/{CAMPAIGN_ID}/scans",
-            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "queue-before-missing-0001"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "queue-before-missing-0001",
+            },
             json={"provider_name": "test-provider"},
         )
         execution_id = queued.json()["execution_id"]
