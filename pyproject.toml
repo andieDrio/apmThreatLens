@@ -23,6 +23,7 @@ pythonpath = ["src"]
 addopts = "-q"
 
 [tool.ruff]
+extend-exclude = ["build", "dist"]
 line-length = 100
 target-version = "py311"
 

@@ -448,7 +448,7 @@ def create_app(
             peer_host = "unknown"
         normalized_username = request.username.strip().casefold()
         client_key = "client:" + hashlib.sha256(peer_host.encode("utf-8")).hexdigest()
-        identity_material = f"{peer_host}\0{normalized_username}".encode("utf-8")
+        identity_material = f"{peer_host}\0{normalized_username}".encode()
         identity_key = "identity:" + hashlib.sha256(identity_material).hexdigest()
         rate_limiter = getattr(context.repository, "record_login_attempts", None)
         if not callable(rate_limiter):
