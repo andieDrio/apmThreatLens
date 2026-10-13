@@ -1,3 +1,4 @@
+from hashlib import sha256
 from uuid import uuid4
 
 import httpx
@@ -34,6 +35,7 @@ class FakeRepository:
             )
         }
         self.queued = []
+        self.idempotency_records = {}
 
     def record_login_attempts(self, bucket_keys, now, window_seconds=60):
         result = {}
@@ -85,6 +87,20 @@ class FakeRepository:
         self.queued.append(scan)
         self.audit_events.append(event)
 
+    def save_scan_with_audit_idempotent(
+        self, scan, event, actor_user_id, idempotency_key, request_hash
+    ):
+        key = (actor_user_id, idempotency_key)
+        existing = self.idempotency_records.get(key)
+        if existing is not None:
+            if existing[0] != request_hash:
+                raise ValueError("Idempotency-Key was already used for a different scan request")
+            return existing[1], False
+        self.queued.append(scan)
+        self.audit_events.append(event)
+        self.idempotency_records[key] = (request_hash, scan)
+        return scan, True
+
 
 class FakeOrchestrator:
     def __init__(self, repository):
@@ -106,6 +122,22 @@ class FakeOrchestrator:
             ),
         )
         return scan
+
+    def queue_idempotent(self, campaign, provider, idempotency_key, principal=None):
+        self.calls.append((campaign, provider, principal))
+        scan = Scan(campaign_id=campaign.id, provider_name=provider.name)
+        event = AuditEvent(
+            actor_user_id=principal.user_id,
+            action="SCAN_QUEUED",
+            resource_type="SCAN",
+            resource_id=scan.execution_id,
+            outcome="SUCCESS",
+            detail=f"provider={provider.name}",
+        )
+        request_hash = sha256(f"{campaign.id}\n{provider.name}".encode()).hexdigest()
+        return self.repository.save_scan_with_audit_idempotent(
+            scan, event, principal.user_id, idempotency_key, request_hash
+        )
 
 
 def make_client(role=Role.ANALYST):
@@ -150,6 +182,7 @@ async def test_queue_requires_authentication():
     async with client:
         response = await client.post(
             f"/api/v1/campaigns/{CAMPAIGN_ID}/scans",
+            headers={"Idempotency-Key": "queue-test-key-0001"},
             json={"provider_name": "test-provider"},
         )
     assert response.status_code == 401
@@ -162,7 +195,7 @@ async def test_queue_requires_assess_permission():
         token = await login(client)
         response = await client.post(
             f"/api/v1/campaigns/{CAMPAIGN_ID}/scans",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "queue-test-key-0001"},
             json={"provider_name": "test-provider"},
         )
     assert response.status_code == 403
@@ -175,7 +208,7 @@ async def test_queue_routes_through_orchestrator_with_authenticated_principal():
         token = await login(client)
         response = await client.post(
             f"/api/v1/campaigns/{CAMPAIGN_ID}/scans",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "queue-test-key-0001"},
             json={"provider_name": "test-provider"},
         )
     assert response.status_code == 201
@@ -197,7 +230,7 @@ async def test_queue_rejects_unknown_campaign():
         token = await login(client)
         response = await client.post(
             f"/api/v1/campaigns/{unknown}/scans",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "queue-test-key-0001"},
             json={"provider_name": "test-provider"},
         )
     assert response.status_code == 404
@@ -210,7 +243,7 @@ async def test_queue_rejects_unknown_provider():
         token = await login(client)
         response = await client.post(
             f"/api/v1/campaigns/{CAMPAIGN_ID}/scans",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "queue-test-key-0001"},
             json={"provider_name": "not-registered"},
         )
     assert response.status_code == 404
@@ -223,7 +256,7 @@ async def test_queue_rejects_malformed_campaign_id():
         token = await login(client)
         response = await client.post(
             "/api/v1/campaigns/not-a-uuid/scans",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "queue-test-key-0001"},
             json={"provider_name": "test-provider"},
         )
     assert response.status_code == 422
@@ -236,8 +269,87 @@ async def test_queue_does_not_execute_provider():
         token = await login(client)
         response = await client.post(
             f"/api/v1/campaigns/{CAMPAIGN_ID}/scans",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "queue-test-key-0001"},
             json={"provider_name": "test-provider"},
         )
     assert response.status_code == 201
     assert orchestrator.calls[0][1].name == "test-provider"
+
+@pytest.mark.anyio
+async def test_queue_replays_same_idempotency_key_without_duplicate_scan():
+    client, repository, _ = make_client()
+    async with client:
+        token = await login(client)
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Idempotency-Key": "queue-replay-key-0001",
+        }
+        first = await client.post(
+            f"/api/v1/campaigns/{CAMPAIGN_ID}/scans",
+            headers=headers,
+            json={"provider_name": "test-provider"},
+        )
+        replay = await client.post(
+            f"/api/v1/campaigns/{CAMPAIGN_ID}/scans",
+            headers=headers,
+            json={"provider_name": "test-provider"},
+        )
+    assert first.status_code == replay.status_code == 201
+    assert first.json()["execution_id"] == replay.json()["execution_id"]
+    assert first.headers["idempotency-replayed"] == "false"
+    assert replay.headers["idempotency-replayed"] == "true"
+    assert len(repository.queued) == 1
+    assert sum(event.action == "SCAN_QUEUED" for event in repository.audit_events) == 1
+
+
+@pytest.mark.anyio
+async def test_queue_rejects_idempotency_key_reused_for_different_request():
+    client, repository, _ = make_client()
+    second_campaign_id = uuid4()
+    repository.campaigns[second_campaign_id] = Campaign(
+        id=second_campaign_id,
+        name="another-authorized-campaign",
+        scope=Scope(include=("10.0.0.11",)),
+        authorized=True,
+    )
+    async with client:
+        token = await login(client)
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Idempotency-Key": "queue-conflict-key-0001",
+        }
+        first = await client.post(
+            f"/api/v1/campaigns/{CAMPAIGN_ID}/scans",
+            headers=headers,
+            json={"provider_name": "test-provider"},
+        )
+        conflict = await client.post(
+            f"/api/v1/campaigns/{second_campaign_id}/scans",
+            headers=headers,
+            json={"provider_name": "test-provider"},
+        )
+    assert first.status_code == 201
+    assert conflict.status_code == 409
+    assert len(repository.queued) == 1
+
+
+@pytest.mark.anyio
+async def test_queue_requires_valid_idempotency_key():
+    client, _, _ = make_client()
+    async with client:
+        token = await login(client)
+        missing = await client.post(
+            f"/api/v1/campaigns/{CAMPAIGN_ID}/scans",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"provider_name": "test-provider"},
+        )
+        malformed = await client.post(
+            f"/api/v1/campaigns/{CAMPAIGN_ID}/scans",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "bad key",
+            },
+            json={"provider_name": "test-provider"},
+        )
+    assert missing.status_code == 422
+    assert malformed.status_code == 422

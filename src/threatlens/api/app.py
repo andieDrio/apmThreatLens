@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -1171,12 +1171,23 @@ def create_app(
     def queue_scan(
         campaign_id: UUID,
         request: ScanQueueRequest,
+        response: Response,
+        idempotency_key: str = Header(
+            ...,
+            alias="Idempotency-Key",
+            min_length=16,
+            max_length=128,
+            pattern=r"^[A-Za-z0-9._:-]{16,128}$",
+        ),
         current=Depends(require(Permission.ASSESS)),
     ) -> ScanQueueResponse:
         try:
             campaign = context.repository.campaign_by_id(campaign_id)
             _, provider = context.provider_registry.get(request.provider_name)
-            scan = context.orchestrator.queue(campaign, provider, principal=current)
+            scan, created = context.orchestrator.queue_idempotent(
+                campaign, provider, idempotency_key=idempotency_key, principal=current
+            )
+            response.headers["Idempotency-Replayed"] = "false" if created else "true"
         except KeyError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
         except PermissionError as exc:
