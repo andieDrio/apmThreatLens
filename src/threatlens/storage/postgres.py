@@ -293,6 +293,52 @@ class PostgresRepository(
             "evidence_ids": list(row[7] or []),
         }
 
+    def attack_path_relations_read_model(
+        self, limit: int = 50, offset: int = 0
+    ) -> dict[str, object]:
+        """Return a bounded, deterministic page of explicit attack-path relationships."""
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM attack_path_relations")
+            total = cursor.fetchone()[0]
+            cursor.execute(
+                """SELECT r.id, r.source_asset_id, r.target_asset_id,
+                          r.relationship_type, r.validated, r.created_at,
+                          r.validated_at, r.validated_by,
+                          COALESCE(
+                              array_agg(re.evidence_id ORDER BY re.evidence_id)
+                              FILTER (WHERE re.evidence_id IS NOT NULL),
+                              ARRAY[]::UUID[]
+                          )
+                   FROM attack_path_relations r
+                   LEFT JOIN attack_path_relation_evidence re ON re.relation_id = r.id
+                   GROUP BY r.id, r.source_asset_id, r.target_asset_id,
+                            r.relationship_type, r.validated, r.created_at,
+                            r.validated_at, r.validated_by
+                   ORDER BY r.created_at DESC, r.id DESC
+                   LIMIT %s OFFSET %s""",
+                (limit, offset),
+            )
+            rows = cursor.fetchall()
+        return {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "items": [
+                {
+                    "id": row[0],
+                    "source_asset_id": row[1],
+                    "target_asset_id": row[2],
+                    "relationship_type": row[3],
+                    "validated": row[4],
+                    "created_at": row[5],
+                    "validated_at": row[6],
+                    "validated_by": row[7],
+                    "evidence_ids": list(row[8] or []),
+                }
+                for row in rows
+            ],
+        }
+
     def save_campaign(self, campaign: Campaign) -> None:
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
