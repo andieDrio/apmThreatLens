@@ -188,3 +188,49 @@ def test_runtime_stops_heartbeat_after_non_cooperative_timeout() -> None:
     calls_at_return = heartbeat_calls
     sleep(0.05)
     assert heartbeat_calls == calls_at_return
+
+@pytest.mark.parametrize(
+    ("heartbeat_outcome", "expected_error"),
+    [
+        ("lease-lost", "heartbeat lease is no longer owned"),
+        ("storage-failure", "database unavailable"),
+    ],
+)
+def test_runtime_fails_closed_when_heartbeat_lease_is_lost(
+    heartbeat_outcome: str, expected_error: str
+) -> None:
+    runtime = ExecutionRuntime(
+        ExecutionPolicy(
+            timeout_seconds=1.0,
+            cancellation_grace_seconds=0.05,
+            heartbeat_interval_seconds=0.01,
+            stale_after_seconds=0.1,
+        )
+    )
+    cancel_event = Event()
+
+    def heartbeat() -> bool:
+        if heartbeat_outcome == "storage-failure":
+            raise OSError("database unavailable")
+        return False
+
+    result = runtime.execute(
+        campaign(),
+        uuid4(),
+        metadata("slow"),
+        SlowProvider(),
+        cancel_event,
+        heartbeat=heartbeat,
+    )
+
+    assert not result.success
+    assert not result.cancelled
+    assert not result.timed_out
+    assert cancel_event.is_set()
+    assert expected_error in (result.error or "")
+    assert result.events[-1].event_type is ProviderEventType.ERROR
+    assert any(
+        event.event_type is ProviderEventType.ERROR and "heartbeat" in event.message
+        for event in result.events
+    )
+
