@@ -184,7 +184,8 @@ class PostgresAuthMixin:
                 )""")
                 cursor.execute("""CREATE TABLE IF NOT EXISTS scan_lifecycle_command_idempotency (
                     actor_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    idempotency_key TEXT NOT NULL CHECK (length(idempotency_key) BETWEEN 16 AND 128),
+                    idempotency_key TEXT NOT NULL
+                        CHECK (length(idempotency_key) BETWEEN 16 AND 128),
                     action TEXT NOT NULL CHECK (action IN ('CANCEL', 'RECOVER_STALE')),
                     request_hash CHAR(64) NOT NULL,
                     execution_id UUID NOT NULL REFERENCES scans(execution_id) ON DELETE CASCADE,
