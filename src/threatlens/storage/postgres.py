@@ -800,9 +800,9 @@ class PostgresRepository(
 
                     changed, state, allowed = (
                         self.transition_finding_remediation_with_audit(
-                        finding_id=finding_id,
-                        target_state=target_state,
-                        actor_user_id=actor_user_id,
+                            finding_id=finding_id,
+                            target_state=target_state,
+                            actor_user_id=actor_user_id,
                             rationale=rationale,
                         )
                     )
