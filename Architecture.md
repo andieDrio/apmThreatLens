@@ -611,11 +611,11 @@ Focused PostgreSQL regression coverage verifies unvalidated creation, asset/evid
 **Validation status:** Gate 42 implementation and regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 42 can be declared complete.
 
 
-## 68. Architecture Gate 45 — Authenticated Attack-Path Analysis API — IMPLEMENTED
+## 68. Architecture Gate 45 — Authenticated Attack-Path Analysis API — COMPLETE
 
 Gate 45 exposes the existing deterministic `AttackPathAnalyzer` through `POST /api/v1/attack-path/analyze`, requiring ASSESS permission. Callers must provide explicit entry and objective asset IDs. Duplicate IDs and overlapping entry/objective sets are rejected. The repository verifies requested assets exist and loads persisted relationship edges, evidence-backed findings, and the latest persisted risk assessment per finding. Graph inputs are bounded to 5,000 relationships and 10,000 findings; API controls bound entry/objective sets, hops, and returned paths. The analyzer remains deterministic and only follows validated, evidence-backed relationships. Successful analysis is audited with the authenticated principal. The API does not create findings, infer missing relationships, execute providers, or persist synthetic evidence.
 
-**Validation status:** Implementation and focused API tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 45 is declared complete.
+**Validation status:** User confirmed local `python -m pytest -q` and `ruff check .` passed. Gate 45 is complete.
 
 ## 67. Architecture Gate 44 — Authenticated Attack-Path Relationship Read Model API — COMPLETE
 
@@ -634,3 +634,14 @@ The API does not infer connectivity, trust, or exploitability and does not execu
 Focused API regression tests cover permission boundaries, explicit relationship typing, self-edge rejection, unvalidated creation, principal binding, and missing relationships.
 
 **Validation status:** User confirmed local `pytest -q` and `ruff check .` passed. Gate 43 is complete.
+
+
+## 69. Architecture Gate 46 — First Authenticated Dashboard UI Vertical Slice — IMPLEMENTED
+
+Gate 46 introduces the first visible web interface without replacing or bypassing the existing application and authorization boundaries. FastAPI serves the dashboard document at `/` and packaged static assets at `/ui/assets`. The responsive dashboard provides a sign-in screen and read-only panels for persisted campaign, asset, service, finding, severity, and scan lifecycle data by calling the existing READ-protected endpoints for dashboard summary, assets, findings, scans, and the authenticated principal.
+
+The page does not create scans, findings, relationships, or evidence. Session tokens are held in tab-scoped `sessionStorage`, supplied only through the Authorization header, and cleared on sign-out or a rejected session. API values are rendered as text rather than interpolated into HTML. The dashboard document sends a restrictive same-origin Content Security Policy, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy: same-origin`. Python package-data configuration includes the HTML, JavaScript, and CSS assets for installed deployments.
+
+A focused regression test checks the dashboard response, security headers, and static asset delivery.
+
+**Validation status:** Implementation and focused regression test are committed. Local PostgreSQL-backed `python -m pytest -q`, `ruff check .`, and package/build validation remain required before Gate 46 is complete.
