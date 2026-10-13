@@ -658,10 +658,12 @@ The boundary fails closed if durable rate-limit persistence fails; it does not s
 **Validation status:** Gate 47 is complete after the user confirmed local PostgreSQL-backed tests, Ruff, and package build checks passed.
 
 
-## 71. Architecture Gate 48 — Authenticated Security Audit Read Model API — IN PROGRESS
+## 71. Architecture Gate 48 — Authenticated Security Audit Read Model API — COMPLETE
 
-Expose the existing PostgreSQL audit history through a read-only `GET /api/v1/audit-events` endpoint guarded by the existing `Permission.ADMIN` authorization boundary. Reuse the current audit persistence and authentication system; do not introduce a second audit engine, mutation endpoint, or alternate persistence path.
+Gate 48 exposes the existing PostgreSQL audit history through the read-only `GET /api/v1/audit-events` endpoint guarded by the existing `Permission.ADMIN` authorization boundary. It reuses the existing audit persistence and authentication system and introduces no second audit engine, mutation endpoint, or alternate persistence path.
 
-The read model must enforce bounded pagination (`limit=1..100`, `offset>=0`), parameterized fixed SQL, and deterministic `created_at DESC, id DESC` ordering. Return only an explicit allowlist of event identifiers, actor/resource identifiers, action, resource type, outcome, and timestamp. Do not return free-text `detail`, password hashes, session-token hashes, credentials, or secret material. Bound all returned text fields and add an index supporting the ordering where appropriate.
+The read model enforces bounded pagination (`limit=1..100`, `offset>=0`), parameterized fixed SQL, and deterministic `created_at DESC, id DESC` ordering. Its explicit allowlist returns event identifiers, actor/resource identifiers, action, resource type, outcome, and timestamp while excluding free-text `detail`, password hashes, session-token hashes, credentials, and secret material. Returned text fields are bounded, and an index supports the ordering.
 
-Validation requires API tests for authentication, ADMIN authorization, pagination bounds, empty pages, response-field allowlisting, and secret-disclosure regression; PostgreSQL integration tests must cover empty results, ordering, pagination, and omission of free-text details. Run the full suite, Ruff, package build, diff checks, and a final security review before declaring the gate complete.
+API tests cover authentication, ADMIN authorization, pagination bounds, empty pages, response-field allowlisting, and secret-disclosure regression. PostgreSQL integration tests cover empty results, deterministic ordering, pagination, and omission of free-text details.
+
+**Validation status:** User confirmed 33 focused API/PostgreSQL integration tests passed, the full pytest suite passed, `ruff check .` passed, `git diff --check` passed, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel` built the package successfully. Five existing Starlette deprecation warnings were reported during the full suite; they did not fail validation.
