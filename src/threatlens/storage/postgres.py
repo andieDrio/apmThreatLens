@@ -130,6 +130,9 @@ class PostgresRepository(
             cursor.execute("ALTER TABLE findings ADD COLUMN IF NOT EXISTS parameter TEXT")
             cursor.execute("ALTER TABLE findings ADD COLUMN IF NOT EXISTS location TEXT")
         self.connection.commit()
+        self.initialize_finding_correlation()
+        self.initialize_evidence_validation()
+        self.initialize_auth()
         with self.connection.cursor() as cursor:
             cursor.execute(
                 """CREATE TABLE IF NOT EXISTS finding_remediation_idempotency (
@@ -149,9 +152,6 @@ class PostgresRepository(
                    ON finding_remediation_idempotency (created_at)"""
             )
         self.connection.commit()
-        self.initialize_finding_correlation()
-        self.initialize_evidence_validation()
-        self.initialize_auth()
 
     def save_attack_path_relation_with_audit(
         self, relation: AttackPathRelation, actor_user_id: UUID
