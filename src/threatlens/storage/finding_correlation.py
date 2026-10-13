@@ -33,7 +33,9 @@ class DurableFindingCorrelator:
         )
         if callable(fenced_persist):
             return fenced_persist(execution_id, key, finding)
-        if callable(getattr(self.repository, "save_finding_for_execution", None)):
+        if getattr(self.repository, "requires_execution_fence", False) or callable(
+            getattr(self.repository, "save_finding_for_execution", None)
+        ):
             raise RuntimeError(
                 "repository does not support execution-fenced correlated findings"
             )
