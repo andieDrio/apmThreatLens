@@ -51,7 +51,7 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 
 ### Current Architecture Gate
 
-Architecture Gate 46: First Authenticated Dashboard UI Vertical Slice. Gate 45 Authenticated Attack-Path Analysis API is complete after the user confirmed local `python -m pytest -q && ruff check .` passed. Gate 46 implements the first responsive, authenticated dashboard backed by existing READ-protected APIs; local validation is pending. Gate 43 Authenticated Attack-Path Relationship Control API is complete after local pytest and Ruff validation. Gate 38 Authenticated Campaign & Scope Control API is complete after explicit local validation. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
+Architecture Gate 47: Durable Login Abuse Protection. Gate 46 First Authenticated Dashboard UI Vertical Slice is complete after the user confirmed pytest, Ruff, and package build checks passed. Gate 47 implements PostgreSQL-backed cross-instance login throttling and bounded password-hash verification; local validation is pending. Gate 43 Authenticated Attack-Path Relationship Control API is complete after local pytest and Ruff validation. Gate 38 Authenticated Campaign & Scope Control API is complete after explicit local validation. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
 
 ### Architecture Gate 35 — Authenticated Evidence Read Model API — COMPLETE
 
@@ -318,10 +318,19 @@ The API does not infer connectivity, trust, or exploitability and does not execu
 **Validation status:** Gate 43 implementation and regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 43 can be declared complete.
 
 
-### Architecture Gate 46 — First Authenticated Dashboard UI Vertical Slice — IMPLEMENTED
+### Architecture Gate 46 — First Authenticated Dashboard UI Vertical Slice — COMPLETE
 
 Gate 46 introduces the first visible ThreatLens web UI. FastAPI serves the dashboard at `/` and its packaged static assets under `/ui/assets`. The responsive page provides a sign-in form and a read-only operational overview with campaign, asset, service, and finding counts; finding-severity and scan-lifecycle summaries; and bounded recent asset, finding, and scan tables. All operational data is loaded from the existing authenticated API read models. No synthetic findings, evidence, or scan activity are created.
 
 The browser holds the opaque access token in `sessionStorage`, sends it through the Authorization header, and clears it on sign-out or an expired session. The dashboard uses text-only DOM rendering for API values, same-origin requests, a restrictive Content Security Policy, `Cache-Control: no-store` on the HTML page, and security response headers. The static assets are included in the Python package so the UI is available outside a source checkout.
 
-**Validation status:** Dashboard route/static-asset regression tests are committed. Local PostgreSQL-backed `python -m pytest -q`, `ruff check .`, and package/build validation are required before Gate 46 is declared complete.
+**Validation status:** User confirmed `python -m pytest -q`, `ruff check .`, and `python -m pip wheel . --no-deps -w /tmp/threatlens-dist` passed. Gate 46 is complete.
+
+
+### Architecture Gate 47 — Durable Login Abuse Protection — IMPLEMENTED
+
+Gate 47 adds a PostgreSQL-backed rolling login-attempt limiter before password verification. It enforces a maximum of five attempts per normalized username and direct client address per 60-second window, plus a 30-attempt per-client window. PostgreSQL atomic upserts serialize competing attempts across application instances. Only SHA-256 fingerprints of the direct peer and normalized username/address pair are persisted; forwarded client-IP headers are not trusted. Expired buckets are pruned, blocked requests return HTTP 429 with a Retry-After header, and a security audit event is emitted when a bucket first crosses its limit rather than on every blocked request.
+
+Password-hash verification now rejects malformed PBKDF2 encodings, unexpected salt/digest lengths, and iteration counts outside 100,000–1,000,000 before running the expensive derivation. The current 600,000-iteration password hashes remain supported.
+
+**Validation status:** Focused API, password-hash, and PostgreSQL persistence tests are committed. Local PostgreSQL-backed `python -m pytest -q`, `ruff check .`, and package/build validation remain required before Gate 47 is complete.
