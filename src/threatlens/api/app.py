@@ -1173,6 +1173,11 @@ def create_app(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="finding not found",
             ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+            ) from exc
 
         if not allowed:
             raise HTTPException(
