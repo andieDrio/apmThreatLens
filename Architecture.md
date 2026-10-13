@@ -617,7 +617,7 @@ Gate 44 adds `GET /api/v1/attack-path/relations`, protected by READ permission. 
 
 **Validation status:** Implementation and focused API regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` must pass before this gate is declared complete.
 
-## 66. Architecture Gate 43 — Authenticated Attack-Path Relationship Control API — IMPLEMENTED
+## 66. Architecture Gate 43 — Authenticated Attack-Path Relationship Control API — COMPLETE
 
 Gate 43 exposes explicit attack-path relationship creation and validation through the authenticated API. `POST /api/v1/attack-path/relations` requires ASSESS permission and accepts only a source asset, target asset, enumerated relationship type, and bounded evidence references. The persistence boundary verifies both assets and sealed evidence integrity and always stores the relation as unvalidated.
 
@@ -627,4 +627,4 @@ The API does not infer connectivity, trust, or exploitability and does not execu
 
 Focused API regression tests cover permission boundaries, explicit relationship typing, self-edge rejection, unvalidated creation, principal binding, and missing relationships.
 
-**Validation status:** Gate 43 implementation and regression tests are committed. Local PostgreSQL-backed `pytest -q` and `ruff check .` are required before Gate 43 can be declared complete.
+**Validation status:** User confirmed local `pytest -q` and `ruff check .` passed. Gate 43 is complete.
