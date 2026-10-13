@@ -238,6 +238,22 @@ async def test_invalid_credentials_fail_closed(client):
     )
     assert response.status_code == 401
 
+@pytest.mark.anyio
+async def test_login_rate_limit_blocks_before_password_verification(client):
+    payload = {"username": "analyst", "password": "wrong-password"}
+    for _ in range(5):
+        response = await client.post("/api/v1/auth/login", json=payload)
+        assert response.status_code == 401
+
+    blocked = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "analyst", "password": "correct-horse-battery-123"},
+    )
+
+    assert blocked.status_code == 429
+    assert blocked.headers["retry-after"].isdigit()
+    assert blocked.json()["detail"] == "too many login attempts; retry later"
+
 
 @pytest.mark.anyio
 async def test_dashboard_summary_requires_read_permission(client):
