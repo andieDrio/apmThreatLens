@@ -487,3 +487,34 @@ async def test_lifecycle_control_requires_valid_idempotency_key():
         )
     assert missing.status_code == 422
     assert malformed.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_stale_recovery_replays_noop_result_without_repeated_audit():
+    client, repository, _ = make_client()
+    async with client:
+        token = await login(client)
+        queued = await client.post(
+            f"/api/v1/campaigns/{CAMPAIGN_ID}/scans",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "queue-before-recovery-0001",
+            },
+            json={"provider_name": "test-provider"},
+        )
+        execution_id = queued.json()["execution_id"]
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Idempotency-Key": "recover-stale-replay-0001",
+        }
+        first = await client.post(
+            f"/api/v1/scans/{execution_id}/recover-stale", headers=headers
+        )
+        replay = await client.post(
+            f"/api/v1/scans/{execution_id}/recover-stale", headers=headers
+        )
+    assert first.status_code == replay.status_code == 200
+    assert first.json()["changed"] is replay.json()["changed"] is False
+    assert first.headers["idempotency-replayed"] == "false"
+    assert replay.headers["idempotency-replayed"] == "true"
+    assert not any(event.action == "SCAN_RECOVERED_STALE" for event in repository.audit_events)
