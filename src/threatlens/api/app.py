@@ -10,9 +10,13 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from threatlens.auth.service import AuthenticationService, Permission
-from threatlens.attack_paths.engine import AttackPathRelation, AttackPathRelationType
+from threatlens.attack_paths.engine import (
+    AttackPathAnalyzer,
+    AttackPathRelation,
+    AttackPathRelationType,
+)
 from threatlens.evidence.service import EvidenceValidationService
-from threatlens.domain.models import Campaign, FindingState, Scope
+from threatlens.domain.models import AuditEvent, Campaign, FindingState, Scope
 from threatlens.evidence.validation import EvidenceValidationState
 from threatlens.orchestration.engine import ScanOrchestrator
 from threatlens.providers.runtime import ProviderRegistry
@@ -267,6 +271,31 @@ class EvidenceListResponse(BaseModel):
     limit: int
     offset: int
     items: list[EvidenceReadModel]
+
+
+class AttackPathAnalysisRequest(BaseModel):
+    entry_asset_ids: list[UUID] = Field(min_length=1, max_length=100)
+    objective_asset_ids: list[UUID] = Field(min_length=1, max_length=100)
+    max_hops: int = Field(default=8, ge=1, le=12)
+    max_paths: int = Field(default=100, ge=1, le=100)
+
+
+class AttackPathResultReadModel(BaseModel):
+    asset_ids: list[str]
+    relation_ids: list[str]
+    finding_ids: list[str]
+    score: float
+    risk_level: str
+    explanation: list[str]
+
+
+class AttackPathAnalysisResponse(BaseModel):
+    paths: list[AttackPathResultReadModel]
+    ignored_relation_ids: list[str]
+    entry_asset_ids: list[str]
+    objective_asset_ids: list[str]
+    max_hops: int
+    max_paths: int
 
 
 class AttackPathRelationCreateRequest(BaseModel):
@@ -548,6 +577,91 @@ def create_app(
             evidence_ids=[str(value) for value in item["evidence_ids"]],
             validated_at=item["validated_at"].isoformat() if item["validated_at"] else None,
             validated_by=str(item["validated_by"]) if item["validated_by"] else None,
+        )
+
+    @app.post(
+        "/api/v1/attack-path/analyze",
+        response_model=AttackPathAnalysisResponse,
+    )
+    def analyze_attack_paths(
+        request: AttackPathAnalysisRequest,
+        current=Depends(require(Permission.ASSESS)),
+    ) -> AttackPathAnalysisResponse:
+        entry_ids = tuple(request.entry_asset_ids)
+        objective_ids = tuple(request.objective_asset_ids)
+        if len(set(entry_ids)) != len(entry_ids):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="entry_asset_ids cannot contain duplicates",
+            )
+        if len(set(objective_ids)) != len(objective_ids):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="objective_asset_ids cannot contain duplicates",
+            )
+        if set(entry_ids) & set(objective_ids):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="entry and objective assets must be distinct",
+            )
+        try:
+            snapshot = context.repository.attack_path_analysis_inputs(
+                entry_asset_ids=entry_ids,
+                objective_asset_ids=objective_ids,
+            )
+            result = AttackPathAnalyzer().analyze(
+                entry_asset_ids=entry_ids,
+                objective_asset_ids=objective_ids,
+                relations=snapshot["relations"],
+                findings=snapshot["findings"],
+                risk_scores=snapshot["risk_scores"],
+                risk_levels=snapshot["risk_levels"],
+                max_hops=request.max_hops,
+                max_paths=request.max_paths,
+            )
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="one or more requested assets do not exist",
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+
+        context.repository.save_audit_event(
+            AuditEvent(
+                actor_user_id=current.user_id,
+                action="ATTACK_PATH_ANALYSIS_COMPLETED",
+                resource_type="ATTACK_PATH_ANALYSIS",
+                outcome="SUCCESS",
+                detail=(
+                    f"entry_count={len(entry_ids)};"
+                    f"objective_count={len(objective_ids)};"
+                    f"path_count={len(result.paths)};"
+                    f"ignored_relation_count={len(result.ignored_relation_ids)};"
+                    f"max_hops={request.max_hops};max_paths={request.max_paths}"
+                ),
+            )
+        )
+        return AttackPathAnalysisResponse(
+            paths=[
+                AttackPathResultReadModel(
+                    asset_ids=[str(value) for value in path.asset_ids],
+                    relation_ids=[str(value) for value in path.relation_ids],
+                    finding_ids=[str(value) for value in path.finding_ids],
+                    score=path.score,
+                    risk_level=path.risk_level,
+                    explanation=list(path.explanation),
+                )
+                for path in result.paths
+            ],
+            ignored_relation_ids=[str(value) for value in result.ignored_relation_ids],
+            entry_asset_ids=[str(value) for value in entry_ids],
+            objective_asset_ids=[str(value) for value in objective_ids],
+            max_hops=request.max_hops,
+            max_paths=request.max_paths,
         )
 
     @app.get(
