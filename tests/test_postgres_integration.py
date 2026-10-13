@@ -373,3 +373,86 @@ def test_postgres_scan_lifecycle_cas_is_authoritative(postgres_repository):
         scan.execution_id, LifecycleState.QUEUED, LifecycleState.RUNNING
     )
     assert repo.scan_state(scan.execution_id) is LifecycleState.RUNNING
+
+
+
+def test_postgres_lifecycle_command_idempotency_serializes_cross_instance_retries(
+    postgres_repository,
+):
+    import os
+
+    repo = postgres_repository
+    campaign = make_campaign()
+    repo.save_campaign(campaign)
+    auth = AuthenticationService(repo)
+    auth.create_user("lifecycle-idempotency", "correct horse battery staple", Role.ANALYST)
+    principal, _ = auth.authenticate("lifecycle-idempotency", "correct horse battery staple")
+    orchestrator = ScanOrchestrator(repo, ExecutionPolicy(), auth)
+
+    class Provider:
+        name = "lifecycle-idempotency-provider"
+
+        def execute(self, campaign, execution_id, cancel_event):
+            raise AssertionError("queueing must not execute providers")
+
+    scan, _ = orchestrator.queue_idempotent(
+        campaign, Provider(), "lifecycle-queue-key-0001", principal=principal
+    )
+    assert repo.update_scan_state_if_current(
+        scan.execution_id, LifecycleState.QUEUED, LifecycleState.RUNNING
+    )
+    dsn = os.getenv("THREATLENS_TEST_DATABASE_URL") or os.getenv("THREATLENS_DATABASE_URL")
+    assert dsn
+    repo2 = PostgresRepository(dsn)
+    repo2.initialize()
+    try:
+        auth2 = AuthenticationService(repo2)
+        principal2, _ = auth2.authenticate(
+            "lifecycle-idempotency", "correct horse battery staple"
+        )
+        orchestrator2 = ScanOrchestrator(repo2, ExecutionPolicy(), auth2)
+        barrier = Barrier(2)
+        results = []
+        errors = []
+
+        def cancel(worker, worker_principal):
+            try:
+                barrier.wait(timeout=5)
+                results.append(
+                    worker.cancel_idempotent(
+                        scan.execution_id,
+                        "lifecycle-cancel-command-0001",
+                        principal=worker_principal,
+                    )
+                )
+            except Exception as exc:
+                errors.append(exc)
+
+        workers = [
+            Thread(target=cancel, args=(orchestrator, principal)),
+            Thread(target=cancel, args=(orchestrator2, principal2)),
+        ]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(10)
+
+        assert all(not worker.is_alive() for worker in workers)
+        assert not errors
+        assert len(results) == 2
+        assert all(changed for changed, _ in results)
+        assert sorted(created for _, created in results) == [False, True]
+        assert repo.scan_state(scan.execution_id) is LifecycleState.CANCELLED
+        assert repo.connection.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE action='SCAN_CANCELLED'"
+        ).fetchone()[0] == 1
+        assert repo.count("scan_lifecycle_command_idempotency") == 1
+
+        with pytest.raises(ValueError, match="different lifecycle command"):
+            orchestrator2.recover_stale_idempotent(
+                scan.execution_id,
+                "lifecycle-cancel-command-0001",
+                principal=principal2,
+            )
+    finally:
+        repo2.close()
