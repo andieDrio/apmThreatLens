@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
+import ipaddress
+import math
 import os
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -434,11 +438,62 @@ def create_app(
         return dependency
 
     @app.post("/api/v1/auth/login", response_model=LoginResponse)
-    def login(request: LoginRequest) -> LoginResponse:
+    def login(request: LoginRequest, http_request: Request) -> LoginResponse:
+        # Only trust the direct peer address. Forwarded headers require an explicit trusted-proxy
+        # boundary and are intentionally ignored here to prevent client-controlled rate-limit keys.
+        peer_host = http_request.client.host if http_request.client else "unknown"
+        try:
+            peer_host = ipaddress.ip_address(peer_host).compressed
+        except ValueError:
+            peer_host = "unknown"
+        normalized_username = request.username.strip().casefold()
+        client_key = "client:" + hashlib.sha256(peer_host.encode("utf-8")).hexdigest()
+        identity_material = f"{peer_host}\0{normalized_username}".encode("utf-8")
+        identity_key = "identity:" + hashlib.sha256(identity_material).hexdigest()
+        now = datetime.now(UTC)
+        attempts = context.repository.record_login_attempts(
+            (client_key, identity_key), now=now, window_seconds=60
+        )
+        limits = {client_key: 30, identity_key: 5}
+        exceeded = [
+            (key, limits[key], count, window_started_at)
+            for key, (count, window_started_at) in attempts.items()
+            if count > limits[key]
+        ]
+        if exceeded:
+            # Audit only the threshold crossing, not every blocked request, to avoid turning
+            # repeated rejected traffic into unbounded audit writes.
+            for key, limit, count, _ in exceeded:
+                if count == limit + 1:
+                    context.repository.save_audit_event(
+                        AuditEvent(
+                            actor_user_id=None,
+                            action="LOGIN_RATE_LIMITED",
+                            resource_type="AUTH",
+                            outcome="DENIED",
+                            detail="scope=client" if key == client_key else "scope=client_username",
+                        )
+                    )
+            retry_after = max(
+                1,
+                *(
+                    math.ceil(
+                        (window_started_at + timedelta(seconds=60) - now).total_seconds()
+                    )
+                    for _, _, _, window_started_at in exceeded
+                ),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="too many login attempts; retry later",
+                headers={"Retry-After": str(retry_after)},
+            )
         try:
             _, token = context.auth.authenticate(request.username, request.password)
         except PermissionError as exc:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="authentication failed"
+            ) from exc
         return LoginResponse(
             access_token=token,
             expires_in=int(context.auth.session_ttl.total_seconds()),
