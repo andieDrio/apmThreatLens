@@ -209,6 +209,8 @@ def verify_runtime_privileges(repository: object) -> None:
                             OR has_table_privilege(session_user, registry.oid, 'DELETE'),
                           has_table_privilege(current_user, registry.oid, 'TRUNCATE')
                             OR has_table_privilege(session_user, registry.oid, 'TRUNCATE'),
+                          has_table_privilege(current_user, registry.oid, 'TRIGGER')
+                            OR has_table_privilege(session_user, registry.oid, 'TRIGGER'),
                           current_user::regrole::oid = d.datdba
                             OR session_user::regrole::oid = d.datdba
                             OR pg_has_role(current_user, d.datdba, 'MEMBER')
@@ -269,6 +271,7 @@ def verify_runtime_privileges(repository: object) -> None:
             registry_update,
             registry_delete,
             registry_truncate,
+            registry_trigger,
             database_owner_member,
             schema_owner_member,
             audit_owner_member,
@@ -284,7 +287,7 @@ def verify_runtime_privileges(repository: object) -> None:
             violations.append("schema CREATE privilege")
         if any((audit_update, audit_delete, audit_truncate, audit_trigger)):
             violations.append("audit-table mutation or trigger privilege")
-        if any((registry_insert, registry_update, registry_delete, registry_truncate)):
+        if any((registry_insert, registry_update, registry_delete, registry_truncate, registry_trigger)):
             violations.append("migration-registry mutation privilege")
         if any(
             (
