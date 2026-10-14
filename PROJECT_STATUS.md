@@ -3,9 +3,9 @@
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
 **Highest architecture gate reached:** Gate 57  
-**Highest fully validated gate:** Gate 56  
-**Current gate:** Gate 57 — Fail-Closed Audit Protection Drift Detection  
-**Current status:** Gate 57 implementation and final function-body hardening are committed directly to `main`; local validation of the latest revision is pending.
+**Highest fully validated gate:** Gate 57  
+**Current gate:** Gate 58 — PostgreSQL Runtime/Migration Privilege Separation  
+**Current status:** Gate 57 is complete and validated on `db3b98165bb10351cb3fc2b10de964c44a5dcd90`. Gate 58 is the active priority: separate schema migration authority from the least-privileged runtime database role.
 
 ## Executive Summary
 
@@ -29,7 +29,7 @@ Migration version 2, `audit_events_append_only`, installs a PostgreSQL trigger r
 
 Migration version 3 adds a statement-level `BEFORE TRUNCATE` trigger to complement the row-level UPDATE/DELETE protection from Gate 55. The user confirmed 4 focused migration tests, 14 focused remediation tests, the full PostgreSQL-backed suite at 100% without a skip summary, Ruff, diff checks, and wheel build on commit `4e96495a5ee85e23b35033f364f379120898d159`. Five Starlette deprecation warnings were non-failing. Database owners/superusers able to disable triggers or alter schema remain outside this control's threat boundary.
 
-## Current Gate 57 — Fail-Closed Audit Protection Drift Detection
+## Completed Gate 57 — Fail-Closed Audit Protection Drift Detection
 
 ### Objective and root cause
 
@@ -47,7 +47,7 @@ The initial Gate 57 focused run failed because the verifier assumed a fixed text
 
 Root cause: the catalog SELECT in _verify_audit_protection() started a new implicit psycopg transaction after run_migrations() had committed and released its migration lock. The integration fixture's transaction context then nested as a savepoint, leaving its trigger changes and TRUNCATE locks held after RELEASE. The migration runner now commits after successful verification and rolls back if verification raises. Regression tests assert the connection returns to IDLE after successful verification and after fail-closed disabled/missing-trigger errors. Fix commits: `db4d3a6a3b602b4227b7abb6b04f8e646567b3ec` and `9777d2b201941de4c3f012246a39303ba0cf5057`.
 
-**Validation update:** The user confirmed the previous revision `fa3915a423bb9e3cc78fa7628f535c1faa45dee0` passed focused migration tests (7), broader PostgreSQL tests (23), the isolated cross-instance idempotency test (1), the full pytest suite without a skip summary, Ruff, diff checks, and wheel build. Final security re-inspection found that marker-string checks could miss an altered trigger-function body. The verifier now compares normalized function source against the expected unconditional fail-closed implementation, and a PostgreSQL regression test exercises weakened function behavior. The hardening is committed directly to `main`; run focused migration tests, the full PostgreSQL-backed suite, Ruff, diff checks, and wheel build on the latest main SHA before completing Gate 57.
+**Validation update:** The user confirmed the previous revision `fa3915a423bb9e3cc78fa7628f535c1faa45dee0` passed focused migration tests (7), broader PostgreSQL tests (23), the isolated cross-instance idempotency test (1), the full pytest suite without a skip summary, Ruff, diff checks, and wheel build. Final security re-inspection found that marker-string checks could miss an altered trigger-function body. The verifier now compares normalized function source against the expected unconditional fail-closed implementation, and a PostgreSQL regression test exercises weakened function behavior. The hardening is committed directly to `main`. On 2026-10-14, the user confirmed the final revision `db3b98165bb10351cb3fc2b10de964c44a5dcd90` passed all 8 PostgreSQL schema migration tests, the full pytest suite without a skip summary, Ruff, diff checks, and package wheel build. The hardened wheel SHA-256 was `b981c440324ff82895baf5bd5d20ca6b5f421ee20debdf98a40a561f316a5ed2`. Five Starlette deprecation warnings were non-blocking.
 
 ## Recent Completed Gates
 
@@ -89,6 +89,6 @@ On 2026-10-14, the user confirmed 9 focused API tests and 5 focused PostgreSQL r
 
 The five Starlette deprecation warnings about `HTTP_422_UNPROCESSABLE_ENTITY` were non-failing warnings.
 
-## Next Required Action
+## Next Required Action — Gate 58
 
-Validate Gate 57 against the exact current `main` revision using `python -m pytest -q tests/test_postgres_schema_migrations.py`, `python -m pytest -q -rs`, `ruff check .`, `git diff --check`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel`. Confirm PostgreSQL integration tests execute and do not skip. If any check fails, fix it and remain on Gate 57.
+Separate PostgreSQL schema-migration authority from the application runtime database role. The current `PostgresRepository.initialize()` invokes schema migrations through its repository connection, and the audit-protection threat model explicitly excludes database owners/superusers who can disable triggers or alter schema. Inspect deployment/configuration and startup wiring; design a least-privilege runtime role that cannot own or alter `audit_events`, its triggers, or the trigger function, while a separately controlled migration identity applies schema changes. Preserve local developer ergonomics without silently granting runtime DDL privileges. Add PostgreSQL-backed privilege-boundary tests and migration/deployment documentation. Keep all work directly on `main`; no feature branches or PRs.
