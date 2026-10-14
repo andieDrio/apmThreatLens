@@ -185,7 +185,7 @@ The integration is deliberately fail-closed when finding generation is enabled b
 
 PostgreSQL is the permanent production persistence backend through `PostgresRepository`. The schema mirrors the current domain integrity requirements: foreign keys, unique canonical asset identity, service uniqueness per asset/protocol/port, finding/evidence relationships, scan execution identity, and bounded CVSS/confidence values.
 
-The repository contains `.env.example` with a non-secret `THREATLENS_DATABASE_URL` template. Real credentials must remain outside version control. Local PostgreSQL installation, service lifecycle, database creation, and credential provisioning are deployment responsibilities and must not be silently automated by the application.
+The repository contains `.env.example` with separate `THREATLENS_DATABASE_URL` (runtime) and `THREATLENS_MIGRATION_DATABASE_URL` (controlled schema migration) templates. Real credentials must remain outside version control. Local PostgreSQL installation, service lifecycle, database creation, and credential provisioning are deployment responsibilities and must not be silently automated by the application. API startup verifies schema readiness without applying DDL; run `python -m threatlens.storage.migrate` separately with the migration identity.
 
 ## 19. Security
 
