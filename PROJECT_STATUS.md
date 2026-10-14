@@ -5,7 +5,7 @@
 **Highest architecture gate reached:** Gate 57  
 **Highest fully validated gate:** Gate 56  
 **Current gate:** Gate 57 — Fail-Closed Audit Protection Drift Detection  
-**Current status:** Gate 56 validated by user on 2026-10-14; Gate 57 implementation committed to main, local validation pending
+**Current status:** Gate 57's original implementation passed user-confirmed validation on `fa3915a423bb9e3cc78fa7628f535c1faa45dee0`; final security re-inspection found that marker-string checks could miss altered trigger-function behavior. A surgical hardening and regression test are on `gate-57-audit-function-drift-hardening`; validation pending.
 
 ## Executive Summary
 
@@ -47,7 +47,7 @@ The initial Gate 57 focused run failed because the verifier assumed a fixed text
 
 Root cause: the catalog SELECT in _verify_audit_protection() started a new implicit psycopg transaction after run_migrations() had committed and released its migration lock. The integration fixture's transaction context then nested as a savepoint, leaving its trigger changes and TRUNCATE locks held after RELEASE. The migration runner now commits after successful verification and rolls back if verification raises. Regression tests assert the connection returns to IDLE after successful verification and after fail-closed disabled/missing-trigger errors. Fix commits: `db4d3a6a3b602b4227b7abb6b04f8e646567b3ec` and `9777d2b201941de4c3f012246a39303ba0cf5057`.
 
-**Validation still pending:** pull the latest main revision, rerun the isolated cross-instance scan-idempotency test, rerun the broader PostgreSQL concurrency tests, then run the full PostgreSQL-backed suite, Ruff, diff checks, and wheel build. Do not mark Gate 57 complete until these pass on the exact revision.
+**Validation update:** The user confirmed the original revision `fa3915a423bb9e3cc78fa7628f535c1faa45dee0` passes focused migration tests (7), broader PostgreSQL tests (23), the isolated cross-instance idempotency test (1), the full pytest suite without a skip summary, Ruff, diff checks, and wheel build. During final security re-inspection, a function body that retained the strings `append-only` and `55000` but weakened TRUNCATE behavior could evade the verifier. The `gate-57-audit-function-drift-hardening` branch now compares normalized function source to the expected fail-closed body and adds a PostgreSQL regression for this drift case. Run the focused migration tests, full PostgreSQL-backed suite, Ruff, diff checks, and wheel build against this branch before completing Gate 57. Do not advance gates until this discovered blocker is closed.
 
 ## Recent Completed Gates
 
