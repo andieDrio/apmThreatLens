@@ -1125,6 +1125,14 @@ def create_app(
     def remediate_finding(
         finding_id: UUID,
         request: FindingRemediationRequest,
+        response: Response,
+        idempotency_key: str = Header(
+            ...,
+            alias="Idempotency-Key",
+            min_length=16,
+            max_length=128,
+            pattern=r"^[A-Za-z0-9._:-]{16,128}$",
+        ),
         current=Depends(require(Permission.REMEDIATE)),
     ) -> FindingRemediationResponse:
         try:
@@ -1136,18 +1144,25 @@ def create_app(
             ) from exc
 
         try:
-            changed, state, allowed = (
-                context.repository.transition_finding_remediation_with_audit(
+            changed, state, allowed, created = (
+                context.repository.transition_finding_remediation_idempotent(
                     finding_id=finding_id,
                     target_state=target_state,
                     actor_user_id=current.user_id,
                     rationale=request.rationale,
+                    idempotency_key=idempotency_key,
                 )
             )
+            response.headers["Idempotency-Replayed"] = "false" if created else "true"
         except KeyError as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="finding not found",
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
             ) from exc
 
         if not allowed:
