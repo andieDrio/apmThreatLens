@@ -60,7 +60,8 @@ class DurableFindingCorrelator:
         return merged
 
     def _initialize(self) -> None:
-        self.repository.initialize_finding_correlation()
+        if not getattr(self.repository, "schema_migrations_managed", False):
+            self.repository.initialize_finding_correlation()
 
 
 class SQLiteFindingCorrelationMixin:
