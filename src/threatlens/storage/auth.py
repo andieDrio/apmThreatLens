@@ -42,6 +42,45 @@ class SQLiteAuthMixin:
                 ),
             )
 
+    def save_user_with_audit(self, user: User, event: AuditEvent) -> None:
+        """Atomically persist a provisioned user and its success audit event."""
+        lock = getattr(self, "_transaction_lock", None)
+
+        def persist() -> None:
+            with self.connection:
+                self.connection.execute(
+                    "INSERT INTO users (id,username,password_hash,role,active,created_at) VALUES (?,?,?,?,?,?)",
+                    (
+                        str(user.id),
+                        user.username,
+                        user.password_hash,
+                        user.role,
+                        int(user.active),
+                        user.created_at.isoformat(),
+                    ),
+                )
+                self.connection.execute(
+                    "INSERT INTO audit_events "
+                    "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
+                    "VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                        str(event.id),
+                        str(event.actor_user_id) if event.actor_user_id else None,
+                        event.action,
+                        event.resource_type,
+                        str(event.resource_id) if event.resource_id else None,
+                        event.outcome,
+                        event.detail,
+                        event.created_at.isoformat(),
+                    ),
+                )
+
+        if lock is None:
+            persist()
+        else:
+            with lock:
+                persist()
+
     def user_by_username(self, username: str):
         row = self.connection.execute(
             "SELECT id,username,password_hash,role,active,created_at FROM users WHERE username=?",
@@ -326,6 +365,38 @@ class PostgresAuthMixin:
                         user.created_at,
                     ),
                 )
+
+    def save_user_with_audit(self, user: User, event: AuditEvent) -> None:
+        """Atomically persist a provisioned user and its success audit event."""
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        "INSERT INTO users (id,username,password_hash,role,active,created_at) VALUES (%s,%s,%s,%s,%s,%s)",
+                        (
+                            user.id,
+                            user.username,
+                            user.password_hash,
+                            user.role,
+                            user.active,
+                            user.created_at,
+                        ),
+                    )
+                    cursor.execute(
+                        "INSERT INTO audit_events "
+                        "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (
+                            event.id,
+                            event.actor_user_id,
+                            event.action,
+                            event.resource_type,
+                            event.resource_id,
+                            event.outcome,
+                            event.detail,
+                            event.created_at,
+                        ),
+                    )
 
     def user_by_username(self, username: str):
         with self._transaction_lock:
