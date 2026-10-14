@@ -472,6 +472,10 @@ Unsupported or malformed persisted roles use the established generic authenticat
 
 Session authentication maps malformed persisted expiry timestamps and UUID identifiers to the existing generic invalid-session response, while preserving explicit inactive-user behavior and allowing infrastructure failures to propagate. The user confirmed Gate 69 clean and successful on 2026-10-14; this is user-confirmed validation.
 
-### Architecture Gate 70 — Atomic Login Session and Success-Audit Persistence: IN PROGRESS
+### Architecture Gate 70 — Atomic Login Session and Success-Audit Persistence: COMPLETE
 
-Successful login uses a single repository operation to persist the authentication session and corresponding success audit event in one transaction. If audit insertion fails, the transaction must roll back the session, preventing orphaned, unreturned active sessions. SQLite and PostgreSQL regressions inject audit failures and verify rollback. Validation is pending.
+Successful login persists the authentication session and corresponding success audit event in one repository transaction. If audit insertion fails, the transaction rolls back session creation. SQLite and PostgreSQL regression tests inject audit failures and verify rollback. On 2026-10-14, the user confirmed focused API tests, the full PostgreSQL-backed suite, Ruff, diff check, package wheel build, and final main synchronization were clean. Five Starlette deprecation warnings were non-failing; the optional `python -m build` command was unavailable, so the established pip wheel build was used.
+
+### Architecture Gate 71 — Atomic Logout Session Revocation and Success-Audit Persistence: IN PROGRESS
+
+Logout currently revokes a session and persists its success audit event through separate repository calls. An audit insertion failure can therefore leave the session revoked while the API reports failure and no corresponding success audit exists. The next gate will make revocation and the LOGOUT success audit atomic in PostgreSQL and SQLite compatibility paths, with failure-injection coverage proving rollback.
