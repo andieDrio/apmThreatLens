@@ -538,3 +538,21 @@ async def test_audit_events_read_model_empty_page_is_stable(client):
     )
     assert response.status_code == 200
     assert response.json()["items"] == []
+
+def test_app_startup_verifies_schema_without_running_migrations(monkeypatch):
+    repository = FakeRepository()
+    calls = []
+    repository.verify_schema_ready = lambda: calls.append("verified")
+    repository.initialize = lambda: pytest.fail(
+        "runtime application startup must not run schema migrations"
+    )
+    monkeypatch.setenv(
+        "THREATLENS_DATABASE_URL", "postgresql://runtime:unused@127.0.0.1/threatlens"
+    )
+    monkeypatch.setattr(
+        "threatlens.api.app.PostgresRepository", lambda _dsn: repository
+    )
+
+    create_app()
+
+    assert calls == ["verified"]
