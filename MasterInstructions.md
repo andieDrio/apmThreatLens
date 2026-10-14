@@ -132,8 +132,17 @@ On 2026-10-14, the user confirmed all focused PostgreSQL migration/runtime privi
 
 On 2026-10-14, the user confirmed Gate 62 was clean and successful on main revision `3b7d25914b1866a2c9617940970b2d08a44f8463`.
 
-## Current Gate Directive — Gate 63: Fail-Closed SECURITY DEFINER Routine Execution Verification
+## Previous Gate Directive — Gate 63: Fail-Closed SECURITY DEFINER Routine Execution Verification — COMPLETE
 
 Extend the read-only PostgreSQL runtime privilege verifier to reject any effective EXECUTE privilege on SECURITY DEFINER routines in the active application schema for either `current_user` or `session_user`, including inherited role and PUBLIC grants. Preserve ordinary invoker-security routine behavior, least-privilege application DML, audit append-only protections, migration-registry integrity, sequence checks, schema ownership checks, and the separate migration identity. Add a genuine PostgreSQL integration regression that creates an administrator-owned SECURITY DEFINER routine and proves a runtime login with EXECUTE privilege is rejected. Keep a least-privilege runtime role passing.
 
 Inspect latest `main` before every cycle. Run focused PostgreSQL migration/runtime privilege/API tests, full `python -m pytest -q -rs` without skips, Ruff, diff check, and package wheel build. Fix blockers and remain on Gate 63 until the exact revision is user-validated. Maintain README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md. All changes stay directly on `main`; no feature branches, no branch switching, no PR workflow, and no force pushes.
+
+
+## Gate 63 Validation Closure — COMPLETE
+
+The user confirmed Gate 63 clean and successful on 2026-10-14. Treat the SECURITY DEFINER execution verification gate as complete unless a regression is discovered.
+
+## Current Gate Directive — Gate 64: Authenticated SOC Workspace Read-Model Expansion
+
+Expose existing API-backed read models for campaigns, evidence, attack-path relationships, and administrator-only audit events in the authenticated dashboard. Use actual persisted API responses only. Preserve authorization boundaries, session-expiry behavior, evidence hashes, validation states, restrictive CSP, and existing overview behavior. Add regression assertions for the new sections and request paths. Run the UI tests, full PostgreSQL-backed suite without skips, Ruff, git diff --check, and package wheel build. Fix failures before advancing. Inspect latest main before every cycle; commit directly to main, with no branches, pull requests, or force pushes. After validation, reassess the next highest-priority unfinished architecture gap while keeping professional UI delivery moving.

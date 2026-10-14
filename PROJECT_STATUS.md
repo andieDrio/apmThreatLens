@@ -2,10 +2,10 @@
 
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 63  
-**Highest fully validated gate:** Gate 62  
-**Current gate:** Gate 63 — Fail-Closed SECURITY DEFINER Routine Execution Verification  
-**Current status:** Gate 62 was confirmed clean and successful by the user on 2026-10-14 at main revision `3b7d25914b1866a2c9617940970b2d08a44f8463`. Gate 63 implementation is committed directly to `main`; exact-revision validation is pending.
+**Highest architecture gate reached:** Gate 64  
+**Highest fully validated gate:** Gate 63  
+**Current gate:** Gate 64 — Authenticated SOC Workspace Read-Model Expansion  
+**Current status:** The user confirmed Gate 63 clean and successful on 2026-10-14. Gate 64 is active and expands the authenticated dashboard using existing API read models.
 
 ## Executive Summary
 
@@ -180,7 +180,7 @@ Gate 61 checks destructive/structural privileges on application tables but does 
 On 2026-10-14, the user confirmed Gate 62 was clean and successful on main revision `3b7d25914b1866a2c9617940970b2d08a44f8463`.
 
 
-## Gate 63 — Fail-Closed SECURITY DEFINER Routine Execution Verification — IMPLEMENTED, VALIDATION PENDING
+## Gate 63 — Fail-Closed SECURITY DEFINER Routine Execution Verification — COMPLETE
 
 ### Root cause
 The existing verifier blocks runtime ownership of routines and checks sequence and table privileges, but it did not inspect whether the runtime identity could execute a SECURITY DEFINER routine. Such a routine runs with its owner's privileges and can become an escalation path even when the runtime login does not own the routine.
@@ -192,9 +192,21 @@ The existing verifier blocks runtime ownership of routines and checks sequence a
 - Updated README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md directly on `main`.
 - Implementation commits: verifier `4d9c305e060b783b7dafe07c56dd469042abaf50`; integration test `32c88d0fd8839c0da173c48c41dd07ae5d9f2181`.
 
-### Validation required
-Run focused PostgreSQL migration/runtime privilege/API tests, the full PostgreSQL-backed `python -m pytest -q -rs` suite without skips, `ruff check .`, `git diff --check`, and package wheel build on the exact latest `main` SHA. Fix any failure before moving on. Do not claim Gate 63 validated until the user confirms exact-revision results.
+### Validation closure
+On 2026-10-14, the user confirmed the PostgreSQL security/migration/API tests, full PostgreSQL-backed suite, Ruff, diff check, and wheel build were clean. This confirmation closes Gate 63.
+
+## Gate 64 — Authenticated SOC Workspace Read-Model Expansion — IN PROGRESS
+
+### Root cause
+The authenticated dashboard showed summary metrics, assets, findings, and scan activity, but the application already exposes read-only campaign, evidence, attack-path relationship, and administrator-only audit-event APIs. Those capabilities were not surfaced in the UI.
+
+### Acceptance criteria
+- Add navigable UI sections for campaigns, evidence, attack-path relationships, and security audit events.
+- Load real persisted records from existing authenticated API contracts; do not synthesize records.
+- Preserve evidence digests, relationship validation state, and administrator-only audit access.
+- Render permission-denied audit access as a safe, understandable empty state.
+- Extend dashboard UI regression checks and validate the full applicable suite, Ruff, diff checks, and wheel build.
 
 ## Next Required Action
 
-Validate Gate 63 on the latest `main`, including the SECURITY DEFINER execution regression and the existing least-privilege runtime role test.
+Complete and validate Gate 64, then reassess remaining backend/security gaps while prioritizing a genuinely usable professional UI.

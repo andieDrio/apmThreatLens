@@ -135,12 +135,15 @@
     setMessage(statusMessage, "Loading live data…");
     refreshButton.disabled = true;
     try {
-      const [summary, assets, findings, scans, principal] = await Promise.all([
+      const [summary, assets, findings, scans, principal, campaigns, evidence, relations] = await Promise.all([
         request("/api/v1/dashboard/summary"),
         request("/api/v1/assets?limit=8&offset=0"),
         request("/api/v1/findings?limit=8&offset=0"),
         request("/api/v1/scans?limit=8&offset=0"),
-        request("/api/v1/me")
+        request("/api/v1/me"),
+        request("/api/v1/campaigns?limit=8&offset=0"),
+        request("/api/v1/evidence?limit=8&offset=0"),
+        request("/api/v1/attack-path/relations?limit=8&offset=0")
       ]);
       setText("campaign-count", summary.campaigns);
       setText("asset-count", summary.assets);
@@ -176,6 +179,47 @@
         { value: item => item.campaign_name },
         { value: item => formatDate(item.queued_at) }
       ], "No scan executions have been queued yet.");
+      setText("campaign-total", `${campaigns.total} persisted campaigns`);
+      renderTable("campaigns-body", campaigns.items, [
+        { value: item => item.name },
+        { value: item => item.state, className: item => `state-cell state-${String(item.state).toLowerCase()}` },
+        { value: item => item.authorized ? "Yes" : "No" },
+        { value: item => formatDate(item.created_at) }
+      ], "No campaigns have been recorded yet.");
+      setText("evidence-total", `${evidence.total} persisted evidence records`);
+      renderTable("evidence-body", evidence.items, [
+        { value: item => item.kind },
+        { value: item => item.source },
+        { value: item => formatDate(item.captured_at) },
+        { value: item => item.sha256 }
+      ], "No evidence records have been captured yet.");
+      setText("attack-path-total", `${relations.total} explicit relationships`);
+      renderTable("attack-paths-body", relations.items, [
+        { value: item => item.source_asset_id },
+        { value: item => item.relationship_type },
+        { value: item => item.target_asset_id },
+        { value: item => item.evidence_ids.length },
+        { value: item => item.validated ? "Validated" : "Unvalidated",
+          className: item => `state-cell state-${item.validated ? "completed" : "queued"}` }
+      ], "No attack-path relationships have been recorded.");
+      try {
+        const audit = await request("/api/v1/audit-events?limit=8&offset=0");
+        setText("audit-total", `${audit.total} audit events · latest records`);
+        renderTable("audit-body", audit.items, [
+          { value: item => formatDate(item.created_at) },
+          { value: item => item.action },
+          { value: item => `${item.resource_type}${item.resource_id ? ` · ${item.resource_id}` : ""}` },
+          { value: item => item.outcome, className: item => `state-cell state-${String(item.outcome).toLowerCase()}` }
+        ], "No security audit events have been recorded.");
+      } catch (auditError) {
+        setText("audit-total", "Administrator access required");
+        renderTable("audit-body", [], [
+          { value: item => item.created_at },
+          { value: item => item.action },
+          { value: item => item.resource_type },
+          { value: item => item.outcome }
+        ], "Audit events are available to administrator accounts only.");
+      }
       setMessage(statusMessage, `Data refreshed at ${new Date().toLocaleTimeString()}.`);
     } catch (error) {
       setMessage(statusMessage, error.message || "Unable to load dashboard data.", true);

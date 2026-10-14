@@ -54,6 +54,10 @@
           <a class="nav-link" href="#assets" data-section-link><span class="nav-icon" aria-hidden="true">◈</span>Assets</a>
           <a class="nav-link" href="#findings" data-section-link><span class="nav-icon" aria-hidden="true">⌁</span>Findings</a>
           <a class="nav-link" href="#scans" data-section-link><span class="nav-icon" aria-hidden="true">↻</span>Scan activity</a>
+          <a class="nav-link" href="#campaigns" data-section-link><span class="nav-icon" aria-hidden="true">◎</span>Campaigns</a>
+          <a class="nav-link" href="#evidence" data-section-link><span class="nav-icon" aria-hidden="true">◇</span>Evidence</a>
+          <a class="nav-link" href="#attack-paths" data-section-link><span class="nav-icon" aria-hidden="true">⌘</span>Attack paths</a>
+          <a class="nav-link" href="#audit-log" data-section-link><span class="nav-icon" aria-hidden="true">≡</span>Audit log</a>
         </div>
       </nav>
       <div class="sidebar-note">
@@ -152,7 +156,39 @@
         </div>
       </section>
 
-      <p class="muted footer-note">APM ThreatLens · Evidence-driven security assessment · API-backed read-only dashboard</p>
+      <section id="campaigns" class="panel">
+        <div class="panel-head"><div><h2>Campaigns</h2><p id="campaign-total">Authorized assessment campaigns</p></div></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Campaign</th><th>State</th><th>Authorized</th><th>Created</th></tr></thead>
+          <tbody id="campaigns-body"><tr><td colspan="4" class="empty-cell">Loading campaigns…</td></tr></tbody>
+        </table></div>
+      </section>
+
+      <section id="evidence" class="panel">
+        <div class="panel-head"><div><h2>Evidence ledger</h2><p id="evidence-total">Persisted evidence references and integrity digests</p></div></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Kind</th><th>Source</th><th>Captured</th><th>SHA-256</th></tr></thead>
+          <tbody id="evidence-body"><tr><td colspan="4" class="empty-cell">Loading evidence…</td></tr></tbody>
+        </table></div>
+      </section>
+
+      <section id="attack-paths" class="panel">
+        <div class="panel-head"><div><h2>Attack-path relationships</h2><p id="attack-path-total">Explicit evidence-linked relationships; validation state is preserved</p></div></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Source asset</th><th>Relationship</th><th>Target asset</th><th>Evidence</th><th>Validation</th></tr></thead>
+          <tbody id="attack-paths-body"><tr><td colspan="5" class="empty-cell">Loading relationships…</td></tr></tbody>
+        </table></div>
+      </section>
+
+      <section id="audit-log" class="panel">
+        <div class="panel-head"><div><h2>Security audit log</h2><p id="audit-total">Append-only security events · administrator access required</p></div></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Time</th><th>Action</th><th>Resource</th><th>Outcome</th></tr></thead>
+          <tbody id="audit-body"><tr><td colspan="4" class="empty-cell">Loading audit events…</td></tr></tbody>
+        </table></div>
+      </section>
+
+      <p class="muted footer-note">APM ThreatLens · Evidence-driven security assessment · Authenticated API-backed workspace</p>
     </main>
   </div>
 </body>

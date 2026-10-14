@@ -26,9 +26,17 @@ async def test_dashboard_ui_serves_static_assets_with_security_headers():
     assert "default-src 'self'" in page.headers["content-security-policy"]
     assert 'id="login-form"' in page.text
     assert 'id="severity-breakdown"' in page.text
+    assert 'id="campaigns"' in page.text
+    assert 'id="evidence"' in page.text
+    assert 'id="attack-paths"' in page.text
+    assert 'id="audit-log"' in page.text
     assert "/ui/assets/app.js" in page.text
     assert script.status_code == 200
     assert "sessionStorage" in script.text
+    assert "/api/v1/campaigns?limit=8&offset=0" in script.text
+    assert "/api/v1/evidence?limit=8&offset=0" in script.text
+    assert "/api/v1/attack-path/relations?limit=8&offset=0" in script.text
+    assert "/api/v1/audit-events?limit=8&offset=0" in script.text
     assert "localStorage" not in script.text
     assert stylesheet.status_code == 200
     assert ".metric-grid" in stylesheet.text

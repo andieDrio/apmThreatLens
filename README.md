@@ -441,6 +441,11 @@ Gate 60 verifies ownership but does not detect high-impact relation privileges g
 
 Application IDs are UUID-backed, so the runtime identity has no expected need to read or mutate PostgreSQL sequences. Gate 62 enumerates application-schema sequences and rejects effective SELECT, USAGE, or UPDATE privileges for either `current_user` or `session_user`, including inherited grants. The check is read-only, retains the separate migration identity, and adds real PostgreSQL regressions for each sequence privilege while confirming a least-privilege runtime login still passes.
 
-### Architecture Gate 63 — Fail-Closed SECURITY DEFINER Routine Execution Verification: IMPLEMENTED; validation pending
+### Architecture Gate 63 — Fail-Closed SECURITY DEFINER Routine Execution Verification: COMPLETE
 
-The runtime privilege verifier now rejects an effective EXECUTE grant on any SECURITY DEFINER routine in the active application schema for either `current_user` or `session_user`, including grants inherited through roles or granted to PUBLIC. This closes a privilege-escalation path where a callable elevated routine could execute with its owner's authority. The change preserves ordinary invoker-security routines and the separate migration identity. A PostgreSQL integration test creates a SECURITY DEFINER routine and verifies fail-closed rejection for a genuine runtime login. Exact-revision validation remains pending.
+The runtime privilege verifier now rejects an effective EXECUTE grant on any SECURITY DEFINER routine in the active application schema for either `current_user` or `session_user`, including grants inherited through roles or granted to PUBLIC. This closes a privilege-escalation path where a callable elevated routine could execute with its owner's authority. The change preserves ordinary invoker-security routines and the separate migration identity. A PostgreSQL integration test creates a SECURITY DEFINER routine and verifies fail-closed rejection for a genuine runtime login. The user confirmed Gate 63 clean and successful on 2026-10-14.
+
+
+### Architecture Gate 64 — Authenticated SOC Workspace Read-Model Expansion: IN PROGRESS
+
+Expose the existing authenticated campaign, evidence, attack-path relationship, and administrator-only audit read models in the dashboard. Render persisted API data only, preserve evidence hashes and validation state, and handle role-restricted audit access safely.

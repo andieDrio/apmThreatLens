@@ -765,6 +765,10 @@ The current domain schema uses UUID-backed identifiers, so the runtime identity 
 **Validation closure:** On 2026-10-14, the user confirmed Gate 62 was clean and successful on main revision `3b7d25914b1866a2c9617940970b2d08a44f8463`.
 
 
-## Architecture Gate 63 — Fail-Closed SECURITY DEFINER Routine Execution Verification — IMPLEMENTED; validation pending
+## Architecture Gate 63 — Fail-Closed SECURITY DEFINER Routine Execution Verification — COMPLETE
 
-The runtime verifier now rejects an effective EXECUTE privilege on any SECURITY DEFINER routine in the active application schema for either `current_user` or `session_user`, including inherited and PUBLIC grants. This prevents an otherwise non-owner runtime identity from invoking a routine that executes with elevated owner privileges. Ordinary invoker-security routines remain outside this specific restriction, and API startup remains read-only. A PostgreSQL integration regression creates an administrator-owned SECURITY DEFINER routine, grants execution to a genuine runtime login, and requires fail-closed rejection. Exact-revision validation has not yet been confirmed.
+The runtime verifier now rejects an effective EXECUTE privilege on any SECURITY DEFINER routine in the active application schema for either `current_user` or `session_user`, including inherited and PUBLIC grants. This prevents an otherwise non-owner runtime identity from invoking a routine that executes with elevated owner privileges. Ordinary invoker-security routines remain outside this specific restriction, and API startup remains read-only. A PostgreSQL integration regression creates an administrator-owned SECURITY DEFINER routine, grants execution to a genuine runtime login, and requires fail-closed rejection. The user confirmed Gate 63 clean and successful on 2026-10-14.
+
+## Architecture Gate 64 — Authenticated SOC Workspace Read-Model Expansion — IN PROGRESS
+
+The current UI exposes overview metrics, assets, findings, and scan activity while the API already provides authenticated campaign, evidence, attack-path relationship, and administrator-only audit read models. Gate 64 adds read-only sections for these existing contracts without inventing records or bypassing authorization. Evidence SHA-256 values and relationship validation states remain visible; audit access remains administrator-only.
