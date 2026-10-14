@@ -5,7 +5,7 @@
 **Highest architecture gate reached:** Gate 57  
 **Highest fully validated gate:** Gate 57  
 **Current gate:** Gate 58 — PostgreSQL Runtime/Migration Privilege Separation  
-**Current status:** Gate 57 is complete and validated on `db3b98165bb10351cb3fc2b10de964c44a5dcd90`. Gate 58 is the active priority: separate schema migration authority from the least-privileged runtime database role.
+**Current status:** Gate 57 is complete and validated on `db3b98165bb10351cb3fc2b10de964c44a5dcd90`. Gate 58 implementation is committed directly to `main`; validation on the exact current revision is pending.
 
 ## Executive Summary
 
@@ -89,6 +89,27 @@ On 2026-10-14, the user confirmed 9 focused API tests and 5 focused PostgreSQL r
 
 The five Starlette deprecation warnings about `HTTP_422_UNPROCESSABLE_ENTITY` were non-failing warnings.
 
-## Next Required Action — Gate 58
+## Gate 58 — PostgreSQL Runtime/Migration Privilege Separation — IMPLEMENTED, VALIDATION PENDING
 
-Separate PostgreSQL schema-migration authority from the application runtime database role. The current `PostgresRepository.initialize()` invokes schema migrations through its repository connection, and the audit-protection threat model explicitly excludes database owners/superusers who can disable triggers or alter schema. Inspect deployment/configuration and startup wiring; design a least-privilege runtime role that cannot own or alter `audit_events`, its triggers, or the trigger function, while a separately controlled migration identity applies schema changes. Preserve local developer ergonomics without silently granting runtime DDL privileges. Add PostgreSQL-backed privilege-boundary tests and migration/deployment documentation. Keep all work directly on `main`; no feature branches or PRs.
+### Root cause
+
+API startup previously ran `PostgresRepository.initialize()` using the same DSN as normal runtime database access. That made migration DDL authority part of the API process and undermined the audit trigger's protection against a compromised runtime identity.
+
+### Implementation committed directly to main
+
+- Added `verify_schema_ready()` to validate the exact ordered migration registry and audit protection state using read-only checks, with fail-closed behavior and explicit connection transaction cleanup.
+- Changed API startup to verify readiness rather than apply migrations.
+- Added `python -m threatlens.storage.migrate`, which requires `THREATLENS_MIGRATION_DATABASE_URL` and closes its migration connection after use.
+- Added a PostgreSQL integration test that creates a non-owner runtime role and verifies it cannot disable/drop audit triggers or replace the audit trigger function.
+- Added an API factory regression proving startup verifies schema and does not invoke migrations.
+- Updated `.env.example` and deployment documentation with separate runtime/migration DSNs and example role grants, including restrictions on the audit table and migration registry.
+
+### Validation required
+
+On the exact latest `main` SHA, run the focused schema and privilege tests, the full PostgreSQL-backed suite without skips, Ruff, diff checks, and wheel build. The privilege test requires the test database account to be able to create/drop a temporary PostgreSQL role. Production provisioning must ensure the runtime identity is not a member of the migration role and does not inherit owner, database-owner, or superuser privileges.
+
+**Current blocker:** Local execution has not yet been confirmed. Do not mark Gate 58 complete until validation passes.
+
+## Next Required Action
+
+Validate Gate 58. If any test or check fails, fix it and remain on Gate 58. All code and documentation changes stay directly on `main`; no feature branches and no pull requests.
