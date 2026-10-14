@@ -316,5 +316,8 @@ On 2026-10-14, the user confirmed Gate 71 clean and successful. This is user-con
 - Updated the API test double to implement the atomic user-provisioning contract.
 - Updated README.md, Architecture.md, MasterInstructions.md, and this status report directly on `main`.
 
+### Pytest failure and corrective change
+The uploaded full-suite log showed repeated `AttributeError: 'FakeRepository' object has no attribute 'save_user_with_audit'` failures in scan-control and scan-queue API tests. The Gate 72 service now requires this repository operation, but those two test doubles had not been updated with the new contract. Both fakes now implement `save_user_with_audit()` and roll back the in-memory user/audit state if audit persistence raises. Fixes committed directly to `main` in `540079e7d15b22246a99d0042c028583292cbc13` and `a0b41178ec4dbaca3539a430e5888da929b6bc79`.
+
 ### Validation status
-**PENDING USER VALIDATION.** Code and regression tests are committed directly to `main`; post-change focused auth tests, the full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build have not yet been confirmed. Pull latest `main`, run the focused and full test commands, then Ruff, diff check, and wheel build. Fix any blocker and remain on Gate 72 until the exact main revision is validated.
+**PENDING USER VALIDATION.** The root cause is addressed in the test doubles, but tests have not yet been rerun against the latest main revision. Pull latest `main`, run focused auth/scan-control/scan-queue tests, then the full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build. Fix any further blocker and remain on Gate 72 until the exact main revision is validated.
