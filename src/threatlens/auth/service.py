@@ -102,17 +102,15 @@ class AuthenticationService:
         user = User(
             username=username, password_hash=self.create_password_hash(password), role=role.value
         )
-        self.repository.save_user(user)
-        self.repository.save_audit_event(
-            AuditEvent(
-                actor_user_id=user.id,
-                action="USER_CREATED",
-                resource_type="USER",
-                resource_id=user.id,
-                outcome="SUCCESS",
-                detail=f"role={role.value}",
-            )
+        event = AuditEvent(
+            actor_user_id=user.id,
+            action="USER_CREATED",
+            resource_type="USER",
+            resource_id=user.id,
+            outcome="SUCCESS",
+            detail=f"role={role.value}",
         )
+        self.repository.save_user_with_audit(user, event)
         return user
 
     def authenticate(self, username: str, password: str) -> tuple[AuthenticatedPrincipal, str]:
