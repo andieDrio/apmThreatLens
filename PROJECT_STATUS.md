@@ -8,37 +8,31 @@
 
 ## Executive Summary
 
-APM ThreatLens is an authorized VAPT orchestration platform with a PostgreSQL-backed persistence boundary, authenticated scan lifecycle controls, controlled assessment providers, evidence-first handoff, finding correlation, risk assessment, attack-path analysis, evidence validation, remediation tracking, audit read models, and an initial authenticated dashboard.
+APM ThreatLens is an authorized VAPT orchestration platform with PostgreSQL persistence, authenticated scan lifecycle controls, controlled assessment providers, evidence-first handoff, finding correlation, risk assessment, attack-path analysis, evidence validation, remediation tracking, audit read models, and an initial authenticated dashboard.
 
-The highest numbered gate reached is 52. This does **not** mean that 52 gates are all complete: gate numbering includes historical and differently validated entries. Gates 49, 50, and 51 are recorded as complete based on prior user-confirmed validation. Gate 52 is implemented on `main`; the user confirmed the lint, diff, pytest command, and wheel build completed successfully on 2026-10-13. The pytest output contains many skips, so confirm whether the PostgreSQL-backed execution-fence regressions actually ran before marking the gate complete.
+Gates 49–51 remain complete based on prior user-confirmed validation. Gate 52's PostgreSQL execution-fence regression tests and Gate 53's API/PostgreSQL remediation-idempotency tests were confirmed executed successfully on 2026-10-14: the full suite reached 100% without a skip summary, focused remediation tests passed (9 API tests and 5 PostgreSQL tests), Ruff passed, diff checks were clean, and the package wheel built successfully. Five Starlette deprecation warnings remain non-blocking.
 
-## Current Gate — Gate 52
+## Current Gate — Gate 54: Versioned PostgreSQL Schema Migrations
 
-### Objective
+### Objective and root cause
 
-Prevent provider-originated evidence and findings from persisting after their scan execution loses its durable `RUNNING` lease, and fail closed if the production persistence boundary cannot enforce that lease.
+Replace implicit, scattered PostgreSQL schema initialization with a durable, ordered migration registry. Previously, the initial schema, additive column changes, authentication, finding correlation, evidence validation, and remediation-idempotency tables were initialized through separate code paths without a central record of applied schema versions.
 
-### Root cause
+### Implementation on main
 
-The normal PostgreSQL execution-aware methods fenced provider writes, but generic/legacy compatibility fallbacks remained available when a repository lacked the execution-fenced methods. A production adapter misconfiguration or future refactor could accidentally select an unfenced handoff path.
-
-### Implemented changes
-
-- `PostgresRepository` declares `requires_execution_fence = True`.
-- `ProviderHandoff` rejects unfenced evidence or finding fallback when the repository requires execution fencing.
-- `ProviderHandoff` refuses a correlator fallback if the repository requires the fence but the correlator lacks an execution-aware persistence method.
-- `DurableFindingCorrelator.persist_for_execution` fails closed when a fence-required repository does not expose the execution-aware correlation method.
-- PostgreSQL generic `save_evidence` rejects evidence carrying execution provenance; execution-bound evidence must use `save_evidence_for_execution`.
-- Execution-aware PostgreSQL evidence and finding writes continue to lock the scan row, require `RUNNING`, and write in the same transaction. Durable correlation takes the same scan-row lock before correlation/merge persistence.
-- Added regression tests for missing-fence fallbacks and attempts to persist execution-bound evidence through the unfenced method.
-- Updated `README.md`, `Architecture.md`, and `MasterInstructions.md` to record the security hardening and make this report mandatory for future cycles.
+- Added `src/threatlens/storage/schema_migrations.py` with ordered migration definitions and the `threatlens_schema_migrations` registry.
+- Serialized migration execution across application instances using a stable PostgreSQL session advisory lock.
+- Added migration name/checksum verification, history-gap detection, and fail-closed handling for unknown future versions.
+- Adopted the existing initializer as retry-safe baseline migration version 1.
+- Required new migrations to be append-only and transactional wherever supported.
+- Routed `PostgresRepository.initialize()` through the migration runner and retained the existing DDL in `_initialize_legacy_schema()`.
+- Added PostgreSQL tests for baseline adoption, repeat initialization/data preservation, migration failure/retry, and concurrent initialization.
 
 ### Relevant files
 
-- `src/threatlens/providers/handoff.py`
+- `src/threatlens/storage/schema_migrations.py`
 - `src/threatlens/storage/postgres.py`
-- `src/threatlens/storage/finding_correlation.py`
-- `tests/test_provider_handoff_execution_fence.py`
+- `tests/test_postgres_schema_migrations.py`
 - `README.md`
 - `Architecture.md`
 - `MasterInstructions.md`
@@ -46,24 +40,16 @@ The normal PostgreSQL execution-aware methods fenced provider writes, but generi
 
 ### Validation
 
-**Baseline before the latest fail-closed changes:** user confirmed the following passed on the preceding revision:
-- `ruff check .`
-- `git diff --check`
-- `python -m pytest -q`
-- `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel`
+Gate 54 implementation is committed to `main`. Local PostgreSQL-backed tests, the full suite, Ruff, diff checks, and wheel build for this revision remain unconfirmed. Run the validation commands against the dedicated disposable PostgreSQL test database before marking the gate complete.
 
-The full test run reported five Starlette deprecation warnings for `HTTP_422_UNPROCESSABLE_ENTITY`; no test failures were reported.
+### Security and recovery review
 
-**Latest revision:** the user reported successful Ruff, diff checks, pytest command, and wheel build. The test suite contained many skipped tests and five Starlette deprecation warnings, with no failures. The skip summary is needed to establish whether the required PostgreSQL-backed execution-fence regressions executed.
-
-### Security review
-
-- **Improved:** production handoff/correlation fallback is fail-closed when the repository explicitly requires execution fencing.
-- **Improved:** execution-bound evidence cannot be sent through the generic PostgreSQL evidence-write method.
-- **Preserved:** scan-row lock and `RUNNING` state verification share the persistence transaction, serializing provider writes against cancellation/recovery/terminal transitions.
-- **Compatibility:** legacy and in-memory repositories can retain unfenced fallback only when they do not declare that execution fencing is mandatory.
-- **Call-path review:** inspected all 15 provider source modules on `main`; the only direct `save_evidence`, `save_finding`, or legacy `persist` calls were the compatibility branches inside `ProviderHandoff`. No provider module was found writing directly around that boundary.
-- **Still to verify:** local tests against the exact latest `main` revision.
+- The migration registry identifier is validated before SQL interpolation; migration values are parameterized.
+- Session-level advisory locking survives commits in the legacy baseline, preventing concurrent app instances from racing through schema setup.
+- The baseline is explicitly non-transactional because existing initialization helpers commit internally; the DDL is idempotent and safe to retry if version registration fails.
+- New migrations run transactionally with their version record, so a failed migration is not marked applied.
+- Unknown future versions, version gaps, and applied migration identity/checksum drift fail closed.
+- No existing application data is rewritten by this baseline adoption.
 
 ## Recent Completed Gates
 
