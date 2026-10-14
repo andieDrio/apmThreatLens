@@ -51,6 +51,43 @@ def test_logout_revokes_session(tmp_path):
         auth.authenticate_session(token)
     repo.close()
 
+def test_logout_session_and_success_audit_are_atomic_on_audit_failure(tmp_path):
+    repo = SQLiteRepository(tmp_path / "threatlens.db")
+    repo.initialize()
+    auth = AuthenticationService(repo)
+    auth.create_user("analyst", "correct horse battery staple", Role.ANALYST)
+    principal, token = auth.authenticate("analyst", "correct horse battery staple")
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    repo.connection.execute(
+        """
+        CREATE TRIGGER fail_logout_success_audit
+        BEFORE INSERT ON audit_events
+        WHEN NEW.action = 'LOGOUT' AND NEW.outcome = 'SUCCESS'
+        BEGIN
+            SELECT RAISE(ABORT, 'injected logout audit failure');
+        END
+        """
+    )
+
+    with pytest.raises(Exception, match="injected logout audit failure"):
+        auth.logout(principal)
+
+    session = repo.session_by_token_hash(token_hash)
+    assert session is not None
+    assert session["revoked"] is False
+    assert repo.connection.execute(
+        "SELECT COUNT(*) FROM audit_events WHERE action='LOGOUT' AND outcome='SUCCESS'"
+    ).fetchone()[0] == 0
+
+    repo.connection.execute("DROP TRIGGER fail_logout_success_audit")
+    auth.logout(principal)
+    session = repo.session_by_token_hash(token_hash)
+    assert session["revoked"] is True
+    assert repo.connection.execute(
+        "SELECT COUNT(*) FROM audit_events WHERE action='LOGOUT' AND outcome='SUCCESS'"
+    ).fetchone()[0] == 1
+    repo.close()
+
 
 @pytest.mark.parametrize("iterations", ["0", "999999999", "10000"])
 def test_password_verifier_rejects_unsafe_pbkdf2_cost(iterations):
