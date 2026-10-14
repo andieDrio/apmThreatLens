@@ -482,4 +482,4 @@ Logout routes through a dedicated repository operation that revokes the session 
 
 ### Architecture Gate 72 — Atomic User Provisioning and Success-Audit Persistence: IN PROGRESS
 
-AuthenticationService.create_user() now delegates to save_user_with_audit(), which persists the new user and USER_CREATED success event in one transaction in PostgreSQL and SQLite compatibility storage. Failure-injection regressions assert that an audit-write failure rolls back user creation. Focused/full validation, Ruff, diff check, and package wheel build remain pending.
+AuthenticationService.create_user() now delegates to save_user_with_audit(), which persists the new user and USER_CREATED success event in one transaction in PostgreSQL and SQLite compatibility storage. Failure-injection regressions assert that an audit-write failure rolls back user creation. Repository test doubles in the scan-control and scan-queue suites now implement the atomic user-and-audit contract. Focused/full validation, Ruff, diff check, and package wheel build remain pending.
