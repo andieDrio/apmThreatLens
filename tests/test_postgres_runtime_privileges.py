@@ -230,6 +230,7 @@ def test_runtime_role_cannot_own_application_schema_objects(postgres_repository)
             runtime_repository.close()
         _drop_roles(admin_repository, role_name, owner_role, sequence_name)
 
+
 @pytest.mark.parametrize("relation_privilege", ["TRUNCATE", "TRIGGER", "REFERENCES"])
 def test_runtime_role_with_dangerous_application_table_privilege_fails_closed(
     postgres_repository, relation_privilege
@@ -250,6 +251,7 @@ def test_runtime_role_with_dangerous_application_table_privilege_fails_closed(
         if runtime_repository is not None:
             runtime_repository.close()
         _drop_roles(admin_repository, role_name, owner_role, sequence_name)
+
 
 @pytest.mark.parametrize("sequence_privilege", ["SELECT", "USAGE", "UPDATE"])
 def test_runtime_role_with_sequence_privilege_fails_closed(
@@ -315,7 +317,9 @@ def test_runtime_role_with_protected_table_write_privilege_fails_closed(
     postgres_repository, privilege_option, expected_detail
 ):
     admin_repository = postgres_repository
-    role_name, owner_role, dsn, sequence_name = _runtime_role(admin_repository, **privilege_option)
+    role_name, owner_role, dsn, sequence_name = _runtime_role(
+        admin_repository, **privilege_option
+    )
     runtime_repository = None
     try:
         runtime_repository = PostgresRepository(dsn)
@@ -325,6 +329,7 @@ def test_runtime_role_with_protected_table_write_privilege_fails_closed(
         if runtime_repository is not None:
             runtime_repository.close()
         _drop_roles(admin_repository, role_name, owner_role, sequence_name)
+
 
 def test_runtime_role_cannot_alter_audit_protection(postgres_repository):
     """A non-owner runtime role can use the schema but cannot change audit DDL."""

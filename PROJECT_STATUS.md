@@ -174,6 +174,7 @@ Gate 61 checks destructive/structural privileges on application tables but does 
 - Added PostgreSQL-backed regressions that grant each privilege separately on an administrator-owned sequence to a genuine runtime login.
 - Preserved the least-privilege runtime path, audit/migration protections, and controlled migration identity.
 - Updated README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md directly on `main`.
+- Gate 62 implementation commit: `2a460554fbb39442af867ce691625e33b3d60c9f`.
 
 ### Validation required
 Run focused schema migration/runtime privilege/API tests, the full PostgreSQL-backed `python -m pytest -q -rs` suite without skips, `ruff check .`, `git diff --check`, and package wheel build on the exact current `main` SHA. Fix blockers and remain on Gate 62 if any check fails. Do not close the gate before user-confirmed exact-revision validation.
