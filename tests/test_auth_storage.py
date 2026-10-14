@@ -92,3 +92,62 @@ def test_postgres_logout_session_and_success_audit_are_atomic(postgres_repositor
     session = postgres_repository.session_by_token_hash(token_hash)
     assert session["revoked"] is True
     assert logout_success_count() == 1
+
+
+
+def test_postgres_user_creation_and_success_audit_are_atomic(postgres_repository):
+    auth = AuthenticationService(postgres_repository)
+    connection = postgres_repository.connection
+
+    with connection.transaction():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "DROP TRIGGER IF EXISTS test_fail_user_created_audit_trigger ON audit_events"
+            )
+            cursor.execute("DROP FUNCTION IF EXISTS test_fail_user_created_audit()")
+            cursor.execute(
+                """
+                CREATE OR REPLACE FUNCTION test_fail_user_created_audit()
+                RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN
+                    IF NEW.action = 'USER_CREATED' AND NEW.outcome = 'SUCCESS' THEN
+                        RAISE EXCEPTION 'injected user creation audit failure';
+                    END IF;
+                    RETURN NEW;
+                END;
+                $$
+                """
+            )
+            cursor.execute(
+                "CREATE TRIGGER test_fail_user_created_audit_trigger "
+                "BEFORE INSERT ON audit_events FOR EACH ROW "
+                "EXECUTE FUNCTION test_fail_user_created_audit()"
+            )
+
+    def created_user_audit_count():
+        with connection.transaction():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT COUNT(*) FROM audit_events "
+                    "WHERE action = %s AND outcome = %s",
+                    ("USER_CREATED", "SUCCESS"),
+                )
+                return cursor.fetchone()[0]
+
+    try:
+        with pytest.raises(Exception, match="injected user creation audit failure"):
+            auth.create_user("atomic-user-pg", "correct horse battery staple", Role.ANALYST)
+
+        assert postgres_repository.user_by_username("atomic-user-pg") is None
+        assert created_user_audit_count() == 0
+    finally:
+        with connection.transaction():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DROP TRIGGER IF EXISTS test_fail_user_created_audit_trigger ON audit_events"
+                )
+                cursor.execute("DROP FUNCTION IF EXISTS test_fail_user_created_audit()")
+
+    user = auth.create_user("atomic-user-pg", "correct horse battery staple", Role.ANALYST)
+    assert postgres_repository.user_by_username("atomic-user-pg") == user
+    assert created_user_audit_count() == 1
