@@ -120,15 +120,15 @@ API startup no longer applies schema migrations. The test suite demonstrates a n
 Gate 58 separates migration and runtime DSNs, but the API could still be configured with a superuser, database/schema owner, or role inheriting unsafe DDL privileges. Schema readiness and audit-trigger verification alone do not establish that the effective API identity is least-privileged.
 
 ### Implementation
-- Added \`verify_runtime_privileges()\` to inspect both \`current_user\` and \`session_user\`.
+- Added `verify_runtime_privileges()` to inspect both `current_user` and `session_user`.
 - Fails closed for superuser identities; effective database/schema CREATE privileges; audit UPDATE/DELETE/TRUNCATE/TRIGGER privileges; migration registry INSERT/UPDATE/DELETE/TRUNCATE privileges; and membership in database, schema, table, or trigger-function owning roles.
 - API startup runs the check after read-only schema readiness verification and closes the connection on any startup failure.
 - Added PostgreSQL integration coverage for least-privilege login, direct schema CREATE, inherited DDL role membership, and API cleanup after privilege-verification failure.
-- All changes are committed directly to \`main\`; no feature branches or pull requests.
+- All changes are committed directly to `main`; no feature branches or pull requests.
 
 ### Validation required
-Run the focused schema migration/runtime privilege/API tests, full PostgreSQL-backed \`python -m pytest -q -rs\` suite without skips, \`ruff check .\`, \`git diff --check\`, and package wheel build on the exact current \`main\` SHA. The integration tests require a PostgreSQL test account allowed to create/drop temporary roles and connect as a test login. Fix any blocker and remain on Gate 59. Do not mark complete until exact-revision results are confirmed.
+Run the focused schema migration/runtime privilege/API tests, full PostgreSQL-backed `python -m pytest -q -rs` suite without skips, `ruff check .`, `git diff --check`, and package wheel build on the exact current `main` SHA. The integration tests require a PostgreSQL test account allowed to create/drop temporary roles and connect as a test login. Fix any blocker and remain on Gate 59. Do not mark complete until exact-revision results are confirmed.
 
 ## Next Required Action
 
-Validate Gate 59 on the exact latest \`main\` revision. The runtime privilege verifier must be tested against an actual least-privilege PostgreSQL login and unsafe direct/inherited grants before this gate can close.
+Validate Gate 59 on the exact latest `main` revision. The runtime privilege verifier must be tested against an actual least-privilege PostgreSQL login and unsafe direct/inherited grants before this gate can close.
