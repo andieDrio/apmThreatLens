@@ -3,9 +3,9 @@
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
 **Highest architecture gate reached:** Gate 62  
-**Highest fully validated gate:** Gate 61  
-**Current gate:** Gate 62 — Fail-Closed Runtime Sequence Privilege Verification  
-**Current status:** Gate 61 is complete and validated on `0c6f22281f3242187ec2c1b3165b50557d9665d1`. Gate 62 implementation is committed directly to `main`; exact-revision validation is pending.
+**Highest fully validated gate:** Gate 62  
+**Current gate:** Gate 63 — Fail-Closed SECURITY DEFINER Routine Execution Verification  
+**Current status:** Gate 62 was confirmed clean and successful by the user on 2026-10-14 at main revision `3b7d25914b1866a2c9617940970b2d08a44f8463`. Gate 63 implementation is committed directly to `main`; exact-revision validation is pending.
 
 ## Executive Summary
 
@@ -163,7 +163,7 @@ Gate 60 blocks runtime ownership but does not detect high-impact relation ACLs g
 ### Validation closure
 On 2026-10-14, the user confirmed all focused PostgreSQL migration/runtime privilege/API tests, the full PostgreSQL-backed suite, Ruff, diff check, and wheel build completed cleanly on main revision `0c6f22281f3242187ec2c1b3165b50557d9665d1`. No failures were reported.
 
-## Gate 62 — Fail-Closed Runtime Sequence Privilege Verification — IMPLEMENTED, VALIDATION PENDING
+## Gate 62 — Fail-Closed Runtime Sequence Privilege Verification — COMPLETE
 
 ### Root cause
 Gate 61 checks destructive/structural privileges on application tables but does not inspect application-schema sequence ACLs. Sequence UPDATE permits `setval`, and USAGE permits `nextval`; neither is needed for UUID-backed runtime identifiers. SELECT is likewise unnecessary under the current storage contract.
@@ -176,9 +176,25 @@ Gate 61 checks destructive/structural privileges on application tables but does 
 - Updated README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md directly on `main`.
 - Gate 62 implementation commit: `2a460554fbb39442af867ce691625e33b3d60c9f`.
 
+### Validation closure
+On 2026-10-14, the user confirmed Gate 62 was clean and successful on main revision `3b7d25914b1866a2c9617940970b2d08a44f8463`.
+
+
+## Gate 63 — Fail-Closed SECURITY DEFINER Routine Execution Verification — IMPLEMENTED, VALIDATION PENDING
+
+### Root cause
+The existing verifier blocks runtime ownership of routines and checks sequence and table privileges, but it did not inspect whether the runtime identity could execute a SECURITY DEFINER routine. Such a routine runs with its owner's privileges and can become an escalation path even when the runtime login does not own the routine.
+
+### Implementation
+- Extended the read-only runtime verifier to enumerate SECURITY DEFINER routines in the active application schema and detect effective EXECUTE privilege for `current_user` or `session_user`, including inherited and PUBLIC grants.
+- Added a PostgreSQL integration regression that creates a SECURITY DEFINER routine, grants EXECUTE to a real runtime login, and expects fail-closed rejection.
+- Preserved invoker-security routines, UUID/sequence controls, audit and migration-registry protection, and separate migration identity.
+- Updated README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md directly on `main`.
+- Implementation commits: verifier `4d9c305e060b783b7dafe07c56dd469042abaf50`; integration test `32c88d0fd8839c0da173c48c41dd07ae5d9f2181`.
+
 ### Validation required
-Run focused schema migration/runtime privilege/API tests, the full PostgreSQL-backed `python -m pytest -q -rs` suite without skips, `ruff check .`, `git diff --check`, and package wheel build on the exact current `main` SHA. Fix blockers and remain on Gate 62 if any check fails. Do not close the gate before user-confirmed exact-revision validation.
+Run focused PostgreSQL migration/runtime privilege/API tests, the full PostgreSQL-backed `python -m pytest -q -rs` suite without skips, `ruff check .`, `git diff --check`, and package wheel build on the exact latest `main` SHA. Fix any failure before moving on. Do not claim Gate 63 validated until the user confirms exact-revision results.
 
 ## Next Required Action
 
-Validate Gate 62 on latest `main`, including the SELECT/USAGE/UPDATE sequence regressions and the existing least-privilege login test.
+Validate Gate 63 on the latest `main`, including the SECURITY DEFINER execution regression and the existing least-privilege runtime role test.
