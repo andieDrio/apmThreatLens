@@ -123,7 +123,8 @@ Gate 58 separates migration and runtime DSNs, but the API could still be configu
 - Added `verify_runtime_privileges()` to inspect both `current_user` and `session_user`.
 - Fails closed for superuser identities; effective database/schema CREATE privileges; audit UPDATE/DELETE/TRUNCATE/TRIGGER privileges; migration registry INSERT/UPDATE/DELETE/TRUNCATE privileges; and membership in database, schema, table, or trigger-function owning roles.
 - API startup runs the check after read-only schema readiness verification and closes the connection on any startup failure.
-- Added PostgreSQL integration coverage for least-privilege login, direct schema CREATE, inherited DDL role membership, and API cleanup after privilege-verification failure.
+- Added PostgreSQL integration coverage for least-privilege login, direct schema CREATE, inherited DDL role membership, explicit audit-table UPDATE and migration-registry UPDATE rejection, and API cleanup after privilege-verification failure.
+- Implementation commits on `main`: verifier `b0376c5`, repository method `2233ceb`, API enforcement `df9c541`, PostgreSQL integration tests `7881afa` and `0bf8a82`, API startup tests `4c35909` and `0743d97`, documentation updates `7d375b7`, `42fc76d`, `c8e2861`, `64655b2`, `5383aca`. Later verifier hardening includes `415c3db` and `2f63434`.
 - All changes are committed directly to `main`; no feature branches or pull requests.
 
 ### Validation required
