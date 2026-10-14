@@ -1,10 +1,10 @@
 # APM ThreatLens — Project Status
 
-**Last updated:** 2026-10-13  
+**Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 52  
-**Current gate:** Gate 52 — Execution-Lease-Fenced Evidence and Finding Persistence  
-**Current status:** Validation commands pass; PostgreSQL-backed test skip review pending
+**Highest architecture gate reached:** Gate 53  
+**Current gate:** Gate 53 — Durable Finding Remediation Idempotency  
+**Current status:** Implementation committed; local validation pending
 
 ## Executive Summary
 
@@ -111,3 +111,29 @@ The user confirmed successful local validation on 2026-10-13 after the latest im
 ## Next Required Action
 
 The validation commands passed, but Gate 52 remains pending until `python -m pytest -q -rs` confirms that the required PostgreSQL-backed execution-fence regressions were not skipped. Once confirmed, re-fetch latest `main`, inspect the implementation, and select the next highest-priority unfinished architecture gap; do not assume Gate 53's objective from numbering alone.
+
+
+## Gate 53 — Durable Finding Remediation Idempotency — VALIDATION PENDING
+
+### Objective and root cause
+
+The authenticated finding remediation command previously applied a state transition and audit event on every request. A network retry could repeat audit events or encounter a different state than the original response. There was no durable request identity for this command.
+
+### Implementation on main
+
+- Require a bounded safe-ASCII `Idempotency-Key` on the remediation API.
+- Fingerprint the canonical finding ID, target state, and rationale; scope keys to the authenticated actor.
+- Serialize cross-instance retries with a transaction-scoped PostgreSQL advisory lock.
+- Commit the idempotency mapping, remediation transition, and audit event atomically.
+- Replay the original changed/state/allowed result without duplicating audit events.
+- Reject reuse of the same actor/key with a different request using HTTP 409.
+- Persist denied transition results so exact retries do not duplicate denial audit events.
+- Add API replay/conflict/missing-key tests and PostgreSQL replay/conflict tests.
+
+### Validation
+
+Not yet executed on this commit. Run focused API/PostgreSQL tests, `python -m pytest -q -rs`, `ruff check .`, `git diff --check`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel`. Gate 52's PostgreSQL skip review also remains unresolved.
+
+### Next required action
+
+Validate Gate 53 on the exact main revision. If any test, lint, build, or runtime check fails, fix it and return to Gate 53 before selecting another gate.
