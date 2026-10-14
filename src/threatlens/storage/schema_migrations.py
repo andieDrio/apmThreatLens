@@ -211,6 +211,12 @@ def verify_runtime_privileges(repository: object) -> None:
                             OR has_table_privilege(session_user, registry.oid, 'TRUNCATE'),
                           has_table_privilege(current_user, registry.oid, 'TRIGGER')
                             OR has_table_privilege(session_user, registry.oid, 'TRIGGER'),
+                          has_table_privilege(current_user, users.oid, 'INSERT')
+                            OR has_table_privilege(session_user, users.oid, 'INSERT'),
+                          has_table_privilege(current_user, users.oid, 'UPDATE')
+                            OR has_table_privilege(session_user, users.oid, 'UPDATE'),
+                          has_table_privilege(current_user, users.oid, 'DELETE')
+                            OR has_table_privilege(session_user, users.oid, 'DELETE'),
                           current_user::regrole::oid = d.datdba
                             OR session_user::regrole::oid = d.datdba
                             OR pg_has_role(current_user, d.datdba, 'MEMBER')
@@ -331,6 +337,8 @@ def verify_runtime_privileges(repository: object) -> None:
                    JOIN pg_class registry
                      ON registry.relnamespace = n.oid
                     AND registry.relname = 'threatlens_schema_migrations'
+                   JOIN pg_class users
+                     ON users.relnamespace = n.oid AND users.relname = 'users'
                    JOIN pg_proc audit_fn
                      ON audit_fn.pronamespace = n.oid
                     AND audit_fn.proname = 'threatlens_reject_audit_mutation'
@@ -365,6 +373,9 @@ def verify_runtime_privileges(repository: object) -> None:
             registry_delete,
             registry_truncate,
             registry_trigger,
+            users_insert,
+            users_update,
+            users_delete,
             database_owner_member,
             schema_owner_member,
             audit_owner_member,
@@ -390,6 +401,8 @@ def verify_runtime_privileges(repository: object) -> None:
             (registry_insert, registry_update, registry_delete, registry_truncate, registry_trigger)
         ):
             violations.append("migration-registry mutation privilege")
+        if any((users_insert, users_update, users_delete)):
+            violations.append("user-table mutation privilege")
         if any(
             (
                 database_owner_member,

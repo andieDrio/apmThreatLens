@@ -2,10 +2,10 @@
 
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 65  
-**Highest fully validated gate:** Gate 64  
-**Current gate:** Gate 65 — Professional SOC Workspace Navigation & Accessibility  
-**Current status:** The user confirmed Gate 64 clean and successful on 2026-10-14. Gate 65 is active and hardens workspace navigation, keyboard accessibility, and responsive browsing without changing API authorization or data contracts.
+**Highest architecture gate reached:** Gate 66  
+**Highest fully validated gate:** Gate 65  
+**Current gate:** Gate 66 — Fail-Closed Runtime User-Identity Mutation Privilege Verification  
+**Current status:** The user confirmed Gate 65 clean and successful on 2026-10-14. Gate 66 is active and extends read-only startup privilege verification to prevent runtime mutation of authentication identities.
 
 ## Executive Summary
 
@@ -211,7 +211,7 @@ The authenticated dashboard did not expose existing campaign, evidence, attack-p
 ### Validation closure
 On 2026-10-14, the user confirmed Gate 64 was clean and successful. This is recorded as user-confirmed validation; the assistant did not independently execute the local test, lint, PostgreSQL suite, or wheel-build commands in this environment.
 
-## Gate 65 — Professional SOC Workspace Navigation & Accessibility — IN PROGRESS
+## Gate 65 — Professional SOC Workspace Navigation & Accessibility — COMPLETE
 
 ### Root cause
 The new workspace sections are reachable through anchor links, but the active navigation state only changes on click and can become inaccurate when users scroll manually. The UI also lacks explicit keyboard focus styling and reduced-motion handling, which weakens predictable navigation and accessibility.
@@ -225,6 +225,23 @@ The new workspace sections are reachable through anchor links, but the active na
 - Preserve same-origin API calls, session handling, CSP compatibility, API authorization, and persisted-only data rendering.
 - Validate focused UI tests, full PostgreSQL-backed suite without skips, Ruff, diff checks, and package wheel build before closing the gate.
 
+### Validation closure
+
+On 2026-10-14, the user confirmed Gate 65 clean and successful on main. This is recorded as user-confirmed validation; the assistant did not independently execute local UI tests, full PostgreSQL suite, Ruff, or wheel build.
+
+## Gate 66 — Fail-Closed Runtime User-Identity Mutation Privilege Verification — IN PROGRESS
+
+### Root cause
+The runtime privilege verifier rejects broad schema authority, protected audit/migration mutation, dangerous relation privileges, sequence access, SECURITY DEFINER execution, and application object ownership. However, it did not explicitly reject INSERT, UPDATE, or DELETE on the authentication `users` table. Those rights are unnecessary for the current runtime API, which reads users for authentication while user provisioning belongs to a trusted deployment/admin workflow. Write access could allow compromised runtime credentials to create or alter privileged accounts or deactivate users.
+
+### Acceptance criteria
+- Verify effective INSERT, UPDATE, and DELETE privileges on the `users` relation for both `current_user` and `session_user`, including inherited/PUBLIC grants via PostgreSQL privilege functions.
+- Fail closed at runtime startup when any user-table mutation privilege is effective.
+- Preserve required SELECT access, session lifecycle writes, durable login rate limiting, audit append-only protections, migration separation, and the least-privilege runtime path.
+- Add PostgreSQL integration regressions for each user-table mutation privilege and ensure the least-privilege role still passes.
+- Update README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md.
+- Validate focused PostgreSQL privilege/migration/API tests, the full PostgreSQL-backed suite without skips, Ruff, diff checks, and package wheel build before closing the gate.
+
 ## Next Required Action
 
-Implement and validate Gate 65 on the exact `main` revision. Fix any failure before advancing. After validation, reassess remaining highest-priority architecture gaps and continue toward a polished professional SOC/VAPT workspace.
+Implement and validate Gate 66 on the exact `main` revision. Fix any failure before advancing. Continue using GitHub `main` only; no feature branches, pull requests, or force pushes.

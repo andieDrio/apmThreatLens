@@ -30,6 +30,7 @@ def _runtime_role(
     relation_privilege=None,
     sequence_privilege=None,
     security_definer_routine=False,
+    user_table_privilege=None,
 ):
     connection = repository.connection
     role_name = f"tl_runtime_test_{uuid4().hex[:12]}"
@@ -87,6 +88,17 @@ def _runtime_role(
                     "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {}"
                 ).format(sql.Identifier(role_name))
             )
+            cursor.execute(
+                sql.SQL("REVOKE INSERT, UPDATE, DELETE ON users FROM {}").format(
+                    sql.Identifier(role_name)
+                )
+            )
+            if user_table_privilege:
+                cursor.execute(
+                    sql.SQL("GRANT {} ON users TO {}").format(
+                        sql.SQL(user_table_privilege), sql.Identifier(role_name)
+                    )
+                )
             cursor.execute(
                 sql.SQL(
                     "REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER "
@@ -455,3 +467,23 @@ def test_runtime_role_cannot_alter_audit_protection(postgres_repository):
                     )
 
     repository.verify_schema_ready()
+
+
+
+@pytest.mark.parametrize("user_table_privilege", ["INSERT", "UPDATE", "DELETE"])
+def test_runtime_role_with_user_table_mutation_privilege_fails_closed(
+    postgres_repository, user_table_privilege
+):
+    admin_repository = postgres_repository
+    role_name, owner_role, dsn, sequence_name = _runtime_role(
+        admin_repository, user_table_privilege=user_table_privilege
+    )
+    runtime_repository = None
+    try:
+        runtime_repository = PostgresRepository(dsn)
+        with pytest.raises(RuntimeError, match="user-table mutation privilege"):
+            runtime_repository.verify_runtime_privileges()
+    finally:
+        if runtime_repository is not None:
+            runtime_repository.close()
+        _drop_roles(admin_repository, role_name, owner_role, sequence_name)

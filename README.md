@@ -451,6 +451,11 @@ The runtime privilege verifier now rejects an effective EXECUTE grant on any SEC
 Expose the existing authenticated campaign, evidence, attack-path relationship, and administrator-only audit read models in the dashboard. Render persisted API data only, preserve evidence hashes and validation state, and handle role-restricted audit access safely.
 
 
-### Architecture Gate 65 — Professional SOC Workspace Navigation & Accessibility: IN PROGRESS
+### Architecture Gate 65 — Professional SOC Workspace Navigation & Accessibility: COMPLETE
 
 The workspace now contains the existing authenticated SOC read models, but its active navigation state is click-driven rather than scroll-aware. Gate 65 synchronizes the active navigation item with the visible section, adds keyboard-visible focus treatment, and respects reduced-motion preferences while preserving the restrictive CSP and existing API contracts. Validation remains pending on the exact main revision.
+
+
+### Architecture Gate 66 — Fail-Closed Runtime User-Identity Mutation Privilege Verification: IN PROGRESS
+
+The runtime privilege verifier now needs to explicitly reject effective INSERT, UPDATE, and DELETE on the authentication `users` table. The application runtime requires user lookup but has no runtime user-provisioning API; identity changes belong to a trusted deployment/admin workflow. Gate 66 preserves SELECT and existing session/rate-limit writes while adding PostgreSQL-backed regressions for each forbidden user-table mutation privilege. Validation is pending.

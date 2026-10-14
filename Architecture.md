@@ -774,8 +774,13 @@ The runtime verifier now rejects an effective EXECUTE privilege on any SECURITY 
 The current UI exposes overview metrics, assets, findings, and scan activity while the API already provides authenticated campaign, evidence, attack-path relationship, and administrator-only audit read models. Gate 64 adds read-only sections for these existing contracts without inventing records or bypassing authorization. Evidence SHA-256 values and relationship validation states remain visible; audit access remains administrator-only.
 
 
-## Architecture Gate 65 — Professional SOC Workspace Navigation & Accessibility — IN PROGRESS
+## Architecture Gate 65 — Professional SOC Workspace Navigation & Accessibility — COMPLETE
 
 The authenticated workspace now exposes overview, assets, findings, scan activity, campaigns, evidence, attack-path relationships, and the administrator-only audit read model. Its navigation active state must remain accurate while scrolling, and interactive elements must have visible keyboard focus. Gate 65 updates only presentation behavior: it uses existing same-origin anchors and DOM state, does not introduce inline scripts/styles, and does not change API authorization, session storage, or data contracts. CSS honors reduced-motion preferences and keeps the desktop sidebar usable while retaining horizontally scrollable mobile navigation.
 
 Validation is pending for the exact main revision. Required checks include focused dashboard UI tests, the full PostgreSQL-backed suite without skips, Ruff, diff checks, and package wheel build.
+
+
+## Architecture Gate 66 — Fail-Closed Runtime User-Identity Mutation Privilege Verification — IN PROGRESS
+
+The PostgreSQL runtime privilege verifier must explicitly reject effective INSERT, UPDATE, or DELETE privilege on the authentication `users` relation for either `current_user` or `session_user`. These checks use PostgreSQL's effective privilege functions so inherited role and PUBLIC grants are included. User identity provisioning is outside the runtime API and belongs to a trusted deployment/admin workflow. The runtime still requires SELECT on users, and continues to need scoped write access to `auth_sessions`, `auth_login_rate_limits`, domain data, and append-only audit inserts. Gate 66 adds PostgreSQL regressions for each forbidden user-table mutation right and preserves the least-privilege runtime role.

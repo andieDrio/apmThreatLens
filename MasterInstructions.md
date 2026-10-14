@@ -152,6 +152,15 @@ Expose existing API-backed read models for campaigns, evidence, attack-path rela
 
 On 2026-10-14, the user confirmed Gate 64 clean and successful. The authenticated dashboard now surfaces existing campaign, evidence, attack-path relationship, and administrator-only audit read models. Commit: `ab4d354726f4d5cb4ab29b8b982ad64e96ec1f30`. This is recorded as user-confirmed validation; do not imply that local commands were independently run by the assistant.
 
-## Current Gate Directive — Gate 65: Professional SOC Workspace Navigation & Accessibility
+## Previous Gate Directive — Gate 65: Professional SOC Workspace Navigation & Accessibility — COMPLETE
 
 Keep active navigation synchronized with the visible section and set `aria-current` on the active item. Add visible keyboard focus indicators, honor reduced-motion preferences, and improve desktop navigation continuity without breaking mobile navigation. Preserve restrictive CSP, session-expiry behavior, same-origin API calls, API authorization, and persisted-only data rendering. Add UI regression assertions. Validate focused UI tests, full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build. Fix blockers and remain on Gate 65 until exact-main validation is confirmed. Inspect latest `main` before every cycle; commit directly to `main`, with no branches, pull requests, or force pushes.
+
+
+## Gate 65 Validation Closure — COMPLETE
+
+On 2026-10-14, the user confirmed Gate 65 clean and successful. Treat the navigation/accessibility gate as complete unless a regression is discovered. This is user-confirmed validation; do not imply that local commands were independently run by the assistant.
+
+## Current Gate Directive — Gate 66: Fail-Closed Runtime User-Identity Mutation Privilege Verification
+
+Extend read-only PostgreSQL startup privilege verification to reject effective INSERT, UPDATE, or DELETE on the application-schema `users` table for `current_user` or `session_user`, including inherited and PUBLIC grants. Preserve SELECT for authentication, session lifecycle and rate-limit writes, audit append-only behavior, migration registry protections, existing ownership/DDL/sequence/SECURITY DEFINER checks, and the separate migration identity. Add real PostgreSQL integration regressions for each forbidden user-table mutation privilege and keep a least-privilege runtime role passing. Validate focused PostgreSQL privilege/migration/API tests, the full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build. Fix blockers and remain on Gate 66 until exact-main validation is confirmed. Inspect latest `main` before every cycle; commit directly to `main`, with no branches, pull requests, or force pushes.
