@@ -20,7 +20,12 @@ def _dsn() -> str:
 
 
 def _runtime_role(
-    repository, *, schema_create=False, inherited_ddl=False, audit_update=False, registry_update=False
+    repository,
+    *,
+    schema_create=False,
+    inherited_ddl=False,
+    audit_update=False,
+    registry_update=False,
 ):
     connection = repository.connection
     role_name = f"tl_runtime_test_{uuid4().hex[:12]}"
