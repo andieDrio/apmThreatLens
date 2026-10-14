@@ -144,4 +144,5 @@ def run_migrations(
         connection.commit()
         if not unlocked:
             raise RuntimeError("schema migration advisory lock was not held")
-    repository.schema_migrations_managed = True
+    if table_name == REGISTRY_TABLE and migrations == MIGRATIONS:
+        repository.schema_migrations_managed = True
