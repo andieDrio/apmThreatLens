@@ -446,6 +446,11 @@ Application IDs are UUID-backed, so the runtime identity has no expected need to
 The runtime privilege verifier now rejects an effective EXECUTE grant on any SECURITY DEFINER routine in the active application schema for either `current_user` or `session_user`, including grants inherited through roles or granted to PUBLIC. This closes a privilege-escalation path where a callable elevated routine could execute with its owner's authority. The change preserves ordinary invoker-security routines and the separate migration identity. A PostgreSQL integration test creates a SECURITY DEFINER routine and verifies fail-closed rejection for a genuine runtime login. The user confirmed Gate 63 clean and successful on 2026-10-14.
 
 
-### Architecture Gate 64 — Authenticated SOC Workspace Read-Model Expansion: IN PROGRESS
+### Architecture Gate 64 — Authenticated SOC Workspace Read-Model Expansion: COMPLETE
 
 Expose the existing authenticated campaign, evidence, attack-path relationship, and administrator-only audit read models in the dashboard. Render persisted API data only, preserve evidence hashes and validation state, and handle role-restricted audit access safely.
+
+
+### Architecture Gate 65 — Professional SOC Workspace Navigation & Accessibility: IN PROGRESS
+
+The workspace now contains the existing authenticated SOC read models, but its active navigation state is click-driven rather than scroll-aware. Gate 65 synchronizes the active navigation item with the visible section, adds keyboard-visible focus treatment, and respects reduced-motion preferences while preserving the restrictive CSP and existing API contracts. Validation remains pending on the exact main revision.

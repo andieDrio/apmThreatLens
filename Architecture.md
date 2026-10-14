@@ -769,6 +769,13 @@ The current domain schema uses UUID-backed identifiers, so the runtime identity 
 
 The runtime verifier now rejects an effective EXECUTE privilege on any SECURITY DEFINER routine in the active application schema for either `current_user` or `session_user`, including inherited and PUBLIC grants. This prevents an otherwise non-owner runtime identity from invoking a routine that executes with elevated owner privileges. Ordinary invoker-security routines remain outside this specific restriction, and API startup remains read-only. A PostgreSQL integration regression creates an administrator-owned SECURITY DEFINER routine, grants execution to a genuine runtime login, and requires fail-closed rejection. The user confirmed Gate 63 clean and successful on 2026-10-14.
 
-## Architecture Gate 64 — Authenticated SOC Workspace Read-Model Expansion — IN PROGRESS
+## Architecture Gate 64 — Authenticated SOC Workspace Read-Model Expansion — COMPLETE
 
 The current UI exposes overview metrics, assets, findings, and scan activity while the API already provides authenticated campaign, evidence, attack-path relationship, and administrator-only audit read models. Gate 64 adds read-only sections for these existing contracts without inventing records or bypassing authorization. Evidence SHA-256 values and relationship validation states remain visible; audit access remains administrator-only.
+
+
+## Architecture Gate 65 — Professional SOC Workspace Navigation & Accessibility — IN PROGRESS
+
+The authenticated workspace now exposes overview, assets, findings, scan activity, campaigns, evidence, attack-path relationships, and the administrator-only audit read model. Its navigation active state must remain accurate while scrolling, and interactive elements must have visible keyboard focus. Gate 65 updates only presentation behavior: it uses existing same-origin anchors and DOM state, does not introduce inline scripts/styles, and does not change API authorization, session storage, or data contracts. CSS honors reduced-motion preferences and keeps the desktop sidebar usable while retaining horizontally scrollable mobile navigation.
+
+Validation is pending for the exact main revision. Required checks include focused dashboard UI tests, the full PostgreSQL-backed suite without skips, Ruff, diff checks, and package wheel build.

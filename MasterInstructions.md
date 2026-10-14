@@ -143,6 +143,15 @@ Inspect latest `main` before every cycle. Run focused PostgreSQL migration/runti
 
 The user confirmed Gate 63 clean and successful on 2026-10-14. Treat the SECURITY DEFINER execution verification gate as complete unless a regression is discovered.
 
-## Current Gate Directive — Gate 64: Authenticated SOC Workspace Read-Model Expansion
+## Previous Gate Directive — Gate 64: Authenticated SOC Workspace Read-Model Expansion — COMPLETE
 
 Expose existing API-backed read models for campaigns, evidence, attack-path relationships, and administrator-only audit events in the authenticated dashboard. Use actual persisted API responses only. Preserve authorization boundaries, session-expiry behavior, evidence hashes, validation states, restrictive CSP, and existing overview behavior. Add regression assertions for the new sections and request paths. Run the UI tests, full PostgreSQL-backed suite without skips, Ruff, git diff --check, and package wheel build. Fix failures before advancing. Inspect latest main before every cycle; commit directly to main, with no branches, pull requests, or force pushes. After validation, reassess the next highest-priority unfinished architecture gap while keeping professional UI delivery moving.
+
+
+## Gate 64 Validation Closure — COMPLETE
+
+On 2026-10-14, the user confirmed Gate 64 clean and successful. The authenticated dashboard now surfaces existing campaign, evidence, attack-path relationship, and administrator-only audit read models. Commit: `ab4d354726f4d5cb4ab29b8b982ad64e96ec1f30`. This is recorded as user-confirmed validation; do not imply that local commands were independently run by the assistant.
+
+## Current Gate Directive — Gate 65: Professional SOC Workspace Navigation & Accessibility
+
+Keep active navigation synchronized with the visible section and set `aria-current` on the active item. Add visible keyboard focus indicators, honor reduced-motion preferences, and improve desktop navigation continuity without breaking mobile navigation. Preserve restrictive CSP, session-expiry behavior, same-origin API calls, API authorization, and persisted-only data rendering. Add UI regression assertions. Validate focused UI tests, full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build. Fix blockers and remain on Gate 65 until exact-main validation is confirmed. Inspect latest `main` before every cycle; commit directly to `main`, with no branches, pull requests, or force pushes.

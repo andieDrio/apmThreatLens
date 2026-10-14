@@ -30,6 +30,7 @@ async def test_dashboard_ui_serves_static_assets_with_security_headers():
     assert 'id="evidence"' in page.text
     assert 'id="attack-paths"' in page.text
     assert 'id="audit-log"' in page.text
+    assert 'aria-current="page"' in page.text
     assert "/ui/assets/app.js" in page.text
     assert script.status_code == 200
     assert "sessionStorage" in script.text
@@ -38,8 +39,12 @@ async def test_dashboard_ui_serves_static_assets_with_security_headers():
     assert "/api/v1/attack-path/relations?limit=8&offset=0" in script.text
     assert "/api/v1/audit-events?limit=8&offset=0" in script.text
     assert "localStorage" not in script.text
+    assert "updateActiveNavigation" in script.text
+    assert "aria-current" in script.text
     assert stylesheet.status_code == 200
     assert ".metric-grid" in stylesheet.text
+    assert ":focus-visible" in stylesheet.text
+    assert "prefers-reduced-motion: reduce" in stylesheet.text
 
 
 @pytest.mark.anyio

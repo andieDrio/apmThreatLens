@@ -2,10 +2,10 @@
 
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 64  
+**Highest architecture gate reached:** Gate 65  
 **Highest fully validated gate:** Gate 63  
-**Current gate:** Gate 64 — Authenticated SOC Workspace Read-Model Expansion  
-**Current status:** The user confirmed Gate 63 clean and successful on 2026-10-14. Gate 64 is active and expands the authenticated dashboard using existing API read models.
+**Current gate:** Gate 65 — Professional SOC Workspace Navigation & Accessibility  
+**Current status:** The user confirmed Gate 64 clean and successful on 2026-10-14. Gate 65 is active and hardens workspace navigation, keyboard accessibility, and responsive browsing without changing API authorization or data contracts.
 
 ## Executive Summary
 
@@ -195,18 +195,36 @@ The existing verifier blocks runtime ownership of routines and checks sequence a
 ### Validation closure
 On 2026-10-14, the user confirmed the PostgreSQL security/migration/API tests, full PostgreSQL-backed suite, Ruff, diff check, and wheel build were clean. This confirmation closes Gate 63.
 
-## Gate 64 — Authenticated SOC Workspace Read-Model Expansion — IN PROGRESS
+## Gate 64 — Authenticated SOC Workspace Read-Model Expansion — COMPLETE
 
 ### Root cause
-The authenticated dashboard showed summary metrics, assets, findings, and scan activity, but the application already exposes read-only campaign, evidence, attack-path relationship, and administrator-only audit-event APIs. Those capabilities were not surfaced in the UI.
+The authenticated dashboard did not expose existing campaign, evidence, attack-path relationship, and administrator-only audit-event read models.
+
+### Implementation
+- Added dashboard sections for campaigns, evidence, attack-path relationships, and administrator-only audit events.
+- Loaded only persisted records through the existing authenticated API contracts.
+- Preserved evidence SHA-256 values, relationship validation state, and safe handling of non-admin audit access.
+- Added dashboard markup/API-path regression assertions.
+- Updated README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md directly on `main`.
+- Commit: `ab4d354726f4d5cb4ab29b8b982ad64e96ec1f30`.
+
+### Validation closure
+On 2026-10-14, the user confirmed Gate 64 was clean and successful. This is recorded as user-confirmed validation; the assistant did not independently execute the local test, lint, PostgreSQL suite, or wheel-build commands in this environment.
+
+## Gate 65 — Professional SOC Workspace Navigation & Accessibility — IN PROGRESS
+
+### Root cause
+The new workspace sections are reachable through anchor links, but the active navigation state only changes on click and can become inaccurate when users scroll manually. The UI also lacks explicit keyboard focus styling and reduced-motion handling, which weakens predictable navigation and accessibility.
 
 ### Acceptance criteria
-- Add navigable UI sections for campaigns, evidence, attack-path relationships, and security audit events.
-- Load real persisted records from existing authenticated API contracts; do not synthesize records.
-- Preserve evidence digests, relationship validation state, and administrator-only audit access.
-- Render permission-denied audit access as a safe, understandable empty state.
-- Extend dashboard UI regression checks and validate the full applicable suite, Ruff, diff checks, and wheel build.
+- Keep the active navigation item synchronized with the currently visible workspace section and expose it using `aria-current`.
+- Improve desktop navigation continuity without making the mobile navigation unusable.
+- Provide visible keyboard focus indicators for links, buttons, and form controls.
+- Respect the user's reduced-motion preference.
+- Add static UI regression assertions for navigation state and accessibility styling.
+- Preserve same-origin API calls, session handling, CSP compatibility, API authorization, and persisted-only data rendering.
+- Validate focused UI tests, full PostgreSQL-backed suite without skips, Ruff, diff checks, and package wheel build before closing the gate.
 
 ## Next Required Action
 
-Complete and validate Gate 64, then reassess remaining backend/security gaps while prioritizing a genuinely usable professional UI.
+Implement and validate Gate 65 on the exact `main` revision. Fix any failure before advancing. After validation, reassess remaining highest-priority architecture gaps and continue toward a polished professional SOC/VAPT workspace.

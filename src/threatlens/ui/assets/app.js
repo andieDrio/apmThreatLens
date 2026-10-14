@@ -262,12 +262,42 @@
     showLogin();
   });
 
-  for (const link of document.querySelectorAll("[data-section-link]")) {
-    link.addEventListener("click", () => {
-      document.querySelectorAll("[data-section-link]").forEach(item => item.classList.remove("active"));
-      link.classList.add("active");
-    });
+  const sectionLinks = [...document.querySelectorAll("[data-section-link]")];
+
+  function setActiveNavigation(link) {
+    for (const item of sectionLinks) {
+      const active = item === link;
+      item.classList.toggle("active", active);
+      if (active) {
+        item.setAttribute("aria-current", "page");
+      } else {
+        item.removeAttribute("aria-current");
+      }
+    }
   }
+
+  function updateActiveNavigation() {
+    if (window.scrollY < 120) {
+      const overview = sectionLinks.find(link => link.getAttribute("href") === "#top");
+      if (overview) setActiveNavigation(overview);
+      return;
+    }
+
+    let current = null;
+    for (const link of sectionLinks) {
+      const targetId = link.getAttribute("href")?.slice(1);
+      if (!targetId || targetId === "top") continue;
+      const target = document.getElementById(targetId);
+      if (target && target.getBoundingClientRect().top <= 180) current = link;
+    }
+    if (current) setActiveNavigation(current);
+  }
+
+  for (const link of sectionLinks) {
+    link.addEventListener("click", () => setActiveNavigation(link));
+  }
+  window.addEventListener("scroll", updateActiveNavigation, { passive: true });
+  updateActiveNavigation();
 
   if (token()) {
     showApp();
