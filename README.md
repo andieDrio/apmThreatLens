@@ -478,4 +478,4 @@ Successful login persists the authentication session and corresponding success a
 
 ### Architecture Gate 71 — Atomic Logout Session Revocation and Success-Audit Persistence: IN PROGRESS
 
-Logout currently revokes a session and persists its success audit event through separate repository calls. An audit insertion failure can therefore leave the session revoked while the API reports failure and no corresponding success audit exists. The next gate will make revocation and the LOGOUT success audit atomic in PostgreSQL and SQLite compatibility paths, with failure-injection coverage proving rollback.
+Logout now routes through a dedicated repository operation that revokes the session and writes the LOGOUT success audit event in one transaction for PostgreSQL and SQLite compatibility paths. Failure-injection regressions cover audit-write failure and assert that revocation rolls back. Focused and full PostgreSQL-backed validation, Ruff, diff check, and package wheel build remain pending.
