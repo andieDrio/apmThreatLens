@@ -2,10 +2,10 @@
 
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 69  
-**Highest fully validated gate:** Gate 67 (user-confirmed)  
-**Current gate:** Gate 69 — Fail-Closed Handling of Corrupt Persisted Session Records  
-**Current status:** Gate 68 was confirmed clean and successful by the user. Gate 69 is in progress and hardens session authentication against malformed persisted session identifiers and expiry values.
+**Highest architecture gate reached:** Gate 70  
+**Highest fully validated gate:** Gate 69 (user-confirmed)  
+**Current gate:** Gate 70 — Atomic Login Session and Success-Audit Persistence  
+**Current status:** Gate 69 was confirmed clean and successful by the user. Gate 70 makes successful login session creation and its audit event atomic.
 
 ## Executive Summary
 
@@ -265,14 +265,24 @@ The authentication service converts stored role values into the fixed `Role` enu
 
 **Validation closure:** On 2026-10-14, the user confirmed Gate 68 clean and successful. This is user-confirmed validation; the assistant did not independently execute local test, PostgreSQL, lint, diff-check, or wheel-build commands in this environment.
 
-## Gate 69 — Fail-Closed Handling of Corrupt Persisted Session Records — IN PROGRESS
+## Gate 69 — Fail-Closed Handling of Corrupt Persisted Session Records — COMPLETE
+
+### Implementation
+- Malformed persisted expiry timestamps and session/user UUID identifiers fail closed through the generic invalid-session error.
+- Preserved explicit inactive-user behavior and infrastructure exception propagation.
+- Added regression tests for corrupted persisted session records.
+
+**Validation closure:** On 2026-10-14, the user confirmed Gate 69 clean and successful. This is user-confirmed validation; the assistant did not independently execute local test, PostgreSQL, lint, diff-check, or wheel-build commands in this environment.
+
+## Gate 70 — Atomic Login Session and Success-Audit Persistence — IN PROGRESS
 
 ### Root cause
-Session authentication parses persisted expiry timestamps and UUID identifiers at the repository/service boundary. Corrupt or malformed SQLite-compatible persisted values can raise `ValueError`, `TypeError`, or key/attribute errors before the established authentication-failure response is returned.
+Successful login previously committed the authentication session and success audit event through separate repository calls. If audit persistence failed after session creation, the raw token would not be returned but the session could remain active in storage.
 
 ### Acceptance criteria
-- Convert malformed persisted session timestamps, session IDs, user IDs, and role fields into the existing generic invalid-session error.
-- Preserve explicit invalid-session, expired/revoked-session, and inactive-user behavior.
-- Do not swallow database connectivity, transaction, or other infrastructure exceptions.
-- Add regression tests for malformed expiry, session ID, and user ID records.
+- Add atomic session-plus-success-audit persistence to SQLite and PostgreSQL repositories.
+- Route successful login through the atomic repository operation.
+- Roll back session creation when the audit insert fails.
+- Add SQLite and PostgreSQL failure-injection regressions and prove a subsequent valid login succeeds.
+- Preserve denied-login auditing, password verification, active-user/role checks, expiry/revocation, and append-only audit protection.
 - Validate focused auth/API tests, the full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build.

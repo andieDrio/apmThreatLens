@@ -148,20 +148,19 @@ class AuthenticationService:
             )
             raise PermissionError("authentication failed") from exc
         raw_token = secrets.token_urlsafe(32)
-        session_id = self.repository.create_session(
+        event = AuditEvent(
+            actor_user_id=user.id,
+            action="LOGIN",
+            resource_type="AUTH",
+            resource_id=user.id,
+            outcome="SUCCESS",
+            detail="session created",
+        )
+        session_id = self.repository.create_session_with_audit(
             user.id,
             hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
             datetime.now(UTC) + self.session_ttl,
-        )
-        self.repository.save_audit_event(
-            AuditEvent(
-                actor_user_id=user.id,
-                action="LOGIN",
-                resource_type="AUTH",
-                resource_id=user.id,
-                outcome="SUCCESS",
-                detail="session created",
-            )
+            event,
         )
         return AuthenticatedPrincipal(user.id, user.username, role, session_id), raw_token
 

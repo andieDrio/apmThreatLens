@@ -793,6 +793,10 @@ The runtime privilege verifier rejects effective column-level INSERT or UPDATE g
 
 The authentication service maps unsupported persisted role values to the established fail-closed authentication/session errors. Login writes a denied audit event with a fixed generic detail and creates no session; existing sessions with an invalid role are rejected. The user confirmed Gate 68 clean and successful on 2026-10-14; this is user-confirmed validation.
 
-## Architecture Gate 69 — Fail-Closed Handling of Corrupt Persisted Session Records — IN PROGRESS
+## Architecture Gate 69 — Fail-Closed Handling of Corrupt Persisted Session Records — COMPLETE
 
-Session authentication maps malformed persisted timestamps and UUID identifiers to the established generic invalid-session response rather than leaking parsing exceptions through the API. Explicit inactive-user behavior and infrastructure exception visibility are preserved. Regression tests cover malformed expiry, session ID, and user ID records. Validation is pending.
+Session authentication maps malformed persisted expiry timestamps and UUID identifiers to the established generic invalid-session response. Explicit inactive-user behavior and infrastructure exception visibility are preserved. The user confirmed Gate 69 clean and successful on 2026-10-14; this is user-confirmed validation.
+
+## Architecture Gate 70 — Atomic Login Session and Success-Audit Persistence — IN PROGRESS
+
+Successful login must persist the session and its success audit event in a single repository transaction. Otherwise, an audit insertion failure after session commit can leave an active session whose raw token was never returned to the caller. Add an atomic repository operation for SQLite and PostgreSQL, route AuthenticationService through it, and prove rollback with audit-failure injection tests. Preserve generic credential failures, denied-login auditing, password checks, session expiry/revocation, and the append-only audit trail. Validation is pending.

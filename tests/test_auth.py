@@ -139,3 +139,33 @@ def test_corrupt_persisted_session_fails_closed(tmp_path, corruption):
     with pytest.raises(PermissionError, match="session is invalid or expired"):
         auth.authenticate_session(token)
     repo.close()
+
+def test_login_session_and_success_audit_are_atomic_on_audit_failure(tmp_path):
+    repo = SQLiteRepository(tmp_path / "threatlens.db")
+    repo.initialize()
+    auth = AuthenticationService(repo)
+    auth.create_user("analyst", "correct horse battery staple", Role.ANALYST)
+    repo.connection.execute(
+        """
+        CREATE TRIGGER fail_login_success_audit
+        BEFORE INSERT ON audit_events
+        WHEN NEW.action = 'LOGIN' AND NEW.outcome = 'SUCCESS'
+        BEGIN
+            SELECT RAISE(ABORT, 'injected login audit failure');
+        END
+        """
+    )
+    with pytest.raises(Exception, match="injected login audit failure"):
+        auth.authenticate("analyst", "correct horse battery staple")
+    assert repo.connection.execute("SELECT COUNT(*) FROM auth_sessions").fetchone()[0] == 0
+    assert repo.connection.execute(
+        "SELECT COUNT(*) FROM audit_events WHERE action='LOGIN' AND outcome='SUCCESS'"
+    ).fetchone()[0] == 0
+    repo.connection.execute("DROP TRIGGER fail_login_success_audit")
+    principal, token = auth.authenticate("analyst", "correct horse battery staple")
+    assert auth.authenticate_session(token) == principal
+    assert repo.connection.execute("SELECT COUNT(*) FROM auth_sessions").fetchone()[0] == 1
+    assert repo.connection.execute(
+        "SELECT COUNT(*) FROM audit_events WHERE action='LOGIN' AND outcome='SUCCESS'"
+    ).fetchone()[0] == 1
+    repo.close()

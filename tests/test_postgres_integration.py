@@ -548,3 +548,46 @@ def test_postgres_lifecycle_idempotency_and_audit_are_atomic_on_audit_failure(
     assert repo.connection.execute(
         "SELECT COUNT(*) FROM audit_events WHERE action='SCAN_CANCELLED'"
     ).fetchone()[0] == 1
+
+
+def test_postgres_login_session_and_success_audit_are_atomic_on_audit_failure(
+    postgres_repository,
+):
+    repo = postgres_repository
+    auth = AuthenticationService(repo)
+    auth.create_user("atomic-login", "correct horse battery staple", Role.ANALYST)
+    sessions_before = repo.count("auth_sessions")
+    repo.connection.execute(
+        """
+        CREATE OR REPLACE FUNCTION fail_login_success_audit_fn()
+        RETURNS trigger AS $$
+        BEGIN
+            IF NEW.action = 'LOGIN' AND NEW.outcome = 'SUCCESS' THEN
+                RAISE EXCEPTION 'injected login audit failure';
+            END IF;
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        CREATE TRIGGER fail_login_success_audit
+        BEFORE INSERT ON audit_events
+        FOR EACH ROW EXECUTE FUNCTION fail_login_success_audit_fn()
+        """
+    )
+    repo.connection.commit()
+    with pytest.raises(Exception, match="injected login audit failure"):
+        auth.authenticate("atomic-login", "correct horse battery staple")
+    assert repo.count("auth_sessions") == sessions_before
+    assert repo.connection.execute(
+        "SELECT COUNT(*) FROM audit_events WHERE action='LOGIN' AND outcome='SUCCESS'"
+    ).fetchone()[0] == 0
+    repo.connection.execute(
+        "DROP TRIGGER fail_login_success_audit ON audit_events; "
+        "DROP FUNCTION fail_login_success_audit_fn()"
+    )
+    repo.connection.commit()
+    principal, token = auth.authenticate("atomic-login", "correct horse battery staple")
+    assert auth.authenticate_session(token) == principal
+    assert repo.count("auth_sessions") == sessions_before + 1
+    assert repo.connection.execute(
+        "SELECT COUNT(*) FROM audit_events WHERE action='LOGIN' AND outcome='SUCCESS'"
+    ).fetchone()[0] == 1

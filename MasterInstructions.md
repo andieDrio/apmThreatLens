@@ -173,6 +173,10 @@ The user confirmed Gate 67 clean and successful on 2026-10-14. Treat column-leve
 
 On 2026-10-14, the user confirmed Gate 68 clean and successful on main. Treat fail-closed invalid persisted-role handling as complete unless a regression is discovered. This is user-confirmed validation; do not imply local commands were independently executed.
 
-## Current Gate Directive — Gate 69: Fail-Closed Handling of Corrupt Persisted Session Records
+## Gate 69 Validation Closure — COMPLETE
 
-Harden session authentication so malformed persisted expiry timestamps, session UUIDs, user UUIDs, or related authentication fields cannot escape as unhandled parsing/type/key errors. Return the established generic invalid-session error for corrupt records while preserving the explicit inactive-user path and not swallowing database/transaction/infrastructure failures. Add regressions for malformed expiry, session ID, and user ID records. Validate focused auth/API tests, full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build. Fix blockers and remain on Gate 69 until exact-main validation is confirmed. Inspect latest `main` before every cycle; commit directly to `main`, with no branches, pull requests, or force pushes.
+On 2026-10-14, the user confirmed Gate 69 clean and successful on main. Treat fail-closed handling of corrupt persisted session records as complete unless a regression is discovered. This is user-confirmed validation; do not imply local commands were independently executed.
+
+## Current Gate Directive — Gate 70: Atomic Login Session and Success-Audit Persistence
+
+Make successful login session creation and its success audit event one atomic persistence operation. If audit insertion fails, roll back session creation so no unreturned active session is left behind. Implement the operation in both SQLite and PostgreSQL repository mixins and route AuthenticationService through it. Add SQLite and PostgreSQL failure-injection regressions. Preserve existing login denial auditing, password verification, active-user/role checks, session expiry/revocation, and append-only audit semantics. Validate focused auth/API tests, the full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build. Fix blockers and remain on Gate 70 until exact-main validation is confirmed. Inspect latest `main` before every cycle; commit directly to `main`, with no branches, pull requests, or force pushes.

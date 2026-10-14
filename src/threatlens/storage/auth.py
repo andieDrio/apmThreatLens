@@ -94,6 +94,36 @@ class SQLiteAuthMixin:
             )
         return session_id
 
+    def create_session_with_audit(
+        self, user_id: UUID, token_hash: str, expires_at: datetime, event: AuditEvent
+    ) -> UUID:
+        """Atomically persist a login session and its success audit event."""
+        session_id = uuid.uuid4()
+
+        def persist() -> None:
+            with self.connection:
+                self.connection.execute(
+                    "INSERT INTO auth_sessions (id,user_id,token_hash,expires_at,revoked,created_at) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (str(session_id), str(user_id), token_hash, expires_at.isoformat(), 0, datetime.now(UTC).isoformat()),
+                )
+                self.connection.execute(
+                    "INSERT INTO audit_events "
+                    "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
+                    "VALUES (?,?,?,?,?,?,?,?)",
+                    (str(event.id), str(event.actor_user_id) if event.actor_user_id else None,
+                     event.action, event.resource_type, str(event.resource_id) if event.resource_id else None,
+                     event.outcome, event.detail, event.created_at.isoformat()),
+                )
+
+        lock = getattr(self, "_transaction_lock", None)
+        if lock is None:
+            persist()
+        else:
+            with lock:
+                persist()
+        return session_id
+
     def session_by_token_hash(self, token_hash: str):
         row = self.connection.execute(
             "SELECT id,user_id,expires_at,revoked FROM auth_sessions WHERE token_hash=?",
@@ -322,6 +352,29 @@ class PostgresAuthMixin:
                     "INSERT INTO auth_sessions (id,user_id,token_hash,expires_at,revoked,created_at) VALUES (%s,%s,%s,%s,%s,%s)",
                     (session_id, user_id, token_hash, expires_at, False, datetime.now(UTC)),
                 )
+        return session_id
+
+    def create_session_with_audit(
+        self, user_id: UUID, token_hash: str, expires_at: datetime, event: AuditEvent
+    ) -> UUID:
+        """Atomically persist a login session and its success audit event."""
+        session_id = uuid.uuid4()
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        "INSERT INTO auth_sessions "
+                        "(id,user_id,token_hash,expires_at,revoked,created_at) "
+                        "VALUES (%s,%s,%s,%s,%s,%s)",
+                        (session_id, user_id, token_hash, expires_at, False, datetime.now(UTC)),
+                    )
+                    cursor.execute(
+                        "INSERT INTO audit_events "
+                        "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (event.id, event.actor_user_id, event.action, event.resource_type,
+                         event.resource_id, event.outcome, event.detail, event.created_at),
+                    )
         return session_id
 
     def session_by_token_hash(self, token_hash: str):
