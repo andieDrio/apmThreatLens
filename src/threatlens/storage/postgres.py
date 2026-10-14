@@ -131,6 +131,12 @@ class PostgresRepository(
 
         verify_schema_ready(self)
 
+    def verify_runtime_privileges(self) -> None:
+        """Reject effective runtime identities with unsafe database authority."""
+        from threatlens.storage.schema_migrations import verify_runtime_privileges
+
+        verify_runtime_privileges(self)
+
     def _initialize_legacy_schema(self) -> None:
         with self.connection.cursor() as cursor:
             cursor.execute(SCHEMA)
