@@ -2,9 +2,9 @@
 
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 55  
-**Current gate:** Gate 55 — Database-Enforced Append-Only Security Audit Trail  
-**Current status:** Gate 54 validated by user on 2026-10-14; Gate 55 implementation committed to main, local validation pending
+**Highest architecture gate reached:** Gate 56  
+**Current gate:** Gate 56 — PostgreSQL Audit Trail Truncation Protection  
+**Current status:** Gate 55 validated by user on 2026-10-14; Gate 56 implementation committed to main, local validation pending
 
 ## Executive Summary
 
@@ -18,24 +18,30 @@ The versioned migration registry is active. Startup uses a stable PostgreSQL ses
 
 **Validation closure:** On 2026-10-14, the user confirmed 3 focused migration tests, 14 focused remediation API/PostgreSQL tests, the full PostgreSQL-backed suite at 100% with no skip summary, Ruff, diff checks, and wheel build all passed on `f0f4d543947f864ff05d6e7173839b105562cd2c`. Five Starlette deprecation warnings were non-failing.
 
-## Current Gate 55 — Database-Enforced Append-Only Security Audit Trail
+## Completed Gate 55 — Database-Enforced Append-Only Security Audit Trail
+
+Migration version 2, `audit_events_append_only`, installs a PostgreSQL trigger rejecting UPDATE and DELETE on `audit_events` with SQLSTATE `55000`, while preserving normal inserts and existing audit rows.
+
+**Validation closure:** On 2026-10-14, the user confirmed 4 focused migration tests, 14 focused remediation API/PostgreSQL tests, the full PostgreSQL-backed suite with no skip summary, Ruff, diff checks, and wheel build passed on `8dcb6974132713bf426b30bfc202260c9a5ff699`. Five Starlette deprecation warnings were non-failing.
+
+## Current Gate 56 — PostgreSQL Audit Trail Truncation Protection
 
 ### Objective and root cause
 
-Audit events are written through application persistence methods, but PostgreSQL currently allows ordinary UPDATE and DELETE statements to modify prior audit records. That weakens the integrity of security-relevant history if an application bug or compromised ordinary database role attempts to rewrite it.
+PostgreSQL row-level UPDATE/DELETE triggers do not fire for `TRUNCATE`. An ordinary SQL TRUNCATE could therefore bypass Gate 55's row-level mutation protection if the database role has the necessary table privilege.
 
 ### Implementation on main
 
-- Added migration version 2, `audit_events_append_only`, through the Gate 54 migration framework.
-- Added a PostgreSQL trigger function that rejects UPDATE and DELETE on `audit_events` with SQLSTATE `55000`.
-- Kept ordinary audit inserts and existing audit history intact.
-- Added a focused PostgreSQL regression test that verifies mutation attempts fail and the original record remains unchanged.
+- Added migration version 3, `audit_events_no_truncate`, through the versioned migration framework.
+- Added a statement-level `BEFORE TRUNCATE` trigger that reuses the existing fail-closed audit mutation trigger function.
+- Extended the focused PostgreSQL regression test to verify TRUNCATE fails with SQLSTATE `55000` and the original audit row remains after rollback.
+- Updated the governing project documents to mark Gate 55 complete and Gate 56 in progress.
 
-This guard does not claim protection against superusers or database owners able to disable triggers.
+This protects against TRUNCATE while the trigger is enabled. It does not protect against database owners or superusers who can disable triggers or alter the schema.
 
 ### Validation
 
-Gate 55 changes are committed to `main`. Local focused PostgreSQL tests, full suite, Ruff, diff checks, and package build are pending confirmation.
+Gate 56 changes are committed to `main`. Focused PostgreSQL tests, the full suite, Ruff, diff checks, and package wheel build are pending user confirmation.
 
 ## Recent Completed Gates
 
@@ -79,4 +85,4 @@ The five Starlette deprecation warnings about `HTTP_422_UNPROCESSABLE_ENTITY` we
 
 ## Next Required Action
 
-Validate Gate 55 against the exact current `main` revision using `python -m pytest -q tests/test_postgres_schema_migrations.py`, `python -m pytest -q -rs`, `ruff check .`, `git diff --check`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel`. Confirm the focused test exercises PostgreSQL and does not skip. If any check fails, fix it and remain on Gate 55.
+Validate Gate 56 against the exact current `main` revision using `python -m pytest -q tests/test_postgres_schema_migrations.py`, `python -m pytest -q -rs`, `ruff check .`, `git diff --check`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel`. Confirm the focused test exercises PostgreSQL and does not skip. If any check fails, fix it and remain on Gate 56.
