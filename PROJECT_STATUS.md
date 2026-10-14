@@ -33,34 +33,17 @@ Migration version 3 adds a statement-level `BEFORE TRUNCATE` trigger to compleme
 
 ### Objective and root cause
 
-Migration history does not prove that audit-protection triggers remain installed and enabled after deployment. If a trigger is disabled or dropped while the migration registry remains unchanged, startup can otherwise continue without the intended database control.
+Migration history does not prove that audit-protection triggers remain installed and enabled after deployment. If a trigger is disabled or dropped while the migration registry remains unchanged, startup could otherwise continue without the intended database control.
 
 ### Implementation on main
 
 - Added startup verification for both audit-protection triggers, checking presence, enabled state, expected trigger definition, and the fail-closed trigger function.
 - Added a PostgreSQL integration regression proving initialization rejects a disabled truncation trigger and succeeds after restoration.
-- Updated the governing project documents to close Gate 56 and identify Gate 57 as active.
+- Updated README.md, Architecture.md, MasterInstructions.md, and this status report to close Gate 56 and identify Gate 57 as active.
 
 ### Validation
 
-Gate 57 is committed to `main`. Focused migration tests, full PostgreSQL-backed tests, Ruff, diff checks, and wheel build require user confirmation against the exact commit.
-
-### Objective and root cause
-
-PostgreSQL row-level UPDATE/DELETE triggers do not fire for `TRUNCATE`. An ordinary SQL TRUNCATE could therefore bypass Gate 55's row-level mutation protection if the database role has the necessary table privilege.
-
-### Implementation on main
-
-- Added migration version 3, `audit_events_no_truncate`, through the versioned migration framework.
-- Added a statement-level `BEFORE TRUNCATE` trigger that reuses the existing fail-closed audit mutation trigger function.
-- Extended the focused PostgreSQL regression test to verify TRUNCATE fails with SQLSTATE `55000` and the original audit row remains after rollback.
-- Updated the governing project documents to mark Gate 55 complete and Gate 56 in progress.
-
-This protects against TRUNCATE while the trigger is enabled. It does not protect against database owners or superusers who can disable triggers or alter the schema.
-
-### Validation
-
-Gate 56 changes are committed to `main`. Focused PostgreSQL tests, the full suite, Ruff, diff checks, and package wheel build are pending user confirmation.
+Gate 57 is committed to `main` at `bffef34f6d6a120f9a0b89cad0cd22ed5438dcee`. Focused migration tests, full PostgreSQL-backed tests, Ruff, diff checks, and wheel build require user confirmation against the exact commit.
 
 ## Recent Completed Gates
 

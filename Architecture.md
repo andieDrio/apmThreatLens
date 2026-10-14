@@ -714,10 +714,14 @@ Security audit events are protected by a transactional PostgreSQL migration that
 
 **Validation status:** On 2026-10-14, the user confirmed 4 focused schema-migration tests, 14 focused remediation API/PostgreSQL tests, the full PostgreSQL-backed suite with no skip summary, Ruff, diff checks, and package wheel build all passed on `8dcb6974132713bf426b30bfc202260c9a5ff699`. Five Starlette deprecation warnings were non-failing.
 
-## 79. Architecture Gate 56 — PostgreSQL Audit Trail Truncation Protection — COMPLETE. A versioned statement-level `BEFORE TRUNCATE` trigger blocks ordinary truncation of `audit_events`; database owners/superusers able to disable triggers or alter schema remain outside this control's threat boundary.
+## 79. Architecture Gate 56 — PostgreSQL Audit Trail Truncation Protection — COMPLETE
 
-Gate 57 — Fail-Closed Audit Protection Drift Detection — IN PROGRESS. Schema migration history proves which migrations were recorded, not that the installed audit triggers remain present and enabled. Startup must verify the expected trigger names, enabled state, event/statement shape, and fail-closed function definition before serving application traffic. — IN PROGRESS
+A versioned statement-level `BEFORE TRUNCATE` trigger blocks ordinary truncation of `audit_events`, complementing the row-level UPDATE/DELETE guard. A TRUNCATE attempt is expected to fail with SQLSTATE `55000` while preserving existing rows after rollback. This does not protect against privileged database owners or superusers who can disable triggers or alter the schema.
 
-The row-level UPDATE/DELETE trigger does not fire for SQL `TRUNCATE`. Gate 56 adds an ordered transactional migration installing a statement-level `BEFORE TRUNCATE` trigger on `audit_events`, reusing the existing fail-closed trigger function. Normal INSERT operations remain permitted; a TRUNCATE attempt should fail with SQLSTATE `55000` and preserve existing rows after rollback.
+**Validation status:** On 2026-10-14, the user confirmed 4 focused migration tests, 14 focused remediation tests, the full PostgreSQL-backed suite at 100% without a skip summary, Ruff, diff checks, and wheel build on `4e96495a5ee85e23b35033f364f379120898d159`. Five Starlette deprecation warnings were non-failing.
 
-This guard protects against ordinary TRUNCATE statements while enabled. It does not protect against privileged database owners or superusers who can disable triggers or otherwise alter the schema. Focused PostgreSQL regression tests, the full PostgreSQL-backed suite, Ruff, diff checks, and wheel build are pending.
+## 80. Architecture Gate 57 — Fail-Closed Audit Protection Drift Detection — IN PROGRESS
+
+Migration history does not prove that the audit-protection triggers remain installed and enabled after deployment. Startup now queries PostgreSQL's trigger catalog and fails closed if either required trigger is missing, disabled, has an unexpected event/statement definition, or no longer uses the expected fail-closed trigger function. This is detection, not automatic repair; an operator must restore the schema and retry startup.
+
+**Validation status:** Implementation committed on `bffef34f6d6a120f9a0b89cad0cd22ed5438dcee`. Focused PostgreSQL tests, full-suite validation, Ruff, diff checks, and wheel build remain pending user confirmation.
