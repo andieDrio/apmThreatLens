@@ -116,28 +116,28 @@ def _runtime_role(
                     )
                 )
             if owned_schema_object:
-                owned_table = f"{role_name}_owned"
-                cursor.execute(
-                    sql.SQL("CREATE TABLE public.{} (id INTEGER)").format(
-                        sql.Identifier(owned_table)
-                    )
-                )
                 cursor.execute(
                     sql.SQL("GRANT CREATE ON SCHEMA public TO {}").format(
                         sql.Identifier(role_name)
                     )
                 )
+    dsn = make_conninfo(_dsn(), user=role_name, password=password)
+    if owned_schema_object:
+        owned_table = f"{role_name}_owned"
+        with psycopg.connect(dsn) as owned_connection:
+            with owned_connection.cursor() as cursor:
                 cursor.execute(
-                    sql.SQL("ALTER TABLE public.{} OWNER TO {}").format(
-                        sql.Identifier(owned_table), sql.Identifier(role_name)
+                    sql.SQL("CREATE TABLE public.{} (id INTEGER)").format(
+                        sql.Identifier(owned_table)
                     )
                 )
+        with connection.transaction():
+            with connection.cursor() as cursor:
                 cursor.execute(
                     sql.SQL("REVOKE CREATE ON SCHEMA public FROM {}").format(
                         sql.Identifier(role_name)
                     )
                 )
-    dsn = make_conninfo(_dsn(), user=role_name, password=password)
     return role_name, owner_role, dsn
 
 
