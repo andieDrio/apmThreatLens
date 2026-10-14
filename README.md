@@ -65,7 +65,7 @@ Gate 56 — PostgreSQL Audit Trail Truncation Protection: COMPLETE. On 2026-10-1
 
 Gate 57 — Fail-Closed Audit Protection Drift Detection: COMPLETE. Startup validates required PostgreSQL audit triggers using catalog trigger-type bits, enabled state, event/row-or-statement semantics, trigger-function identity, and exact normalized fail-closed function behavior. PostgreSQL regressions cover disabled, missing, and weakened-function drift plus connection transaction-state cleanup. On 2026-10-14, the user confirmed 8 focused schema migration tests, the full PostgreSQL-backed suite without a skip summary, Ruff, diff checks, and wheel build passed on `db3b98165bb10351cb3fc2b10de964c44a5dcd90`. Five Starlette deprecation warnings were non-blocking.
 
-Gate 58 — PostgreSQL Runtime/Migration Privilege Separation: NEXT. The repository currently runs migrations through its repository connection. Inspect and separate schema-migration authority from the runtime database role so the application cannot disable/drop audit protections through ownership or DDL privileges. Add PostgreSQL-backed privilege-boundary tests and deployment guidance.
+Gate 58 — PostgreSQL Runtime/Migration Privilege Separation: IMPLEMENTED; validation pending. API startup now uses the runtime DSN only for read-only schema/readiness verification. Run schema migrations explicitly with `THREATLENS_MIGRATION_DATABASE_URL` using `python -m threatlens.storage.migrate`; never supply migration credentials to the API process. PostgreSQL integration coverage checks that a non-owner runtime role cannot disable/drop audit triggers or replace their function. Production role provisioning and exact-revision validation remain required before completion.
 
 Architecture Gate 49: Durable Cross-Instance Scan Command Idempotency — COMPLETE. The authenticated scan-queue API requires a bounded Idempotency-Key; PostgreSQL atomically persists the request fingerprint, queued scan, and SCAN_QUEUED audit event under a transaction-scoped advisory lock. Exact retries return the original execution, conflicting key reuse is rejected, and PostgreSQL integration coverage verifies rollback and two-connection concurrency. The user confirmed focused API/PostgreSQL tests, the full pytest suite, Ruff, diff checks, and package wheel build passed; the changes are merged and verified on main. Gate 50 — Cross-Instance Scan Command Retry/Recovery Serialization — COMPLETE. The user confirmed validation success, including the Ruff correction. Lifecycle control endpoints require durable idempotency keys; PostgreSQL serializes actor/key retries and atomically persists command results with lifecycle audit events. Gate 51 — Fail-Closed Scan Heartbeat Lease Integrity — COMPLETE. Provider execution now treats heartbeat renewal failure or lease loss as a hard execution failure, requests cooperative cancellation, maps lease loss to FAILED rather than user cancellation, and stops the heartbeat worker after completion. The user confirmed clean/successful validation, including the package wheel build. Gate 52 — Execution-Lease-Fenced Evidence and Finding Persistence — COMPLETE after PostgreSQL-backed tests executed successfully on 2026-10-14. PostgreSQL provider handoff now locks and verifies the originating scan remains RUNNING in the same transaction as evidence/finding writes; durable finding correlation applies the same execution fence before merging or inserting a logical finding. Production repositories declare that execution fencing is mandatory, and ProviderHandoff/DurableFindingCorrelator fail closed instead of falling back to legacy writes when the fence is unavailable. PostgreSQL also rejects execution-bound evidence sent through the unfenced save_evidence method. Regression tests cover missing-fence fallbacks and unfenced execution-bound evidence in addition to late evidence/finding rejection, correlated writes, active execution output, and terminal-transition races. Gate 52's PostgreSQL-backed execution-fence regressions were confirmed executed on 2026-10-14; see the gate status section below. See PROJECT_STATUS.md for the per-cycle report and feedback. Gate 48 Authenticated Security Audit Read Model API is complete. Gate 43 Authenticated Attack-Path Relationship Control API is complete after local pytest and Ruff validation. Gate 38 Authenticated Campaign & Scope Control API is complete after explicit local validation. Gate 20 PostgreSQL Transactional Concurrency and Failure-Recovery Hardening is complete after local validation. PostgreSQL is now the sole active development/test persistence path; the legacy SQLite adapter is not used by the application or active test suite. Gate 18 Reliability and Performance remains complete with durable heartbeat leases, explicit authenticated stale recovery, bounded provider concurrency, compare-and-set lifecycle transitions, atomic persistence/audit mutations, and explicit handling of non-cooperative provider timeouts.
 
@@ -87,11 +87,45 @@ The API does not expose raw evidence mutation, arbitrary SQL, provider execution
 
 The active persistence test suite now runs through PostgreSQL only. The shared integration fixture requires `THREATLENS_TEST_DATABASE_URL` or the canonical `THREATLENS_DATABASE_URL`, never falls back to SQLite, initializes the schema, isolates tests with `TRUNCATE ... CASCADE`, and covers domain persistence, foreign-key integrity, authentication, durable correlation, evidence validation, scan lifecycle CAS, concurrency-sensitive orchestration, and PostgreSQL trigger-based failure-atomicity scenarios. The repository contains no active test-suite imports of `SQLiteRepository`. The SQLite adapter is retained only as legacy compatibility code and receives no new production behavior.
 
-### PostgreSQL Deployment Readiness
+### PostgreSQL Deployment Readiness and Database Roles
 
-PostgreSQL is the permanent and canonical deployment persistence target. The repository includes a PostgreSQL adapter and `.env.example`; local database installation and credentials remain deployment-environment responsibilities. The application does not auto-start or auto-create a database server.
+PostgreSQL is the permanent and canonical deployment persistence target. The application does not auto-start or auto-create a database server. Keep runtime and migration credentials separate:
 
-For local development, install the Python dependencies after pulling the repository and configure `THREATLENS_DATABASE_URL` from `.env.example` without committing secrets.
+- `THREATLENS_DATABASE_URL`: runtime identity used by the API. It must not own schema objects or have schema `CREATE` privileges.
+- `THREATLENS_MIGRATION_DATABASE_URL`: deployment/migration identity used only by the explicit migration command.
+
+Provision both roles through a trusted DBA/deployment process. For a new, dedicated database, the following is a reference pattern to adapt to your database/schema names and credential manager (run as a database administrator; do not put real passwords in source control):
+
+```sql
+CREATE ROLE threatlens_migrator LOGIN PASSWORD 'set-via-secret-manager';
+CREATE ROLE threatlens_runtime LOGIN PASSWORD 'set-via-secret-manager';
+GRANT CONNECT ON DATABASE threatlens TO threatlens_migrator, threatlens_runtime;
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+GRANT USAGE, CREATE ON SCHEMA public TO threatlens_migrator;
+GRANT USAGE ON SCHEMA public TO threatlens_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE threatlens_migrator IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO threatlens_runtime;
+```
+
+Then apply migrations with the migration identity:
+
+```bash
+python -m threatlens.storage.migrate
+```
+
+After migration, grant the runtime identity data access to existing application tables, while explicitly restricting the audit trail:
+
+```sql
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO threatlens_runtime;
+REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+  ON audit_events FROM threatlens_runtime;
+GRANT SELECT, INSERT ON audit_events TO threatlens_runtime;
+REVOKE CREATE ON SCHEMA public FROM threatlens_runtime;
+```
+
+Use the same migration owner for subsequent schema changes so its default privileges apply. Existing installations may need a DBA-led ownership transfer before the migration identity can safely manage pre-existing objects. The runtime role must not be a member of the migration role, table owner, database owner, or superuser. Test the effective grants in the target environment; role membership and inherited grants can otherwise defeat a direct REVOKE.
+
+For local development, configure both DSNs in an untracked `.env`. Run the migration command before starting the API. API startup verifies the migration registry and audit protections but does not apply DDL. The PostgreSQL integration suite continues to use `THREATLENS_TEST_DATABASE_URL` and requires a test database role with permission to initialize and reset its isolated schema.
 
 ### Architecture Gate 26 — Vulnerability Correlation Context Expansion — COMPLETE
 
