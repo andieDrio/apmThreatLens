@@ -43,7 +43,11 @@ Migration history does not prove that audit-protection triggers remain installed
 
 ### Validation
 
-The initial Gate 57 focused run failed because the verifier assumed a fixed textual ordering for UPDATE/DELETE in PostgreSQL's trigger definition. The verifier has been changed to inspect catalog trigger-type bits, and missing-trigger coverage has been added. Fix commit is pending validation by the user.
+The initial Gate 57 focused run failed because the verifier assumed a fixed textual ordering for UPDATE/DELETE in PostgreSQL's trigger definition. The verifier was changed to inspect catalog trigger-type bits, and missing-trigger coverage was added. The six focused migration tests passed on the pre-fix revision, but the broader run then exposed lock contention: one connection remained idle in transaction holding AccessExclusive relation locks while a second connection's authentication SELECT waited on the users table.
+
+Root cause: the catalog SELECT in _verify_audit_protection() started a new implicit psycopg transaction after run_migrations() had committed and released its migration lock. The integration fixture's transaction context then nested as a savepoint, leaving its trigger changes and TRUNCATE locks held after RELEASE. The migration runner now commits after successful verification and rolls back if verification raises. Regression tests assert the connection returns to IDLE after successful verification and after fail-closed disabled/missing-trigger errors. Fix commits: `db4d3a6a3b602b4227b7abb6b04f8e646567b3ec` and `9777d2b201941de4c3f012246a39303ba0cf5057`.
+
+**Validation still pending:** pull the latest main revision, rerun the isolated cross-instance scan-idempotency test, rerun the broader PostgreSQL concurrency tests, then run the full PostgreSQL-backed suite, Ruff, diff checks, and wheel build. Do not mark Gate 57 complete until these pass on the exact revision.
 
 ## Recent Completed Gates
 
