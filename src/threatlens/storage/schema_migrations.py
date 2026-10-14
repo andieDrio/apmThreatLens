@@ -57,6 +57,17 @@ def _audit_events_append_only(repository: object) -> None:
         )
 
 
+def _audit_events_no_truncate(repository: object) -> None:
+    """Reject TRUNCATE so ordinary table privileges cannot erase the audit trail."""
+    with repository.connection.cursor() as cursor:
+        cursor.execute(
+            """CREATE TRIGGER audit_events_no_truncate
+               BEFORE TRUNCATE ON audit_events
+               FOR EACH STATEMENT
+               EXECUTE FUNCTION threatlens_reject_audit_mutation()"""
+        )
+
+
 MIGRATIONS = (
     Migration(
         version=1,
@@ -70,6 +81,12 @@ MIGRATIONS = (
         name="audit_events_append_only",
         revision="postgresql-trigger-blocks-update-delete-v1",
         apply=_audit_events_append_only,
+    ),
+    Migration(
+        version=3,
+        name="audit_events_no_truncate",
+        revision="postgresql-trigger-blocks-truncate-v1",
+        apply=_audit_events_no_truncate,
     ),
 )
 
