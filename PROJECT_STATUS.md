@@ -2,10 +2,10 @@
 
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 58  
+**Highest architecture gate reached:** Gate 59  
 **Highest fully validated gate:** Gate 58  
 **Current gate:** Gate 59 — Fail-Closed Runtime Database Privilege Verification  
-**Current status:** Gate 58 is complete and validated on `c39a7cd9d757e2a63cc27365e6e2b8e8a5e529b3`. Gate 59 is the next active architecture gate; implementation has not started.
+**Current status:** Gate 58 is complete and validated on `c39a7cd9d757e2a63cc27365e6e2b8e8a5e529b3`. Gate 59 implementation is committed directly to `main`; exact-revision validation is pending.
 
 ## Executive Summary
 
@@ -114,16 +114,21 @@ On 2026-10-14, the user confirmed validation on exact main commit `c39a7cd9d757e
 ### Security review
 API startup no longer applies schema migrations. The test suite demonstrates a non-owner runtime role cannot disable/drop audit triggers or replace their function, and cannot mutate protected audit/migration-registry rows. Production deployment must still provision roles with correct ownership and effective grants.
 
-## Gate 59 — Fail-Closed Runtime Database Privilege Verification — NEXT
+## Gate 59 — Fail-Closed Runtime Database Privilege Verification — IMPLEMENTED, VALIDATION PENDING
 
-### Gap and objective
-Gate 58 separates migration and runtime credentials, but a deployment could accidentally configure the API DSN with a superuser, object owner, or role that inherits migration/DDL privileges. The readiness verifier currently checks schema history and audit-trigger integrity but does not validate the effective database identity's privilege posture.
+### Root cause
+Gate 58 separates migration and runtime DSNs, but the API could still be configured with a superuser, database/schema owner, or role inheriting unsafe DDL privileges. Schema readiness and audit-trigger verification alone do not establish that the effective API identity is least-privileged.
 
-Gate 59 will verify the effective connected identity and fail closed if it has unsafe authority, including superuser/ownership, schema CREATE, migration-registry write, or audit-table mutation/trigger-alteration capability. It must account for role membership and inherited privileges rather than relying only on direct ACLs.
+### Implementation
+- Added \`verify_runtime_privileges()\` to inspect both \`current_user\` and \`session_user\`.
+- Fails closed for superuser identities; effective database/schema CREATE privileges; audit UPDATE/DELETE/TRUNCATE/TRIGGER privileges; migration registry INSERT/UPDATE/DELETE/TRUNCATE privileges; and membership in database, schema, table, or trigger-function owning roles.
+- API startup runs the check after read-only schema readiness verification and closes the connection on any startup failure.
+- Added PostgreSQL integration coverage for least-privilege login, direct schema CREATE, inherited DDL role membership, and API cleanup after privilege-verification failure.
+- All changes are committed directly to \`main\`; no feature branches or pull requests.
 
-### Required validation
-Add PostgreSQL-backed tests for safe and unsafe effective runtime roles, preserve read-only API startup and the separate migration command, and run focused tests, the full suite without skips, Ruff, diff checks, and wheel build on the exact main SHA. Fix blockers and remain on Gate 59 until validation is confirmed.
+### Validation required
+Run the focused schema migration/runtime privilege/API tests, full PostgreSQL-backed \`python -m pytest -q -rs\` suite without skips, \`ruff check .\`, \`git diff --check\`, and package wheel build on the exact current \`main\` SHA. The integration tests require a PostgreSQL test account allowed to create/drop temporary roles and connect as a test login. Fix any blocker and remain on Gate 59. Do not mark complete until exact-revision results are confirmed.
 
 ## Next Required Action
 
-Fetch and inspect the latest `main`, then implement Gate 59 directly on `main`. No feature branches, no feature-branch switching, and no pull requests. Do not rework completed gates unless a regression or blocker is found.
+Validate Gate 59 on the exact latest \`main\` revision. The runtime privilege verifier must be tested against an actual least-privilege PostgreSQL login and unsafe direct/inherited grants before this gate can close.
