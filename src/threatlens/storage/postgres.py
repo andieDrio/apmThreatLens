@@ -133,6 +133,21 @@ class PostgresRepository(
         self.initialize_finding_correlation()
         self.initialize_evidence_validation()
         self.initialize_auth()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """CREATE TABLE IF NOT EXISTS finding_remediation_idempotency (
+                    actor_user_id UUID NOT NULL,
+                    idempotency_key TEXT NOT NULL,
+                    request_hash TEXT NOT NULL,
+                    finding_id UUID NOT NULL REFERENCES findings(id) ON DELETE CASCADE,
+                    changed BOOLEAN NOT NULL,
+                    state TEXT NOT NULL,
+                    allowed BOOLEAN NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL,
+                    PRIMARY KEY (actor_user_id, idempotency_key)
+                )"""
+            )
+        self.connection.commit()
 
     def save_attack_path_relation_with_audit(
         self, relation: AttackPathRelation, actor_user_id: UUID
@@ -837,6 +852,32 @@ class PostgresRepository(
                     )
                     return True, target_state, True
 
+    def transition_finding_remediation_idempotent(
+        self, finding_id: UUID, target_state: FindingState, actor_user_id: UUID,
+        rationale: str, idempotency_key: str,
+    ) -> tuple[bool, FindingState, bool, bool]:
+        """Apply remediation once per actor/key and durably replay its result."""
+        payload = json.dumps({
+            "finding_id": str(finding_id), "state": target_state.value, "rationale": rationale,
+        }, sort_keys=True, separators=(',', ':'))
+        request_hash = sha256(payload.encode("utf-8")).hexdigest()
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    lock_key = f"finding-remediation:{actor_user_id}:{idempotency_key}"
+                    cursor.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (lock_key,))
+                    cursor.execute("SELECT request_hash, changed, state, allowed FROM finding_remediation_idempotency WHERE actor_user_id=%s AND idempotency_key=%s FOR UPDATE", (actor_user_id, idempotency_key))
+                    existing = cursor.fetchone()
+                    if existing is not None:
+                        if existing[0] != request_hash:
+                            raise ValueError("Idempotency-Key was already used for a different remediation request")
+                        return existing[1], FindingState(existing[2]), existing[3], False
+                    changed, state, allowed = self.transition_finding_remediation_with_audit(
+                        finding_id=finding_id, target_state=target_state,
+                        actor_user_id=actor_user_id, rationale=rationale,
+                    )
+                    cursor.execute("INSERT INTO finding_remediation_idempotency (actor_user_id, idempotency_key, request_hash, finding_id, changed, state, allowed, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)", (actor_user_id, idempotency_key, request_hash, finding_id, changed, state.value, allowed, datetime.now(UTC)))
+                    return changed, state, allowed, True
     def finding_by_id(self, finding_id: UUID) -> Finding:
         from threatlens.domain.models import FindingState, Severity
 
