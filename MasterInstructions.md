@@ -128,8 +128,12 @@ On 2026-10-14, the user confirmed the required PostgreSQL-focused tests, full Po
 
 On 2026-10-14, the user confirmed all focused PostgreSQL migration/runtime privilege/API tests, the full PostgreSQL-backed suite, Ruff, diff check, and wheel build completed cleanly on main revision `0c6f22281f3242187ec2c1b3165b50557d9665d1`. No failures were reported.
 
-## Current Gate Directive — Gate 62: Fail-Closed Runtime Sequence Privilege Verification
+## Gate 62 Validation Closure — COMPLETE
 
-Extend the read-only runtime verifier to reject effective SELECT, USAGE, or UPDATE privileges on every application-schema sequence for either `current_user` or `session_user`, including inherited role grants. Current identifiers are UUID-backed, so runtime sequence access is unnecessary. Preserve least-privilege application DML, audit append-only controls, migration-registry integrity, schema/ownership checks, and the separate migration identity. Add real PostgreSQL integration regressions for each sequence privilege and retain a passing least-privilege runtime role.
+On 2026-10-14, the user confirmed Gate 62 was clean and successful on main revision `3b7d25914b1866a2c9617940970b2d08a44f8463`.
 
-Inspect latest `main` before every cycle. Run focused PostgreSQL migration/runtime privilege/API tests, full `python -m pytest -q -rs` without skips, Ruff, diff check, and package wheel build. Fix blockers and remain on Gate 62 until the exact revision is user-validated. Maintain README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md. All changes stay directly on `main`; no feature branches, no branch switching, no PR workflow, and no force pushes.
+## Current Gate Directive — Gate 63: Fail-Closed SECURITY DEFINER Routine Execution Verification
+
+Extend the read-only PostgreSQL runtime privilege verifier to reject any effective EXECUTE privilege on SECURITY DEFINER routines in the active application schema for either `current_user` or `session_user`, including inherited role and PUBLIC grants. Preserve ordinary invoker-security routine behavior, least-privilege application DML, audit append-only protections, migration-registry integrity, sequence checks, schema ownership checks, and the separate migration identity. Add a genuine PostgreSQL integration regression that creates an administrator-owned SECURITY DEFINER routine and proves a runtime login with EXECUTE privilege is rejected. Keep a least-privilege runtime role passing.
+
+Inspect latest `main` before every cycle. Run focused PostgreSQL migration/runtime privilege/API tests, full `python -m pytest -q -rs` without skips, Ruff, diff check, and package wheel build. Fix blockers and remain on Gate 63 until the exact revision is user-validated. Maintain README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md. All changes stay directly on `main`; no feature branches, no branch switching, no PR workflow, and no force pushes.
