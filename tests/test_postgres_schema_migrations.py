@@ -231,3 +231,52 @@ def test_postgres_initialize_fails_closed_when_audit_trigger_is_missing(postgres
         repository.connection.commit()
 
     repository.initialize()
+
+def test_postgres_initialize_fails_closed_when_audit_function_behavior_drifts(
+    postgres_repository,
+):
+    repository = postgres_repository
+    with repository.connection.cursor() as cursor:
+        # Preserve the old marker strings while weakening behavior: UPDATE/DELETE
+        # return NULL and the statement-level TRUNCATE trigger no longer raises.
+        cursor.execute(
+            """
+            CREATE OR REPLACE FUNCTION threatlens_reject_audit_mutation()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                IF TG_OP = 'SELECT' THEN
+                    RAISE EXCEPTION 'audit_events is append-only'
+                        USING ERRCODE = '55000';
+                END IF;
+                RETURN NULL;
+            END;
+            $$
+            """
+        )
+    repository.connection.commit()
+
+    try:
+        with pytest.raises(RuntimeError, match="audit protection function drifted"):
+            repository.initialize()
+        assert repository.connection.info.transaction_status.name == "IDLE"
+    finally:
+        with repository.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                CREATE OR REPLACE FUNCTION threatlens_reject_audit_mutation()
+                RETURNS trigger
+                LANGUAGE plpgsql
+                AS $$
+                BEGIN
+                    RAISE EXCEPTION 'audit_events is append-only'
+                        USING ERRCODE = '55000';
+                END;
+                $$
+                """
+            )
+        repository.connection.commit()
+
+    repository.initialize()
+
