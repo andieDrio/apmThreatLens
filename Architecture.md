@@ -690,34 +690,17 @@ Focused runtime and PostgreSQL-backed orchestration regression tests cover expli
 
 **Validation status:** The user confirmed Gate 51 clean and successful, including the package wheel build. Gate 51 is COMPLETE based on that explicit confirmation.
 
-## 75. Architecture Gate 52 — Execution-Lease-Fenced Evidence and Finding Persistence — VALIDATION REVIEW PENDING
+## 75. Architecture Gate 52 — Execution-Lease-Fenced Evidence and Finding Persistence — COMPLETE
 
-Code inspection found that `ProviderHandoff` bound execution identity into evidence metadata and validated evidence references, but the persistence contract did not verify that the originating scan still owned a RUNNING execution lease. A provider that was slow to observe cooperative cancellation could therefore attempt late evidence or finding writes after cancellation or stale recovery.
+PostgreSQL execution-bound evidence and finding writes lock the authoritative scan row, require the execution to remain RUNNING, and persist under the same transaction. The production repository declares execution fencing mandatory. ProviderHandoff and DurableFindingCorrelator fail closed when fenced methods are unavailable, and generic PostgreSQL evidence writes reject execution-bound evidence.
 
-Gate 52 adds PostgreSQL `save_evidence_for_execution` and `save_finding_for_execution` operations. Each locks the authoritative scan row with `SELECT ... FOR UPDATE`, rejects missing or non-RUNNING executions, and persists the output in the same transaction. `ProviderHandoff` selects these fenced methods whenever the active repository exposes them. Durable finding correlation adds an execution-aware path that acquires the scan-row lock and checks RUNNING state before taking the correlation advisory lock and inserting/merging the logical finding in the same transaction. Thus lifecycle cancellation/recovery and provider output writes serialize on the same scan row; a late write either commits before the terminal transition or is rejected after it. The active PostgreSQL production path is fenced; in-memory/legacy test adapters retain compatibility behavior.
+**Validation status:** On 2026-10-14, the user confirmed the full suite reached 100% with no skip summary, the PostgreSQL-backed regression tests executed, Ruff passed, diff checks were clean, and the package wheel built successfully. Five Starlette deprecation warnings were non-failing.
 
-Regression coverage has been added for rejection of late evidence, rejection of late uncorrelated and correlated findings, acceptance while RUNNING, and cross-connection serialization against a terminal transition.
+## 76. Architecture Gate 53 — Durable Finding Remediation Idempotency — COMPLETE
 
-**Validation status:** Implementation and regression tests are committed to main. Local focused PostgreSQL tests, the full suite, Ruff, package build, diff checks, and security review remain pending. Gate 52 must remain IN PROGRESS until these checks are explicitly confirmed.
+The authenticated finding-remediation API requires a bounded `Idempotency-Key`. PostgreSQL stores the actor/key-scoped request fingerprint and original transition result in the same transaction as the finding state change and audit event. A transaction-scoped advisory lock serializes retries across application instances. Exact retries replay the original result without adding another audit event; conflicting key reuse returns HTTP 409. Invalid transitions are durably replayed with their original denied result and audit event.
 
-
-## Architecture Gate 52 — Execution-Lease-Fenced Evidence and Finding Persistence
-
-Gate 52 strengthens the production persistence boundary so provider-originated evidence and findings cannot silently fall back to unfenced writes when an execution-aware method is missing. The PostgreSQL repository declares that execution fencing is mandatory. ProviderHandoff fails closed for evidence and finding persistence when that capability is absent, and DurableFindingCorrelator refuses its legacy correlation fallback for a repository that requires fencing. PostgreSQL also rejects evidence carrying execution provenance when it is sent through the generic, unfenced `save_evidence` method.
-
-The authoritative write methods continue to lock the scan row and verify RUNNING state in the same transaction as persistence. Correlated finding writes apply the same scan-row lock before correlation and merge operations. Legacy/in-memory adapters retain compatibility only when they do not declare that execution fencing is mandatory.
-
-Regression tests cover missing-fence fallbacks and rejection of execution-bound evidence on the unfenced repository method, alongside the existing late-write and terminal-transition concurrency tests.
-
-**Validation status:** The user confirmed `ruff check .`, `git diff --check`, `python -m pytest -q`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel` completed successfully. The suite contained many skips, and the output provided does not show whether the PostgreSQL-backed execution-fence regressions actually ran. Run `python -m pytest -q -rs` and confirm those regressions are not skipped before declaring Gate 52 complete. Five Starlette deprecation warnings were reported; the package wheel built successfully.
-
-
-## 76. Architecture Gate 53 — Durable Finding Remediation Idempotency — IN PROGRESS
-
-The authenticated finding-remediation API requires a bounded `Idempotency-Key`. PostgreSQL stores an actor/key-scoped request fingerprint and the original transition result in the same transaction as the finding state change and audit event. A transaction-scoped advisory lock serializes retries across application instances. Exact retries replay the original changed/state/allowed result without adding another audit event; key reuse with a different finding, target state, or rationale returns HTTP 409. Invalid transitions are also durably replayed with their original denied result and audit event. Missing findings do not create an idempotency record.
-
-Validation is pending local execution against the committed revision. Do not mark Gate 53 complete until API tests, PostgreSQL persistence/replay/conflict tests, the full PostgreSQL-backed suite, Ruff, diff checks, and package build have passed.
-
+**Validation status:** On 2026-10-14, 9 focused API tests and 5 focused PostgreSQL remediation tests passed; the full suite, Ruff, diff checks, and package wheel build also passed.
 
 ## 77. Architecture Gate 54 — Versioned PostgreSQL Schema Migrations — IN PROGRESS
 
