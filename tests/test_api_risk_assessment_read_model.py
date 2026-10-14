@@ -41,6 +41,20 @@ class FakeRepository:
     def save_user(self, user: User):
         self.users[user.username] = user
 
+    def save_user_with_audit(self, user: User, event: AuditEvent):
+        previous_user = self.users.get(user.username)
+        audit_count = len(self.audit_events)
+        self.users[user.username] = user
+        try:
+            self.save_audit_event(event)
+        except Exception:
+            if previous_user is None:
+                self.users.pop(user.username, None)
+            else:
+                self.users[user.username] = previous_user
+            del self.audit_events[audit_count:]
+            raise
+
     def user_by_username(self, username):
         return self.users.get(username)
 
