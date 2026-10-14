@@ -2,10 +2,10 @@
 
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 71
-**Highest fully validated gate:** Gate 70 (user-confirmed)
-**Current gate:** Gate 71 — Atomic Logout Session Revocation and Success-Audit Persistence
-**Current status:** Gate 70 was confirmed clean and successful by the user on 2026-10-14. Focused API tests, full PostgreSQL-backed pytest, Ruff, diff check, package wheel build, and final main synchronization were reported clean. Gate 71 addresses the remaining non-atomic logout/revocation plus success-audit flow. Validation claims remain user-confirmed, not independently executed by the assistant.
+**Highest architecture gate reached:** Gate 72
+**Highest fully validated gate:** Gate 71 (user-confirmed)
+**Current gate:** Gate 72 — Atomic User Provisioning and Success-Audit Persistence
+**Current status:** Gate 71 was confirmed clean and successful by the user on 2026-10-14. Gate 72 closes the separate user-row and USER_CREATED audit transaction boundary. Implementation and regression tests are committed directly to `main`; post-change focused/full PostgreSQL-backed validation, Ruff, diff check, and wheel build remain pending user confirmation.
 
 ## Executive Summary
 
@@ -288,7 +288,7 @@ Successful login previously committed the authentication session and success aud
 ### Validation closure
 On 2026-10-14, the user confirmed focused API tests, the full PostgreSQL-backed pytest suite, Ruff, `git diff --check`, package wheel build, and final main synchronization were clean. Five Starlette deprecation warnings were non-failing. The optional `python -m build` command was unavailable because the module was not installed; the established pip wheel build was used instead. This is user-confirmed validation.
 
-## Gate 71 — Atomic Logout Session Revocation and Success-Audit Persistence — IN PROGRESS
+## Gate 71 — Atomic Logout Session Revocation and Success-Audit Persistence — COMPLETE
 
 ### Root cause
 `AuthenticationService.logout()` previously invoked `revoke_session()` and `save_audit_event()` as separate persistence operations. If audit insertion failed after revocation committed, the session was revoked while the caller received a failure and the corresponding successful logout event was absent.
@@ -297,7 +297,24 @@ On 2026-10-14, the user confirmed focused API tests, the full PostgreSQL-backed 
 - Added `revoke_session_with_audit()` to the SQLite and PostgreSQL authentication storage mixins.
 - The operation updates session revocation and inserts the LOGOUT success audit event inside one transaction; PostgreSQL also serializes the operation with the repository transaction lock.
 - Routed `AuthenticationService.logout()` through the atomic operation.
-- Added SQLite and PostgreSQL failure-injection regressions that verify audit failure rolls back revocation and successful retry produces the expected state and audit record.
+- Added SQLite and PostgreSQL failure-injection regressions and updated the API test double to implement the atomic logout contract.
+
+### Validation closure
+On 2026-10-14, the user confirmed Gate 71 clean and successful. This is user-confirmed validation; the assistant did not independently execute local test, PostgreSQL, lint, diff-check, or wheel-build commands.
+
+
+## Gate 72 — Atomic User Provisioning and Success-Audit Persistence — IN PROGRESS
+
+### Root cause
+`AuthenticationService.create_user()` previously committed the user row through `save_user()` and then separately inserted the USER_CREATED success audit event. An audit-write failure could leave a provisioned account without its corresponding success audit event.
+
+### Implementation on main
+- Added `save_user_with_audit()` to the SQLite compatibility and PostgreSQL authentication storage mixins.
+- The new operation inserts the user and USER_CREATED success event in one transaction; PostgreSQL also uses the repository transaction lock.
+- Routed `AuthenticationService.create_user()` through the atomic repository operation.
+- Added SQLite and PostgreSQL failure-injection regressions proving audit failure rolls back user creation and successful retry persists both records.
+- Updated the API test double to implement the atomic user-provisioning contract.
+- Updated README.md, Architecture.md, MasterInstructions.md, and this status report directly on `main`.
 
 ### Validation status
-**PENDING USER VALIDATION.** The first focused auth test run passed, but the full suite exposed a test-double contract gap: `tests/test_api_app.py::FakeRepository` did not implement `revoke_session_with_audit()`. The fake repository now implements the atomic logout contract and restores revocation state if audit persistence raises. This blocker fix is committed directly to `main`; no post-fix full suite, PostgreSQL integration run, Ruff, diff check, or wheel build has yet been confirmed. Pull latest `main`, rerun focused auth tests and the full PostgreSQL-backed suite without skips, then run `ruff check .`, `git diff --check`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel`. Fix any further blocker and remain on Gate 71 until the exact main revision is validated.
+**PENDING USER VALIDATION.** Code and regression tests are committed directly to `main`; post-change focused auth tests, the full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build have not yet been confirmed. Pull latest `main`, run the focused and full test commands, then Ruff, diff check, and wheel build. Fix any blocker and remain on Gate 72 until the exact main revision is validated.
