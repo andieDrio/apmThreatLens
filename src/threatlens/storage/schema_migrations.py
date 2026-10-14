@@ -35,6 +35,28 @@ def _baseline(repository: object) -> None:
     repository._initialize_legacy_schema()
 
 
+def _audit_events_append_only(repository: object) -> None:
+    """Prevent ordinary SQL UPDATE/DELETE from rewriting durable audit history."""
+    with repository.connection.cursor() as cursor:
+        cursor.execute(
+            \"\"\"CREATE OR REPLACE FUNCTION threatlens_reject_audit_mutation()
+               RETURNS trigger
+               LANGUAGE plpgsql
+               AS $
+               BEGIN
+                   RAISE EXCEPTION 'audit_events is append-only'
+                       USING ERRCODE = '55000';
+               END;
+               $\"\"\"
+        )
+        cursor.execute(
+            \"\"\"CREATE TRIGGER audit_events_append_only
+               BEFORE UPDATE OR DELETE ON audit_events
+               FOR EACH ROW
+               EXECUTE FUNCTION threatlens_reject_audit_mutation()\"\"\"
+        )
+
+
 MIGRATIONS = (
     Migration(
         version=1,
@@ -42,6 +64,12 @@ MIGRATIONS = (
         revision="baseline-v1-idempotent-existing-schema",
         apply=_baseline,
         transactional=False,
+    ),
+    Migration(
+        version=2,
+        name="audit_events_append_only",
+        revision="postgresql-trigger-blocks-update-delete-v1",
+        apply=_audit_events_append_only,
     ),
 )
 
