@@ -377,6 +377,7 @@ def create_app(
         repository = PostgresRepository(dsn)
         try:
             repository.verify_schema_ready()
+            repository.verify_runtime_privileges()
         except BaseException:
             repository.close()
             raise
