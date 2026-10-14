@@ -255,6 +255,3 @@ PostgreSQL supports column-level INSERT and UPDATE grants. Table-level `has_tabl
 ## Next Required Action
 
 Implement and validate Gate 67 on the exact `main` revision. Fix any failure before advancing. Continue using GitHub `main` only; no feature branches, pull requests, or force pushes.
-## Next Required Action
-
-Implement and validate Gate 66 on the exact `main` revision. Fix any failure before advancing. Continue using GitHub `main` only; no feature branches, pull requests, or force pushes.
