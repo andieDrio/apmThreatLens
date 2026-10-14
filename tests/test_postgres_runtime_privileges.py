@@ -110,11 +110,11 @@ def _drop_roles(repository, role_name, owner_role=None):
             cursor.execute(
                 sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role_name))
             )
+            cursor.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role_name)))
             if owner_role:
                 cursor.execute(
                     sql.SQL("DROP ROLE {}").format(sql.Identifier(owner_role))
                 )
-            cursor.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role_name)))
 
 
 def test_runtime_schema_readiness_check_is_read_only(postgres_repository):
