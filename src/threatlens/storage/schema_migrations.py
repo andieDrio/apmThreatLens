@@ -139,9 +139,15 @@ def _verify_audit_protection(repository: object) -> None:
             raise RuntimeError(f"required audit protection trigger definition drifted: {name}")
         if function_name != "threatlens_reject_audit_mutation":
             raise RuntimeError(f"required audit protection function drifted: {name}")
-        normalized_source = function_source.lower()
-        normalized_definition = function_definition.lower()
-        if "append-only" not in normalized_source or "55000" not in normalized_definition:
+        normalized_source = " ".join(function_source.lower().split())
+        expected_source = (
+            "begin raise exception 'audit_events is append-only' "
+            "using errcode = '55000'; end;"
+        )
+        if normalized_source != expected_source:
+            raise RuntimeError(f"required audit protection function drifted: {name}")
+        normalized_definition = " ".join(function_definition.lower().split())
+        if "returns trigger language plpgsql" not in normalized_definition:
             raise RuntimeError(f"required audit protection function drifted: {name}")
 
 
