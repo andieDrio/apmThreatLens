@@ -67,9 +67,13 @@ def test_runtime_role_cannot_alter_audit_protection(postgres_repository):
         statements = (
             "ALTER TABLE audit_events DISABLE TRIGGER audit_events_no_truncate",
             "DROP TRIGGER audit_events_no_truncate ON audit_events",
+            "UPDATE audit_events SET detail='tampered' WHERE FALSE",
+            "DELETE FROM audit_events WHERE FALSE",
+            "TRUNCATE TABLE audit_events",
+            "DELETE FROM threatlens_schema_migrations WHERE FALSE",
             """CREATE OR REPLACE FUNCTION threatlens_reject_audit_mutation()
-               RETURNS trigger LANGUAGE plpgsql AS $$
-               BEGIN RETURN NULL; END; $$""",
+               RETURNS trigger LANGUAGE plpgsql AS $
+               BEGIN RETURN NULL; END; $""",
         )
         with connection.transaction():
             with connection.cursor() as cursor:
