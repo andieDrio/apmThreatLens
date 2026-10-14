@@ -46,14 +46,16 @@ def test_runtime_role_cannot_alter_audit_protection(postgres_repository):
                     )
                 )
                 cursor.execute(
-                    sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {}").format(
-                        sql.Identifier(role_name)
-                    )
+                    sql.SQL(
+                        "GRANT SELECT, INSERT, UPDATE, DELETE "
+                        "ON ALL TABLES IN SCHEMA public TO {}"
+                    ).format(sql.Identifier(role_name))
                 )
                 cursor.execute(
-                    sql.SQL("REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON audit_events FROM {}").format(
-                        sql.Identifier(role_name)
-                    )
+                    sql.SQL(
+                        "REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER "
+                        "ON audit_events FROM {}"
+                    ).format(sql.Identifier(role_name))
                 )
                 cursor.execute(
                     sql.SQL("REVOKE CREATE ON SCHEMA public FROM {}").format(
