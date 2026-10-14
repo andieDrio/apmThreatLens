@@ -39,23 +39,22 @@ def _audit_events_append_only(repository: object) -> None:
     """Prevent ordinary SQL UPDATE/DELETE from rewriting durable audit history."""
     with repository.connection.cursor() as cursor:
         cursor.execute(
-            \"\"\"CREATE OR REPLACE FUNCTION threatlens_reject_audit_mutation()
+            """CREATE OR REPLACE FUNCTION threatlens_reject_audit_mutation()
                RETURNS trigger
                LANGUAGE plpgsql
-               AS $
+               AS $$
                BEGIN
                    RAISE EXCEPTION 'audit_events is append-only'
                        USING ERRCODE = '55000';
                END;
-               $\"\"\"
+               $$"""
         )
         cursor.execute(
-            \"\"\"CREATE TRIGGER audit_events_append_only
+            """CREATE TRIGGER audit_events_append_only
                BEFORE UPDATE OR DELETE ON audit_events
                FOR EACH ROW
-               EXECUTE FUNCTION threatlens_reject_audit_mutation()\"\"\"
+               EXECUTE FUNCTION threatlens_reject_audit_mutation()"""
         )
-
 
 MIGRATIONS = (
     Migration(
