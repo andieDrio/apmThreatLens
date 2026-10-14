@@ -5,7 +5,7 @@
 **Highest architecture gate reached:** Gate 70  
 **Highest fully validated gate:** Gate 69 (user-confirmed)  
 **Current gate:** Gate 70 — Atomic Login Session and Success-Audit Persistence  
-**Current status:** Gate 69 was confirmed clean and successful by the user. Gate 70 makes successful login session creation and its audit event atomic. The user's full-suite run exposed test-double contract gaps: `FakeRepository` in both `tests/test_api_scan_queue.py` and `tests/test_api_scan_control.py` lacked `create_session_with_audit()`, causing API tests to fail during login setup. Both fake repositories were updated on `main` to implement the new contract with cleanup if audit recording raises; validation remains pending and Gate 70 is not complete.
+**Current status:** Gate 69 was confirmed clean and successful by the user. Gate 70 makes successful login session creation and its audit event atomic. The user's full-suite run exposed test-double contract gaps: `FakeRepository` implementations in `tests/test_api_scan_queue.py`, `tests/test_api_scan_control.py`, `tests/test_api_attack_path_relations.py`, `tests/test_api_campaign_control.py`, `tests/test_api_evidence_read_model.py`, `tests/test_api_evidence_validation.py`, `tests/test_api_finding_remediation.py`, `tests/test_api_risk_assessment.py`, and `tests/test_api_risk_assessment_read_model.py` lacked `create_session_with_audit()`, causing API tests to fail during login setup. All nine fakes have now been updated on `main` to use the new contract and remove the just-created session if audit recording raises. The latest user-provided full-suite log predates the additional five fixes; validation remains pending and Gate 70 is not complete.
 
 ## Executive Summary
 
