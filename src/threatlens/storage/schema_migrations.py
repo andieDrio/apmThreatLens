@@ -246,5 +246,17 @@ def run_migrations(
         if not unlocked:
             raise RuntimeError("schema migration advisory lock was not held")
     if table_name == REGISTRY_TABLE and migrations == MIGRATIONS:
-        _verify_audit_protection(repository)
+        try:
+            _verify_audit_protection(repository)
+        except BaseException:
+            # Catalog verification runs after the migration lock is released and
+            # starts a fresh implicit transaction. Roll it back on drift/errors
+            # so failed startup never leaves the connection inside a transaction.
+            connection.rollback()
+            raise
+        else:
+            # psycopg starts a transaction for the verifier's SELECT queries.
+            # Commit it explicitly so callers can safely begin their own outer
+            # transaction without turning it into a savepoint and retaining locks.
+            connection.commit()
         repository.schema_migrations_managed = True
