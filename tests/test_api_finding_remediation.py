@@ -58,20 +58,37 @@ class FakeRepository:
     def save_audit_event(self, event: AuditEvent):
         self.audit_events.append(event)
 
-    def transition_finding_remediation_idempotent(self, finding_id, target_state, actor_user_id, rationale, idempotency_key):
-        import hashlib, json
-        fingerprint = hashlib.sha256(json.dumps({
-            "finding_id": str(finding_id), "state": target_state.value, "rationale": rationale,
-        }, sort_keys=True, separators=(',', ':')).encode('utf-8')).hexdigest()
+    def transition_finding_remediation_idempotent(
+        self, finding_id, target_state, actor_user_id, rationale, idempotency_key
+    ):
+        import hashlib
+        import json
+
+        fingerprint = hashlib.sha256(
+            json.dumps(
+                {
+                    "finding_id": str(finding_id),
+                    "state": target_state.value,
+                    "rationale": rationale,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
         key = (str(actor_user_id), idempotency_key)
         existing = self.remediation_idempotency.get(key)
         if existing is not None:
             if existing[0] != fingerprint:
-                raise ValueError("Idempotency-Key was already used for a different remediation request")
+                raise ValueError(
+                    "Idempotency-Key was already used for a different remediation request"
+                )
             return (*existing[1], False)
-        result = self.transition_finding_remediation_with_audit(finding_id, target_state, actor_user_id, rationale)
+        result = self.transition_finding_remediation_with_audit(
+            finding_id, target_state, actor_user_id, rationale
+        )
         self.remediation_idempotency[key] = (fingerprint, result)
         return (*result, True)
+
     def transition_finding_remediation_with_audit(
         self, finding_id, target_state, actor_user_id, rationale
     ):
@@ -162,7 +179,10 @@ async def test_finding_remediation_requires_permission():
         token = await login(client)
         response = await client.post(
             f"/api/v1/findings/{finding_id}/remediation",
-            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "test-remediation-key-0001"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "test-remediation-key-0001",
+            },
             json={"state": "MITIGATED", "rationale": "fix verified"},
         )
     assert response.status_code == 403
@@ -175,7 +195,10 @@ async def test_finding_remediation_transitions_and_audits_actor():
         token = await login(client)
         response = await client.post(
             f"/api/v1/findings/{finding_id}/remediation",
-            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "test-remediation-key-0001"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "test-remediation-key-0001",
+            },
             json={"state": "MITIGATED", "rationale": "remediation verified"},
         )
     assert response.status_code == 200
@@ -200,7 +223,10 @@ async def test_finding_remediation_rejects_invalid_transition_and_audits_denial(
         token = await login(client)
         response = await client.post(
             f"/api/v1/findings/{finding_id}/remediation",
-            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "test-remediation-key-0001"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "test-remediation-key-0001",
+            },
             json={"state": "MITIGATED", "rationale": "fix verified"},
         )
     assert response.status_code == 409
@@ -219,7 +245,10 @@ async def test_finding_remediation_is_idempotent_for_terminal_target():
         token = await login(client)
         response = await client.post(
             f"/api/v1/findings/{finding_id}/remediation",
-            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "test-remediation-key-0001"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "test-remediation-key-0001",
+            },
             json={"state": "MITIGATED", "rationale": "already verified"},
         )
     assert response.status_code == 200
@@ -236,21 +265,32 @@ async def test_finding_remediation_returns_not_found():
         token = await login(client)
         response = await client.post(
             f"/api/v1/findings/{missing_id}/remediation",
-            headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "test-remediation-key-0001"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "test-remediation-key-0001",
+            },
             json={"state": "MITIGATED", "rationale": "fix verified"},
         )
     assert response.status_code == 404
+
 
 @pytest.mark.anyio
 async def test_finding_remediation_exact_retry_replays_without_duplicate_audit():
     client, repository, finding_id = make_client()
     async with client:
         token = await login(client)
-        headers = {"Authorization": f"Bearer {token}", "Idempotency-Key": "remediation-replay-key-0001"}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Idempotency-Key": "remediation-replay-key-0001",
+        }
         payload = {"state": "MITIGATED", "rationale": "verified fix"}
-        first = await client.post(f"/api/v1/findings/{finding_id}/remediation", headers=headers, json=payload)
+        first = await client.post(
+            f"/api/v1/findings/{finding_id}/remediation", headers=headers, json=payload
+        )
         audit_count = len(repository.audit_events)
-        replay = await client.post(f"/api/v1/findings/{finding_id}/remediation", headers=headers, json=payload)
+        replay = await client.post(
+            f"/api/v1/findings/{finding_id}/remediation", headers=headers, json=payload
+        )
     assert first.status_code == 200
     assert first.headers["Idempotency-Replayed"] == "false"
     assert replay.status_code == 200
@@ -258,21 +298,38 @@ async def test_finding_remediation_exact_retry_replays_without_duplicate_audit()
     assert replay.json() == first.json()
     assert len(repository.audit_events) == audit_count
 
+
 @pytest.mark.anyio
 async def test_finding_remediation_rejects_conflicting_idempotency_key_reuse():
     client, _, finding_id = make_client()
     async with client:
         token = await login(client)
-        headers = {"Authorization": f"Bearer {token}", "Idempotency-Key": "remediation-conflict-key-01"}
-        first = await client.post(f"/api/v1/findings/{finding_id}/remediation", headers=headers, json={"state": "MITIGATED", "rationale": "verified fix"})
-        conflict = await client.post(f"/api/v1/findings/{finding_id}/remediation", headers=headers, json={"state": "ACCEPTED_RISK", "rationale": "different request"})
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Idempotency-Key": "remediation-conflict-key-01",
+        }
+        first = await client.post(
+            f"/api/v1/findings/{finding_id}/remediation",
+            headers=headers,
+            json={"state": "MITIGATED", "rationale": "verified fix"},
+        )
+        conflict = await client.post(
+            f"/api/v1/findings/{finding_id}/remediation",
+            headers=headers,
+            json={"state": "ACCEPTED_RISK", "rationale": "different request"},
+        )
     assert first.status_code == 200
     assert conflict.status_code == 409
+
 
 @pytest.mark.anyio
 async def test_finding_remediation_requires_idempotency_key():
     client, _, finding_id = make_client()
     async with client:
         token = await login(client)
-        response = await client.post(f"/api/v1/findings/{finding_id}/remediation", headers={"Authorization": f"Bearer {token}"}, json={"state": "MITIGATED", "rationale": "verified fix"})
+        response = await client.post(
+            f"/api/v1/findings/{finding_id}/remediation",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"state": "MITIGATED", "rationale": "verified fix"},
+        )
     assert response.status_code == 422

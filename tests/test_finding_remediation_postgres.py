@@ -188,31 +188,54 @@ def test_postgres_risk_assessment_persists_with_audit(postgres_repository):
     assert outcome == "SUCCESS"
     assert actor_user_id == actor.id
 
+
 def test_postgres_finding_remediation_idempotency_replays_original_result(postgres_repository):
     repository = postgres_repository
-    actor = User(username="idempotent-remediator", password_hash="test-password-hash", role="ANALYST")
+    actor = User(
+        username="idempotent-remediator", password_hash="test-password-hash", role="ANALYST"
+    )
     repository.save_user(actor)
     asset = Asset(canonical_id="host:10.0.0.30", asset_type="HOST", value="10.0.0.30")
     repository.save_asset(asset)
     evidence = Evidence(kind="test", content="evidence", source="test")
     repository.save_evidence(evidence)
-    finding = Finding(title="Idempotency test finding", asset_id=asset.id, evidence_ids=(evidence.id,), state=FindingState.CONFIRMED, severity=Severity.HIGH, confidence=1.0, source="test")
+    finding = Finding(
+        title="Idempotency test finding",
+        asset_id=asset.id,
+        evidence_ids=(evidence.id,),
+        state=FindingState.CONFIRMED,
+        severity=Severity.HIGH,
+        confidence=1.0,
+        source="test",
+    )
     repository.save_finding(finding)
     key = "postgres-remediation-key-0001"
-    first = repository.transition_finding_remediation_idempotent(finding.id, FindingState.MITIGATED, actor.id, "verified fix", key)
+    first = repository.transition_finding_remediation_idempotent(
+        finding.id, FindingState.MITIGATED, actor.id, "verified fix", key
+    )
     with repository.connection.cursor() as cursor:
-        cursor.execute("SELECT COUNT(*) FROM audit_events WHERE resource_id=%s AND action=%s", (finding.id, "FINDING_REMEDIATION"))
+        cursor.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE resource_id=%s AND action=%s",
+            (finding.id, "FINDING_REMEDIATION"),
+        )
         audit_count = cursor.fetchone()[0]
-    replay = repository.transition_finding_remediation_idempotent(finding.id, FindingState.MITIGATED, actor.id, "verified fix", key)
+    replay = repository.transition_finding_remediation_idempotent(
+        finding.id, FindingState.MITIGATED, actor.id, "verified fix", key
+    )
     with repository.connection.cursor() as cursor:
-        cursor.execute("SELECT COUNT(*) FROM audit_events WHERE resource_id=%s AND action=%s", (finding.id, "FINDING_REMEDIATION"))
+        cursor.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE resource_id=%s AND action=%s",
+            (finding.id, "FINDING_REMEDIATION"),
+        )
         replay_audit_count = cursor.fetchone()[0]
     assert first == (True, FindingState.MITIGATED, True, True)
     assert replay == (True, FindingState.MITIGATED, True, False)
     assert audit_count == replay_audit_count == 1
 
+
 def test_postgres_finding_remediation_idempotency_rejects_conflicting_request(postgres_repository):
     import pytest
+
     repository = postgres_repository
     actor = User(username="conflict-remediator", password_hash="test-password-hash", role="ANALYST")
     repository.save_user(actor)
@@ -220,9 +243,21 @@ def test_postgres_finding_remediation_idempotency_rejects_conflicting_request(po
     repository.save_asset(asset)
     evidence = Evidence(kind="test", content="evidence", source="test")
     repository.save_evidence(evidence)
-    finding = Finding(title="Idempotency conflict finding", asset_id=asset.id, evidence_ids=(evidence.id,), state=FindingState.CONFIRMED, severity=Severity.HIGH, confidence=1.0, source="test")
+    finding = Finding(
+        title="Idempotency conflict finding",
+        asset_id=asset.id,
+        evidence_ids=(evidence.id,),
+        state=FindingState.CONFIRMED,
+        severity=Severity.HIGH,
+        confidence=1.0,
+        source="test",
+    )
     repository.save_finding(finding)
     key = "postgres-remediation-key-0002"
-    repository.transition_finding_remediation_idempotent(finding.id, FindingState.MITIGATED, actor.id, "verified fix", key)
+    repository.transition_finding_remediation_idempotent(
+        finding.id, FindingState.MITIGATED, actor.id, "verified fix", key
+    )
     with pytest.raises(ValueError, match="different remediation request"):
-        repository.transition_finding_remediation_idempotent(finding.id, FindingState.ACCEPTED_RISK, actor.id, "different request", key)
+        repository.transition_finding_remediation_idempotent(
+            finding.id, FindingState.ACCEPTED_RISK, actor.id, "different request", key
+        )
