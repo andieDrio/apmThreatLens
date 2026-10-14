@@ -708,8 +708,14 @@ The authenticated finding-remediation API requires a bounded `Idempotency-Key`. 
 
 **Validation status:** On 2026-10-14, the user confirmed the focused migration tests (3 passed), focused remediation tests (14 passed), full PostgreSQL-backed suite (100%, no skip summary), Ruff, diff checks, and wheel build all succeeded on `f0f4d543947f864ff05d6e7173839b105562cd2c`. Five Starlette deprecation warnings were non-failing.
 
-## 78. Architecture Gate 55 — Database-Enforced Append-Only Security Audit Trail — IN PROGRESS
+## 78. Architecture Gate 55 — Database-Enforced Append-Only Security Audit Trail — COMPLETE
 
-Security audit events currently rely on application code to insert records without mutating prior history; PostgreSQL does not yet enforce that invariant against ordinary UPDATE or DELETE statements. Gate 55 adds a transactional schema migration that installs a database trigger rejecting UPDATE and DELETE operations on `audit_events`, while allowing normal inserts and preserving existing audit rows. The guard is designed for ordinary DML and does not claim protection against database superusers or owners able to disable triggers.
+Security audit events are protected by a transactional PostgreSQL migration that installs a row-level trigger rejecting UPDATE and DELETE operations on `audit_events`, while allowing normal inserts and preserving existing audit rows.
 
-Focused PostgreSQL regression coverage verifies inserts remain possible, UPDATE/DELETE attempts fail with SQLSTATE `55000`, and the original record remains unchanged. Local focused tests, the full PostgreSQL-backed suite, Ruff, diff checks, and package wheel build must pass before this gate is complete.
+**Validation status:** On 2026-10-14, the user confirmed 4 focused schema-migration tests, 14 focused remediation API/PostgreSQL tests, the full PostgreSQL-backed suite with no skip summary, Ruff, diff checks, and package wheel build all passed on `8dcb6974132713bf426b30bfc202260c9a5ff699`. Five Starlette deprecation warnings were non-failing.
+
+## 79. Architecture Gate 56 — PostgreSQL Audit Trail Truncation Protection — IN PROGRESS
+
+The row-level UPDATE/DELETE trigger does not fire for SQL `TRUNCATE`. Gate 56 adds an ordered transactional migration installing a statement-level `BEFORE TRUNCATE` trigger on `audit_events`, reusing the existing fail-closed trigger function. Normal INSERT operations remain permitted; a TRUNCATE attempt should fail with SQLSTATE `55000` and preserve existing rows after rollback.
+
+This guard protects against ordinary TRUNCATE statements while enabled. It does not protect against privileged database owners or superusers who can disable triggers or otherwise alter the schema. Focused PostgreSQL regression tests, the full PostgreSQL-backed suite, Ruff, diff checks, and wheel build are pending.
