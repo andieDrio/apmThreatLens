@@ -778,7 +778,7 @@ The current UI exposes overview metrics, assets, findings, and scan activity whi
 
 The authenticated workspace now exposes overview, assets, findings, scan activity, campaigns, evidence, attack-path relationships, and the administrator-only audit read model. Its navigation active state must remain accurate while scrolling, and interactive elements must have visible keyboard focus. Gate 65 updates only presentation behavior: it uses existing same-origin anchors and DOM state, does not introduce inline scripts/styles, and does not change API authorization, session storage, or data contracts. CSS honors reduced-motion preferences and keeps the desktop sidebar usable while retaining horizontally scrollable mobile navigation.
 
-Validation is pending for the exact main revision. Required checks include focused dashboard UI tests, the full PostgreSQL-backed suite without skips, Ruff, diff checks, and package wheel build.
+The user confirmed Gate 65 clean and successful on 2026-10-14. This is user-confirmed validation; local test, PostgreSQL suite, Ruff, and wheel-build output were not independently executed in this environment.
 
 
 ## Architecture Gate 66 — Fail-Closed Runtime User-Identity Mutation Privilege Verification — IN PROGRESS

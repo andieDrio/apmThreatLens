@@ -453,7 +453,7 @@ Expose the existing authenticated campaign, evidence, attack-path relationship, 
 
 ### Architecture Gate 65 — Professional SOC Workspace Navigation & Accessibility: COMPLETE
 
-The workspace now contains the existing authenticated SOC read models, but its active navigation state is click-driven rather than scroll-aware. Gate 65 synchronizes the active navigation item with the visible section, adds keyboard-visible focus treatment, and respects reduced-motion preferences while preserving the restrictive CSP and existing API contracts. Validation remains pending on the exact main revision.
+The workspace now contains the existing authenticated SOC read models, but its active navigation state is click-driven rather than scroll-aware. Gate 65 synchronizes the active navigation item with the visible section, adds keyboard-visible focus treatment, and respects reduced-motion preferences while preserving the restrictive CSP and existing API contracts. The user confirmed Gate 65 clean and successful on 2026-10-14; this is user-confirmed validation, not an independently executed local test result.
 
 
 ### Architecture Gate 66 — Fail-Closed Runtime User-Identity Mutation Privilege Verification: IN PROGRESS
