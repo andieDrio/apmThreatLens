@@ -291,12 +291,13 @@ On 2026-10-14, the user confirmed focused API tests, the full PostgreSQL-backed 
 ## Gate 71 — Atomic Logout Session Revocation and Success-Audit Persistence — IN PROGRESS
 
 ### Root cause
-`AuthenticationService.logout()` invokes `revoke_session()` and `save_audit_event()` as separate persistence operations. If audit insertion fails after revocation commits, the session is revoked while the caller receives a failure and the corresponding successful logout event is absent.
+`AuthenticationService.logout()` previously invoked `revoke_session()` and `save_audit_event()` as separate persistence operations. If audit insertion failed after revocation committed, the session was revoked while the caller received a failure and the corresponding successful logout event was absent.
 
-### Acceptance criteria
-- Add an atomic repository operation that revokes the authenticated session and persists its LOGOUT success audit event in one transaction.
-- Implement PostgreSQL and SQLite compatibility paths without introducing a second production persistence backend.
-- Route logout through the atomic operation.
-- Add failure-injection regressions proving audit failure rolls back revocation, plus successful logout coverage.
-- Preserve authentication checks, session expiry/revocation semantics, append-only audit controls, and generic API behavior.
-- Validate focused auth/logout tests, the full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build.
+### Implementation
+- Added `revoke_session_with_audit()` to the SQLite and PostgreSQL authentication storage mixins.
+- The operation updates session revocation and inserts the LOGOUT success audit event inside one transaction; PostgreSQL also serializes the operation with the repository transaction lock.
+- Routed `AuthenticationService.logout()` through the atomic operation.
+- Added SQLite and PostgreSQL failure-injection regressions that verify audit failure rolls back revocation and successful retry produces the expected state and audit record.
+
+### Validation status
+**PENDING USER VALIDATION.** The code and test changes are committed directly to `main`, but no local test, PostgreSQL integration run, Ruff, diff check, or wheel build has yet been confirmed for this Gate 71 revision. Run focused auth tests, the full PostgreSQL-backed suite without skips, `ruff check .`, `git diff --check`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel`. Fix any blocker and remain on Gate 71 until the exact main revision is validated.
