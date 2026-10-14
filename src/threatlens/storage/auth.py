@@ -144,6 +144,37 @@ class SQLiteAuthMixin:
                 "UPDATE auth_sessions SET revoked=1 WHERE id=?", (str(session_id),)
             )
 
+    def revoke_session_with_audit(self, session_id: UUID, event: AuditEvent) -> None:
+        """Atomically revoke a session and append its successful logout audit event."""
+
+        def persist() -> None:
+            with self.connection:
+                self.connection.execute(
+                    "UPDATE auth_sessions SET revoked=1 WHERE id=?", (str(session_id),)
+                )
+                self.connection.execute(
+                    "INSERT INTO audit_events "
+                    "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
+                    "VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                        str(event.id),
+                        str(event.actor_user_id) if event.actor_user_id else None,
+                        event.action,
+                        event.resource_type,
+                        str(event.resource_id) if event.resource_id else None,
+                        event.outcome,
+                        event.detail,
+                        event.created_at.isoformat(),
+                    ),
+                )
+
+        lock = getattr(self, "_transaction_lock", None)
+        if lock is None:
+            persist()
+        else:
+            with lock:
+                persist()
+
     def save_audit_event(self, event: AuditEvent) -> None:
         lock = getattr(self, "_transaction_lock", None)
         if lock is None:
@@ -403,6 +434,30 @@ class PostgresAuthMixin:
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.execute("UPDATE auth_sessions SET revoked=TRUE WHERE id=%s", (session_id,))
+
+    def revoke_session_with_audit(self, session_id: UUID, event: AuditEvent) -> None:
+        """Atomically revoke a session and append its successful logout audit event."""
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        "UPDATE auth_sessions SET revoked=TRUE WHERE id=%s", (session_id,)
+                    )
+                    cursor.execute(
+                        "INSERT INTO audit_events "
+                        "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (
+                            event.id,
+                            event.actor_user_id,
+                            event.action,
+                            event.resource_type,
+                            event.resource_id,
+                            event.outcome,
+                            event.detail,
+                            event.created_at,
+                        ),
+                    )
 
     def save_audit_event(self, event: AuditEvent) -> None:
         with self._transaction_lock:
