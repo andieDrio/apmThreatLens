@@ -2,9 +2,10 @@
 
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 56  
-**Current gate:** Gate 56 — PostgreSQL Audit Trail Truncation Protection  
-**Current status:** Gate 55 validated by user on 2026-10-14; Gate 56 implementation committed to main, local validation pending
+**Highest architecture gate reached:** Gate 57  
+**Highest fully validated gate:** Gate 56  
+**Current gate:** Gate 57 — Fail-Closed Audit Protection Drift Detection  
+**Current status:** Gate 56 validated by user on 2026-10-14; Gate 57 implementation committed to main, local validation pending
 
 ## Executive Summary
 
@@ -24,7 +25,25 @@ Migration version 2, `audit_events_append_only`, installs a PostgreSQL trigger r
 
 **Validation closure:** On 2026-10-14, the user confirmed 4 focused migration tests, 14 focused remediation API/PostgreSQL tests, the full PostgreSQL-backed suite with no skip summary, Ruff, diff checks, and wheel build passed on `8dcb6974132713bf426b30bfc202260c9a5ff699`. Five Starlette deprecation warnings were non-failing.
 
-## Current Gate 56 — PostgreSQL Audit Trail Truncation Protection
+## Completed Gate 56 — PostgreSQL Audit Trail Truncation Protection
+
+Migration version 3 adds a statement-level `BEFORE TRUNCATE` trigger to complement the row-level UPDATE/DELETE protection from Gate 55. The user confirmed 4 focused migration tests, 14 focused remediation tests, the full PostgreSQL-backed suite at 100% without a skip summary, Ruff, diff checks, and wheel build on commit `4e96495a5ee85e23b35033f364f379120898d159`. Five Starlette deprecation warnings were non-failing. Database owners/superusers able to disable triggers or alter schema remain outside this control's threat boundary.
+
+## Current Gate 57 — Fail-Closed Audit Protection Drift Detection
+
+### Objective and root cause
+
+Migration history does not prove that audit-protection triggers remain installed and enabled after deployment. If a trigger is disabled or dropped while the migration registry remains unchanged, startup can otherwise continue without the intended database control.
+
+### Implementation on main
+
+- Added startup verification for both audit-protection triggers, checking presence, enabled state, expected trigger definition, and the fail-closed trigger function.
+- Added a PostgreSQL integration regression proving initialization rejects a disabled truncation trigger and succeeds after restoration.
+- Updated the governing project documents to close Gate 56 and identify Gate 57 as active.
+
+### Validation
+
+Gate 57 is committed to `main`. Focused migration tests, full PostgreSQL-backed tests, Ruff, diff checks, and wheel build require user confirmation against the exact commit.
 
 ### Objective and root cause
 
@@ -85,4 +104,4 @@ The five Starlette deprecation warnings about `HTTP_422_UNPROCESSABLE_ENTITY` we
 
 ## Next Required Action
 
-Validate Gate 56 against the exact current `main` revision using `python -m pytest -q tests/test_postgres_schema_migrations.py`, `python -m pytest -q -rs`, `ruff check .`, `git diff --check`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel`. Confirm the focused test exercises PostgreSQL and does not skip. If any check fails, fix it and remain on Gate 56.
+Validate Gate 57 against the exact current `main` revision using `python -m pytest -q tests/test_postgres_schema_migrations.py`, `python -m pytest -q -rs`, `ruff check .`, `git diff --check`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel`. Confirm PostgreSQL integration tests execute and do not skip. If any check fails, fix it and remain on Gate 57.

@@ -91,6 +91,42 @@ MIGRATIONS = (
 )
 
 
+
+def _verify_audit_protection(repository: object) -> None:
+    """Fail closed if the append-only audit protections drift after migration."""
+    with repository.connection.cursor() as cursor:
+        cursor.execute(
+            """SELECT t.tgname, t.tgenabled, pg_get_triggerdef(t.oid),
+                      pg_get_functiondef(t.tgfoid)
+               FROM pg_trigger t
+               JOIN pg_class c ON c.oid = t.tgrelid
+               JOIN pg_namespace n ON n.oid = c.relnamespace
+               WHERE n.nspname = current_schema()
+                 AND c.relname = 'audit_events'
+                 AND NOT t.tgisinternal
+                 AND t.tgname = ANY(%s)""",
+            (["audit_events_append_only", "audit_events_no_truncate"],),
+        )
+        rows = {row[0]: row[1:] for row in cursor.fetchall()}
+    expected = {
+        "audit_events_append_only": ("BEFORE UPDATE OR DELETE", "FOR EACH ROW"),
+        "audit_events_no_truncate": ("BEFORE TRUNCATE", "FOR EACH STATEMENT"),
+    }
+    for name, fragments in expected.items():
+        row = rows.get(name)
+        if row is None:
+            raise RuntimeError(f"required audit protection trigger is missing: {name}")
+        enabled, definition, function_definition = row
+        if enabled not in ("O", "A"):
+            raise RuntimeError(f"required audit protection trigger is disabled: {name}")
+        normalized_definition = " ".join(definition.upper().split())
+        if any(fragment not in normalized_definition for fragment in fragments):
+            raise RuntimeError(f"required audit protection trigger definition drifted: {name}")
+        normalized_function = function_definition.lower()
+        if "append-only" not in normalized_function or "55000" not in normalized_function:
+            raise RuntimeError(f"required audit protection function drifted: {name}")
+
+
 def _validate_migrations(migrations: tuple[Migration, ...]) -> None:
     versions = [migration.version for migration in migrations]
     if versions != list(range(1, len(migrations) + 1)):
@@ -192,4 +228,5 @@ def run_migrations(
         if not unlocked:
             raise RuntimeError("schema migration advisory lock was not held")
     if table_name == REGISTRY_TABLE and migrations == MIGRATIONS:
+        _verify_audit_protection(repository)
         repository.schema_migrations_managed = True

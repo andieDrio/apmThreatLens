@@ -714,7 +714,9 @@ Security audit events are protected by a transactional PostgreSQL migration that
 
 **Validation status:** On 2026-10-14, the user confirmed 4 focused schema-migration tests, 14 focused remediation API/PostgreSQL tests, the full PostgreSQL-backed suite with no skip summary, Ruff, diff checks, and package wheel build all passed on `8dcb6974132713bf426b30bfc202260c9a5ff699`. Five Starlette deprecation warnings were non-failing.
 
-## 79. Architecture Gate 56 — PostgreSQL Audit Trail Truncation Protection — IN PROGRESS
+## 79. Architecture Gate 56 — PostgreSQL Audit Trail Truncation Protection — COMPLETE. A versioned statement-level `BEFORE TRUNCATE` trigger blocks ordinary truncation of `audit_events`; database owners/superusers able to disable triggers or alter schema remain outside this control's threat boundary.
+
+Gate 57 — Fail-Closed Audit Protection Drift Detection — IN PROGRESS. Schema migration history proves which migrations were recorded, not that the installed audit triggers remain present and enabled. Startup must verify the expected trigger names, enabled state, event/statement shape, and fail-closed function definition before serving application traffic. — IN PROGRESS
 
 The row-level UPDATE/DELETE trigger does not fire for SQL `TRUNCATE`. Gate 56 adds an ordered transactional migration installing a statement-level `BEFORE TRUNCATE` trigger on `audit_events`, reusing the existing fail-closed trigger function. Normal INSERT operations remain permitted; a TRUNCATE attempt should fail with SQLSTATE `55000` and preserve existing rows after rollback.
 

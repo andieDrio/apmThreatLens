@@ -179,3 +179,21 @@ def test_postgres_concurrent_initialize_serializes_migrations(postgres_repositor
             (2, "audit_events_append_only"),
             (3, "audit_events_no_truncate"),
         ]
+
+
+def test_postgres_initialize_fails_closed_when_audit_trigger_is_disabled(postgres_repository):
+    repository = postgres_repository
+    with repository.connection.cursor() as cursor:
+        cursor.execute("ALTER TABLE audit_events DISABLE TRIGGER audit_events_no_truncate")
+    repository.connection.commit()
+
+    try:
+        with pytest.raises(RuntimeError, match="audit protection trigger is disabled"):
+            repository.initialize()
+    finally:
+        repository.connection.rollback()
+        with repository.connection.cursor() as cursor:
+            cursor.execute("ALTER TABLE audit_events ENABLE TRIGGER audit_events_no_truncate")
+        repository.connection.commit()
+
+    repository.initialize()
