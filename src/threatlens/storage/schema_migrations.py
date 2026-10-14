@@ -96,11 +96,12 @@ def _verify_audit_protection(repository: object) -> None:
     """Fail closed if the append-only audit protections drift after migration."""
     with repository.connection.cursor() as cursor:
         cursor.execute(
-            """SELECT t.tgname, t.tgenabled, pg_get_triggerdef(t.oid),
-                      pg_get_functiondef(t.tgfoid)
+            """SELECT t.tgname, t.tgenabled, t.tgtype,
+                      p.proname, p.prosrc, pg_get_functiondef(t.tgfoid)
                FROM pg_trigger t
                JOIN pg_class c ON c.oid = t.tgrelid
                JOIN pg_namespace n ON n.oid = c.relnamespace
+               JOIN pg_proc p ON p.oid = t.tgfoid
                WHERE n.nspname = current_schema()
                  AND c.relname = 'audit_events'
                  AND NOT t.tgisinternal
@@ -108,22 +109,39 @@ def _verify_audit_protection(repository: object) -> None:
             (["audit_events_append_only", "audit_events_no_truncate"],),
         )
         rows = {row[0]: row[1:] for row in cursor.fetchall()}
+    # PostgreSQL encodes trigger timing, row/statement level, and event kinds
+    # in tgtype. Validate those semantics rather than relying on event text order.
+    before_bit = 2
+    row_bit = 1
+    delete_bit = 8
+    update_bit = 16
+    truncate_bit = 32
     expected = {
-        "audit_events_append_only": ("BEFORE UPDATE OR DELETE", "FOR EACH ROW"),
-        "audit_events_no_truncate": ("BEFORE TRUNCATE", "FOR EACH STATEMENT"),
+        "audit_events_append_only": {
+            "required_bits": before_bit | row_bit | delete_bit | update_bit,
+            "forbidden_bits": truncate_bit | 4,
+        },
+        "audit_events_no_truncate": {
+            "required_bits": before_bit | truncate_bit,
+            "forbidden_bits": row_bit | delete_bit | update_bit | 4,
+        },
     }
-    for name, fragments in expected.items():
+    for name, requirements in expected.items():
         row = rows.get(name)
         if row is None:
             raise RuntimeError(f"required audit protection trigger is missing: {name}")
-        enabled, definition, function_definition = row
+        enabled, trigger_type, function_name, function_source, function_definition = row
         if enabled not in ("O", "A"):
             raise RuntimeError(f"required audit protection trigger is disabled: {name}")
-        normalized_definition = " ".join(definition.upper().split())
-        if any(fragment not in normalized_definition for fragment in fragments):
+        if (
+            trigger_type & requirements["required_bits"]
+        ) != requirements["required_bits"] or trigger_type & requirements["forbidden_bits"]:
             raise RuntimeError(f"required audit protection trigger definition drifted: {name}")
-        normalized_function = function_definition.lower()
-        if "append-only" not in normalized_function or "55000" not in normalized_function:
+        if function_name != "threatlens_reject_audit_mutation":
+            raise RuntimeError(f"required audit protection function drifted: {name}")
+        normalized_source = function_source.lower()
+        normalized_definition = function_definition.lower()
+        if "append-only" not in normalized_source or "55000" not in normalized_definition:
             raise RuntimeError(f"required audit protection function drifted: {name}")
 
 

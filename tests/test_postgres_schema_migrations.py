@@ -191,9 +191,30 @@ def test_postgres_initialize_fails_closed_when_audit_trigger_is_disabled(postgre
         with pytest.raises(RuntimeError, match="audit protection trigger is disabled"):
             repository.initialize()
     finally:
-        repository.connection.rollback()
         with repository.connection.cursor() as cursor:
             cursor.execute("ALTER TABLE audit_events ENABLE TRIGGER audit_events_no_truncate")
+        repository.connection.commit()
+
+    repository.initialize()
+
+
+def test_postgres_initialize_fails_closed_when_audit_trigger_is_missing(postgres_repository):
+    repository = postgres_repository
+    with repository.connection.cursor() as cursor:
+        cursor.execute("DROP TRIGGER audit_events_no_truncate ON audit_events")
+    repository.connection.commit()
+
+    try:
+        with pytest.raises(RuntimeError, match="audit protection trigger is missing"):
+            repository.initialize()
+    finally:
+        with repository.connection.cursor() as cursor:
+            cursor.execute(
+                """CREATE TRIGGER audit_events_no_truncate
+                   BEFORE TRUNCATE ON audit_events
+                   FOR EACH STATEMENT
+                   EXECUTE FUNCTION threatlens_reject_audit_mutation()"""
+            )
         repository.connection.commit()
 
     repository.initialize()

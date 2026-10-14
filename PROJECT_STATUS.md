@@ -37,13 +37,13 @@ Migration history does not prove that audit-protection triggers remain installed
 
 ### Implementation on main
 
-- Added startup verification for both audit-protection triggers, checking presence, enabled state, expected trigger definition, and the fail-closed trigger function.
-- Added a PostgreSQL integration regression proving initialization rejects a disabled truncation trigger and succeeds after restoration.
+- Added startup verification for both audit-protection triggers using PostgreSQL catalog trigger-type bits, checking presence, enabled state, expected event/row-or-statement semantics, and the fail-closed trigger function.
+- Added PostgreSQL integration regressions proving initialization rejects a disabled or missing truncation trigger and succeeds after restoration.
 - Updated README.md, Architecture.md, MasterInstructions.md, and this status report to close Gate 56 and identify Gate 57 as active.
 
 ### Validation
 
-Gate 57 is committed to `main` at `bffef34f6d6a120f9a0b89cad0cd22ed5438dcee`. Focused migration tests, full PostgreSQL-backed tests, Ruff, diff checks, and wheel build require user confirmation against the exact commit.
+The initial Gate 57 focused run failed because the verifier assumed a fixed textual ordering for UPDATE/DELETE in PostgreSQL's trigger definition. The verifier has been changed to inspect catalog trigger-type bits, and missing-trigger coverage has been added. Fix commit is pending validation by the user.
 
 ## Recent Completed Gates
 

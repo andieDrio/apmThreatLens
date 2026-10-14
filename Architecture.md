@@ -722,6 +722,6 @@ A versioned statement-level `BEFORE TRUNCATE` trigger blocks ordinary truncation
 
 ## 80. Architecture Gate 57 — Fail-Closed Audit Protection Drift Detection — IN PROGRESS
 
-Migration history does not prove that the audit-protection triggers remain installed and enabled after deployment. Startup now queries PostgreSQL's trigger catalog and fails closed if either required trigger is missing, disabled, has an unexpected event/statement definition, or no longer uses the expected fail-closed trigger function. This is detection, not automatic repair; an operator must restore the schema and retry startup.
+Migration history does not prove that the audit-protection triggers remain installed and enabled after deployment. Startup now checks PostgreSQL's trigger-type bits (rather than brittle textual event ordering) and fails closed if either required trigger is missing, disabled, has an unexpected event/statement definition, or no longer uses the expected fail-closed trigger function. This is detection, not automatic repair; an operator must restore the schema and retry startup.
 
 **Validation status:** Implementation committed on `bffef34f6d6a120f9a0b89cad0cd22ed5438dcee`. Focused PostgreSQL tests, full-suite validation, Ruff, diff checks, and wheel build remain pending user confirmation.
