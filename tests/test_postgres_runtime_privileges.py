@@ -19,7 +19,9 @@ def _dsn() -> str:
     )
 
 
-def _runtime_role(repository, *, schema_create=False, inherited_ddl=False):
+def _runtime_role(
+    repository, *, schema_create=False, inherited_ddl=False, audit_update=False, registry_update=False
+):
     connection = repository.connection
     role_name = f"tl_runtime_test_{uuid4().hex[:12]}"
     password = uuid4().hex + uuid4().hex
@@ -68,6 +70,18 @@ def _runtime_role(repository, *, schema_create=False, inherited_ddl=False):
                     sql.Identifier(role_name)
                 )
             )
+            if audit_update:
+                cursor.execute(
+                    sql.SQL("GRANT UPDATE ON audit_events TO {}").format(
+                        sql.Identifier(role_name)
+                    )
+                )
+            if registry_update:
+                cursor.execute(
+                    sql.SQL("GRANT UPDATE ON threatlens_schema_migrations TO {}").format(
+                        sql.Identifier(role_name)
+                    )
+                )
             cursor.execute(
                 sql.SQL("REVOKE CREATE ON SCHEMA public FROM {}").format(
                     sql.Identifier(role_name)
@@ -174,6 +188,29 @@ def test_runtime_role_rejects_inherited_ddl_privilege(postgres_repository):
             runtime_repository.close()
         _drop_roles(admin_repository, role_name, owner_role)
 
+
+
+@pytest.mark.parametrize(
+    ("privilege_option", "expected_detail"),
+    [
+        ({"audit_update": True}, "audit-table mutation or trigger privilege"),
+        ({"registry_update": True}, "migration-registry mutation privilege"),
+    ],
+)
+def test_runtime_role_with_protected_table_write_privilege_fails_closed(
+    postgres_repository, privilege_option, expected_detail
+):
+    admin_repository = postgres_repository
+    role_name, owner_role, dsn = _runtime_role(admin_repository, **privilege_option)
+    runtime_repository = None
+    try:
+        runtime_repository = PostgresRepository(dsn)
+        with pytest.raises(RuntimeError, match=expected_detail):
+            runtime_repository.verify_runtime_privileges()
+    finally:
+        if runtime_repository is not None:
+            runtime_repository.close()
+        _drop_roles(admin_repository, role_name, owner_role)
 
 def test_runtime_role_cannot_alter_audit_protection(postgres_repository):
     """A non-owner runtime role can use the schema but cannot change audit DDL."""
