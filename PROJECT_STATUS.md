@@ -2,10 +2,10 @@
 
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 70  
-**Highest fully validated gate:** Gate 69 (user-confirmed)  
-**Current gate:** Gate 70 — Atomic Login Session and Success-Audit Persistence  
-**Current status:** Gate 69 was confirmed clean and successful by the user. Gate 70 makes successful login session creation and its audit event atomic. The user's full-suite run exposed test-double contract gaps: `FakeRepository` implementations in `tests/test_api_scan_queue.py`, `tests/test_api_scan_control.py`, `tests/test_api_attack_path_relations.py`, `tests/test_api_campaign_control.py`, `tests/test_api_evidence_read_model.py`, `tests/test_api_evidence_validation.py`, `tests/test_api_finding_remediation.py`, `tests/test_api_risk_assessment.py`, and `tests/test_api_risk_assessment_read_model.py` lacked `create_session_with_audit()`, causing API tests to fail during login setup. All nine fakes have now been updated on `main` to use the new contract and remove the just-created session if audit recording raises. On the user-confirmed exact-main revision `c520c3de76c37d5641adf427ccab9c0a7638af55`, the focused API regression set passed (66 tests), the full suite reached 100% with no failure or skip summary, `ruff check .` passed, and `git diff --check` was clean. Five Starlette deprecation warnings were non-failing. `python -m build` could not run because the `build` module is not installed; package-build validation remains pending and Gate 70 is not complete. Use `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel` as the repository's established wheel-build validation command.
+**Highest architecture gate reached:** Gate 71
+**Highest fully validated gate:** Gate 70 (user-confirmed)
+**Current gate:** Gate 71 — Atomic Logout Session Revocation and Success-Audit Persistence
+**Current status:** Gate 70 was confirmed clean and successful by the user on 2026-10-14. Focused API tests, full PostgreSQL-backed pytest, Ruff, diff check, package wheel build, and final main synchronization were reported clean. Gate 71 addresses the remaining non-atomic logout/revocation plus success-audit flow. Validation claims remain user-confirmed, not independently executed by the assistant.
 
 ## Executive Summary
 
@@ -274,15 +274,29 @@ The authentication service converts stored role values into the fixed `Role` enu
 
 **Validation closure:** On 2026-10-14, the user confirmed Gate 69 clean and successful. This is user-confirmed validation; the assistant did not independently execute local test, PostgreSQL, lint, diff-check, or wheel-build commands in this environment.
 
-## Gate 70 — Atomic Login Session and Success-Audit Persistence — IN PROGRESS
+## Gate 70 — Atomic Login Session and Success-Audit Persistence — COMPLETE
 
 ### Root cause
-Successful login previously committed the authentication session and success audit event through separate repository calls. If audit persistence failed after session creation, the raw token would not be returned but the session could remain active in storage.
+Successful login previously committed the authentication session and success audit event through separate repository calls, allowing an active session to remain after audit insertion failure.
+
+### Implementation
+- Added atomic session-plus-success-audit persistence to SQLite and PostgreSQL repositories.
+- Routed successful login through the atomic repository operation.
+- Added audit-failure rollback regressions and repaired repository test doubles to implement the atomic contract.
+- Preserved denied-login auditing, password verification, active-user/role checks, session expiry/revocation, and append-only audit protection.
+
+### Validation closure
+On 2026-10-14, the user confirmed focused API tests, the full PostgreSQL-backed pytest suite, Ruff, `git diff --check`, package wheel build, and final main synchronization were clean. Five Starlette deprecation warnings were non-failing. The optional `python -m build` command was unavailable because the module was not installed; the established pip wheel build was used instead. This is user-confirmed validation.
+
+## Gate 71 — Atomic Logout Session Revocation and Success-Audit Persistence — IN PROGRESS
+
+### Root cause
+`AuthenticationService.logout()` invokes `revoke_session()` and `save_audit_event()` as separate persistence operations. If audit insertion fails after revocation commits, the session is revoked while the caller receives a failure and the corresponding successful logout event is absent.
 
 ### Acceptance criteria
-- Add atomic session-plus-success-audit persistence to SQLite and PostgreSQL repositories.
-- Route successful login through the atomic repository operation.
-- Roll back session creation when the audit insert fails.
-- Add SQLite and PostgreSQL failure-injection regressions and prove a subsequent valid login succeeds.
-- Preserve denied-login auditing, password verification, active-user/role checks, expiry/revocation, and append-only audit protection.
-- Validate focused auth/API tests, the full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build.
+- Add an atomic repository operation that revokes the authenticated session and persists its LOGOUT success audit event in one transaction.
+- Implement PostgreSQL and SQLite compatibility paths without introducing a second production persistence backend.
+- Route logout through the atomic operation.
+- Add failure-injection regressions proving audit failure rolls back revocation, plus successful logout coverage.
+- Preserve authentication checks, session expiry/revocation semantics, append-only audit controls, and generic API behavior.
+- Validate focused auth/logout tests, the full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build.
