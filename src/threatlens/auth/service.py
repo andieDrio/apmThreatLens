@@ -188,17 +188,15 @@ class AuthenticationService:
             raise PermissionError("session is invalid or expired") from exc
 
     def logout(self, principal: AuthenticatedPrincipal) -> None:
-        self.repository.revoke_session(principal.session_id)
-        self.repository.save_audit_event(
-            AuditEvent(
-                actor_user_id=principal.user_id,
-                action="LOGOUT",
-                resource_type="AUTH",
-                resource_id=principal.user_id,
-                outcome="SUCCESS",
-                detail="session revoked",
-            )
+        event = AuditEvent(
+            actor_user_id=principal.user_id,
+            action="LOGOUT",
+            resource_type="AUTH",
+            resource_id=principal.user_id,
+            outcome="SUCCESS",
+            detail="session revoked",
         )
+        self.repository.revoke_session_with_audit(principal.session_id, event)
 
     def authorize(self, principal: AuthenticatedPrincipal | None, permission: Permission) -> None:
         if principal is None:
