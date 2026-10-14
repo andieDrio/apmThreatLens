@@ -710,3 +710,10 @@ The authoritative write methods continue to lock the scan row and verify RUNNING
 Regression tests cover missing-fence fallbacks and rejection of execution-bound evidence on the unfenced repository method, alongside the existing late-write and terminal-transition concurrency tests.
 
 **Validation status:** The user confirmed `ruff check .`, `git diff --check`, `python -m pytest -q`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel` completed successfully. The suite contained many skips, and the output provided does not show whether the PostgreSQL-backed execution-fence regressions actually ran. Run `python -m pytest -q -rs` and confirm those regressions are not skipped before declaring Gate 52 complete. Five Starlette deprecation warnings were reported; the package wheel built successfully.
+
+
+## 76. Architecture Gate 53 — Durable Finding Remediation Idempotency — IN PROGRESS
+
+The authenticated finding-remediation API requires a bounded `Idempotency-Key`. PostgreSQL stores an actor/key-scoped request fingerprint and the original transition result in the same transaction as the finding state change and audit event. A transaction-scoped advisory lock serializes retries across application instances. Exact retries replay the original changed/state/allowed result without adding another audit event; key reuse with a different finding, target state, or rationale returns HTTP 409. Invalid transitions are also durably replayed with their original denied result and audit event. Missing findings do not create an idempotency record.
+
+Validation is pending local execution against the committed revision. Do not mark Gate 53 complete until API tests, PostgreSQL persistence/replay/conflict tests, the full PostgreSQL-backed suite, Ruff, diff checks, and package build have passed.
