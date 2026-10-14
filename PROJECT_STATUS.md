@@ -2,9 +2,9 @@
 
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 53  
-**Current gate:** Gate 53 — Durable Finding Remediation Idempotency  
-**Current status:** Implementation committed; local validation pending
+**Highest architecture gate reached:** Gate 54  
+**Current gate:** Gate 54 — Versioned PostgreSQL Schema Migrations  
+**Current status:** Implementation committed to main; local PostgreSQL validation pending
 
 ## Executive Summary
 
