@@ -758,6 +758,13 @@ PostgreSQL integration coverage grants each dangerous privilege independently on
 
 **Validation status: COMPLETE.** On 2026-10-14, the user confirmed all focused PostgreSQL migration/runtime privilege/API tests, the full PostgreSQL-backed suite, Ruff, diff check, and wheel build completed cleanly on main revision `0c6f22281f3242187ec2c1b3165b50557d9665d1`.
 
-## Architecture Gate 62 — Fail-Closed Runtime Sequence Privilege Verification — IMPLEMENTED, VALIDATION PENDING
+## Architecture Gate 62 — Fail-Closed Runtime Sequence Privilege Verification — COMPLETE
 
 The current domain schema uses UUID-backed identifiers, so the runtime identity does not require sequence access. Gate 62 extends the read-only startup verifier to enumerate application-schema sequences and reject effective SELECT, USAGE, or UPDATE privileges granted to `current_user`, `session_user`, or inherited roles. This closes the sequence ACL gap without adding startup DDL or changing the controlled migration identity. PostgreSQL integration tests create an administrator-owned test sequence, grant each privilege separately to a genuine runtime login, and require fail-closed rejection. The least-privilege role must continue to pass.
+
+**Validation closure:** On 2026-10-14, the user confirmed Gate 62 was clean and successful on main revision `3b7d25914b1866a2c9617940970b2d08a44f8463`.
+
+
+## Architecture Gate 63 — Fail-Closed SECURITY DEFINER Routine Execution Verification — IMPLEMENTED; validation pending
+
+The runtime verifier now rejects an effective EXECUTE privilege on any SECURITY DEFINER routine in the active application schema for either `current_user` or `session_user`, including inherited and PUBLIC grants. This prevents an otherwise non-owner runtime identity from invoking a routine that executes with elevated owner privileges. Ordinary invoker-security routines remain outside this specific restriction, and API startup remains read-only. A PostgreSQL integration regression creates an administrator-owned SECURITY DEFINER routine, grants execution to a genuine runtime login, and requires fail-closed rejection. Exact-revision validation has not yet been confirmed.
