@@ -59,6 +59,16 @@ def test_postgres_logout_session_and_success_audit_are_atomic(postgres_repositor
                 "EXECUTE FUNCTION test_fail_logout_audit()"
             )
 
+    def logout_success_count():
+        with connection.transaction():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT COUNT(*) FROM audit_events "
+                    "WHERE action = %s AND outcome = %s",
+                    ("LOGOUT", "SUCCESS"),
+                )
+                return cursor.fetchone()[0]
+
     try:
         with pytest.raises(Exception, match="injected logout audit failure"):
             auth.logout(principal)
@@ -66,9 +76,7 @@ def test_postgres_logout_session_and_success_audit_are_atomic(postgres_repositor
         session = postgres_repository.session_by_token_hash(token_hash)
         assert session is not None
         assert session["revoked"] is False
-        assert postgres_repository.count(
-            "audit_events", "action = 'LOGOUT' AND outcome = 'SUCCESS'"
-        ) == 0
+        assert logout_success_count() == 0
     finally:
         with connection.transaction():
             with connection.cursor() as cursor:
@@ -78,6 +86,4 @@ def test_postgres_logout_session_and_success_audit_are_atomic(postgres_repositor
     auth.logout(principal)
     session = postgres_repository.session_by_token_hash(token_hash)
     assert session["revoked"] is True
-    assert postgres_repository.count(
-        "audit_events", "action = 'LOGOUT' AND outcome = 'SUCCESS'"
-    ) == 1
+    assert logout_success_count() == 1
