@@ -7,9 +7,9 @@ New migrations must be append-only, ordered, and transactional where supported.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from hashlib import sha256
-from typing import Callable
 
 
 MIGRATION_LOCK_ID = 1414286419
