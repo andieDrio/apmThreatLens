@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 62  
+**Highest architecture gate reached:** Gate 63  
 **Highest fully validated gate:** Gate 62  
 **Current gate:** Gate 63 — Fail-Closed SECURITY DEFINER Routine Execution Verification  
 **Current status:** Gate 62 was confirmed clean and successful by the user on 2026-10-14 at main revision `3b7d25914b1866a2c9617940970b2d08a44f8463`. Gate 63 implementation is committed directly to `main`; exact-revision validation is pending.
