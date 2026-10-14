@@ -734,4 +734,8 @@ Deployment guidance separates the runtime identity from the migration owner. The
 
 Regression coverage includes API startup using verification rather than migrations, read-only schema readiness verification, and PostgreSQL ACL checks that a non-owner runtime role cannot disable/drop audit triggers or replace the trigger function.
 
-**Validation status:** Code and documentation are committed directly to `main`; PostgreSQL integration execution, full suite, Ruff, diff checks, and wheel build remain pending on the exact current main SHA.
+**Validation status: COMPLETE.** On 2026-10-14, the user confirmed 37 focused PostgreSQL migration/runtime-privilege/API tests passed, the full pytest suite completed at 100% without a skip summary, Ruff and `git diff --check` passed, and the package wheel built successfully on main commit `c39a7cd9d757e2a63cc27365e6e2b8e8a5e529b3`. Wheel SHA-256: `6867d9542088c520678beee241b1fd26ebc0fb73885ea6f4c16bbc5f4bf1fb25`. Five Starlette deprecation warnings were non-failing.
+
+## Architecture Gate 59 — Fail-Closed Runtime Database Privilege Verification — NEXT
+
+Gate 58 established a separate migration DSN and a read-only API readiness verifier. A remaining deployment gap is that configuration could still point the runtime process at a database owner, superuser, or role with inherited DDL privileges. Gate 59 must verify the effective database identity and privileges at runtime startup, including superuser/ownership, schema CREATE, migration-registry mutation, and audit-table mutation capabilities. Checks must account for inherited role memberships/effective ACLs and fail closed with safe diagnostics. Add PostgreSQL integration tests for safe and unsafe identities. Preserve the explicit migration command and avoid DDL from API startup.
