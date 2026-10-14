@@ -435,7 +435,7 @@ Gate 27 is complete after explicit local validation.
 
 Gate 28 establishes the HTTP control-plane boundary between the ThreatLens domain/application layers and the future graphical interface. The FastAPI application exposes a public health check and versioned authentication endpoints for login, logout, and the authenticated current principal. Bearer session tokens are validated exclusively through AuthenticationService; raw tokens are not persisted, and authorization decisions continue through the existing role/permission model.
 
-The API factory accepts injected repository and authentication services, keeping transport concerns separate from persistence and domain contracts and making the boundary testable without weakening production PostgreSQL requirements. The production entrypoint initializes the canonical PostgreSQL repository from THREATLENS_DATABASE_URL.
+The API factory accepts injected repository and authentication services, keeping transport concerns separate from persistence and domain contracts and making the boundary testable without weakening production PostgreSQL requirements. The production entrypoint connects to the canonical PostgreSQL repository using THREATLENS_DATABASE_URL and performs read-only schema/audit readiness verification. Schema DDL is applied only by the explicit `python -m threatlens.storage.migrate` command using THREATLENS_MIGRATION_DATABASE_URL.
 
 The initial API surface deliberately does not expose arbitrary database access or assessment mutation. Campaign execution, findings, evidence, risk, attack paths, and reporting endpoints will be added behind explicit application contracts so the GUI cannot bypass authorization, scope, evidence, or orchestration boundaries.
 
@@ -726,6 +726,12 @@ Migration history does not prove that audit-protection triggers remain installed
 
 **Validation status:** On 2026-10-14, the user confirmed 8 focused PostgreSQL schema migration tests, the full PostgreSQL-backed suite without a skip summary, Ruff, diff checks, and wheel build passed on `db3b98165bb10351cb3fc2b10de964c44a5dcd90`. Five Starlette deprecation warnings were non-blocking.
 
-## 81. Architecture Gate 58 — PostgreSQL Runtime/Migration Privilege Separation — NEXT
+## 81. Architecture Gate 58 — PostgreSQL Runtime/Migration Privilege Separation — IMPLEMENTED, VALIDATION PENDING
 
-The current repository startup path applies schema migrations through its repository connection. Trigger protections cannot defend against an application runtime identity that owns the protected table or has sufficient DDL privileges to disable triggers, drop them, or replace their function. Separate migration authority from runtime query/write authority. The runtime role must not own or alter `audit_events`, its triggers, or the fail-closed trigger function. Validate this boundary with PostgreSQL integration tests and document provisioning/configuration.
+The API runtime no longer calls `PostgresRepository.initialize()`. It uses `verify_schema_ready()`, which checks exact migration registry history and audit trigger/function invariants with read-only catalog queries, fails closed on missing/drifted schema, and leaves the connection idle. The explicit `python -m threatlens.storage.migrate` command reads only `THREATLENS_MIGRATION_DATABASE_URL` and is intended to run as a controlled deployment step, outside the API process.
+
+Deployment guidance separates the runtime identity from the migration owner. The runtime identity must not own schema objects, have schema CREATE privileges, alter the migration registry, or UPDATE/DELETE/TRUNCATE the audit trail. Default privileges should grant required DML on application tables to the runtime identity while keeping migration DDL authority with the migration identity. Existing deployments may need a DBA-led ownership/grant transition.
+
+Regression coverage includes API startup using verification rather than migrations, read-only schema readiness verification, and PostgreSQL ACL checks that a non-owner runtime role cannot disable/drop audit triggers or replace the trigger function.
+
+**Validation status:** Code and documentation are committed directly to `main`; PostgreSQL integration execution, full suite, Ruff, diff checks, and wheel build remain pending on the exact current main SHA.
