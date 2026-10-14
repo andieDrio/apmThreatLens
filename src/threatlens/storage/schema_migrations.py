@@ -292,6 +292,19 @@ def verify_runtime_privileges(repository: object) -> None:
                               )
                           ),
                           EXISTS (
+                            SELECT 1 FROM pg_proc executable_security_definer
+                            WHERE executable_security_definer.pronamespace = n.oid
+                              AND executable_security_definer.prosecdef
+                              AND (
+                                has_function_privilege(
+                                    current_user, executable_security_definer.oid, 'EXECUTE'
+                                )
+                                OR has_function_privilege(
+                                    session_user, executable_security_definer.oid, 'EXECUTE'
+                                )
+                              )
+                          ),
+                          EXISTS (
                             SELECT 1 FROM pg_proc owned_routine
                             WHERE owned_routine.pronamespace = n.oid
                               AND (
@@ -360,6 +373,7 @@ def verify_runtime_privileges(repository: object) -> None:
             owns_schema_relation,
             has_dangerous_relation_privilege,
             has_sequence_privilege,
+            can_execute_security_definer_routine,
             owns_schema_routine,
             owns_schema_type,
         ) = row
@@ -392,6 +406,8 @@ def verify_runtime_privileges(repository: object) -> None:
             violations.append("TRUNCATE, TRIGGER, or REFERENCES privilege on application tables")
         if has_sequence_privilege:
             violations.append("sequence privilege on application sequences")
+        if can_execute_security_definer_routine:
+            violations.append("EXECUTE privilege on SECURITY DEFINER routines")
         if violations:
             raise RuntimeError(
                 "unsafe PostgreSQL runtime identity: " + ", ".join(violations)
