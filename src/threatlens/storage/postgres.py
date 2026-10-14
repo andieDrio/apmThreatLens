@@ -120,10 +120,16 @@ class PostgresRepository(
         self.connection.close()
 
     def initialize(self) -> None:
-        """Apply ordered schema migrations before repository traffic is served."""
+        """Apply ordered schema migrations; call only with migration credentials."""
         from threatlens.storage.schema_migrations import run_migrations
 
         run_migrations(self)
+
+    def verify_schema_ready(self) -> None:
+        """Check migration history and audit protections using runtime-safe reads."""
+        from threatlens.storage.schema_migrations import verify_schema_ready
+
+        verify_schema_ready(self)
 
     def _initialize_legacy_schema(self) -> None:
         with self.connection.cursor() as cursor:
