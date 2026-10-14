@@ -71,20 +71,22 @@ def run_migrations(
     connection = repository.connection
 
     with connection.cursor() as cursor:
-        cursor.execute(
-            f"""CREATE TABLE IF NOT EXISTS {table_name} (
-                version INTEGER PRIMARY KEY CHECK (version > 0),
-                name TEXT NOT NULL,
-                checksum TEXT NOT NULL,
-                applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            )"""
-        )
-    connection.commit()
-
-    with connection.cursor() as cursor:
         cursor.execute("SELECT pg_advisory_lock(%s)", (MIGRATION_LOCK_ID,))
     connection.commit()
     try:
+        # The lock must cover registry creation too; otherwise first-start races
+        # could collide before the migration serialization boundary is acquired.
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"""CREATE TABLE IF NOT EXISTS {table_name} (
+                    version INTEGER PRIMARY KEY CHECK (version > 0),
+                    name TEXT NOT NULL,
+                    checksum TEXT NOT NULL,
+                    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )"""
+            )
+        connection.commit()
+
         with connection.cursor() as cursor:
             cursor.execute(
                 f"SELECT version, name, checksum FROM {table_name} ORDER BY version"
