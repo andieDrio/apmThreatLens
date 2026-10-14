@@ -797,6 +797,12 @@ The authentication service maps unsupported persisted role values to the establi
 
 Session authentication maps malformed persisted expiry timestamps and UUID identifiers to the established generic invalid-session response. Explicit inactive-user behavior and infrastructure exception visibility are preserved. The user confirmed Gate 69 clean and successful on 2026-10-14; this is user-confirmed validation.
 
-## Architecture Gate 70 — Atomic Login Session and Success-Audit Persistence — IN PROGRESS
+## Architecture Gate 70 — Atomic Login Session and Success-Audit Persistence — COMPLETE
 
-Successful login must persist the session and its success audit event in a single repository transaction. Otherwise, an audit insertion failure after session commit can leave an active session whose raw token was never returned to the caller. Add an atomic repository operation for SQLite and PostgreSQL, route AuthenticationService through it, and prove rollback with audit-failure injection tests. Preserve generic credential failures, denied-login auditing, password checks, session expiry/revocation, and the append-only audit trail. Validation is pending.
+Successful login persists the authentication session and its success audit event through one repository transaction. If audit insertion fails, the transaction rolls back session creation, preventing an active session whose raw token was never returned. SQLite and PostgreSQL implementations and failure-injection regressions are included.
+
+**Validation closure:** On 2026-10-14, the user confirmed focused API tests, the full PostgreSQL-backed pytest suite, Ruff, diff check, package wheel build, and final main synchronization were clean. Five Starlette deprecation warnings were non-failing. The optional `python -m build` command was unavailable because the module was not installed; the established pip wheel build was used instead. This is user-confirmed validation.
+
+## Architecture Gate 71 — Atomic Logout Session Revocation and Success-Audit Persistence — IN PROGRESS
+
+`AuthenticationService.logout()` currently revokes a session and writes its success audit event in separate repository calls. If audit persistence fails after revocation commits, logout state and the security audit diverge. The gate will add a repository transaction that atomically revokes the authenticated session and records the LOGOUT success event in PostgreSQL and SQLite compatibility paths. Failure-injection coverage must prove audit failure rolls back revocation. Preserve authentication checks, session semantics, append-only audit controls, and API behavior.
