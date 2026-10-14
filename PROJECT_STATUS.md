@@ -2,10 +2,10 @@
 
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 66  
-**Highest fully validated gate:** Gate 65  
-**Current gate:** Gate 66 — Fail-Closed Runtime User-Identity Mutation Privilege Verification  
-**Current status:** The user confirmed Gate 65 clean and successful on 2026-10-14. Gate 66 is active and extends read-only startup privilege verification to prevent runtime mutation of authentication identities.
+**Highest architecture gate reached:** Gate 67  
+**Highest fully validated gate:** Gate 66 (user-confirmed)  
+**Current gate:** Gate 67 — Fail-Closed Runtime Column-Level User-Identity Mutation Privilege Verification  
+**Current status:** The user confirmed Gate 66 clean and successful on 2026-10-14. Gate 67 extends the PostgreSQL runtime verifier to detect column-level INSERT/UPDATE grants on the authentication `users` table, which table-level privilege checks alone may miss.
 
 ## Executive Summary
 
@@ -229,19 +229,32 @@ The new workspace sections are reachable through anchor links, but the active na
 
 On 2026-10-14, the user confirmed Gate 65 clean and successful on main. This is recorded as user-confirmed validation; the assistant did not independently execute local UI tests, full PostgreSQL suite, Ruff, or wheel build.
 
-## Gate 66 — Fail-Closed Runtime User-Identity Mutation Privilege Verification — IN PROGRESS
+## Gate 66 — Fail-Closed Runtime User-Identity Mutation Privilege Verification — COMPLETE
+
+### Root cause and implementation
+The runtime privilege verifier rejects effective table-level INSERT, UPDATE, or DELETE on the authentication `users` table. These rights are not required by runtime authentication; provisioning belongs to a trusted deployment/admin workflow.
+
+- Added effective user-table mutation checks for both `current_user` and `session_user`, including inherited/PUBLIC grants through PostgreSQL privilege functions.
+- Added real PostgreSQL regressions for INSERT, UPDATE, and DELETE grants while preserving the least-privilege runtime role.
+- Updated README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md.
+
+**Validation closure:** On 2026-10-14, the user confirmed Gate 66 clean and successful. This is user-confirmed validation; the assistant did not independently execute the local test, PostgreSQL, lint, or wheel-build commands in this environment.
+
+## Gate 67 — Fail-Closed Runtime Column-Level User-Identity Mutation Privilege Verification — IN PROGRESS
 
 ### Root cause
-The runtime privilege verifier rejects broad schema authority, protected audit/migration mutation, dangerous relation privileges, sequence access, SECURITY DEFINER execution, and application object ownership. However, it did not explicitly reject INSERT, UPDATE, or DELETE on the authentication `users` table. Those rights are unnecessary for the current runtime API, which reads users for authentication while user provisioning belongs to a trusted deployment/admin workflow. Write access could allow compromised runtime credentials to create or alter privileged accounts or deactivate users.
+PostgreSQL supports column-level INSERT and UPDATE grants. Table-level `has_table_privilege(...)` checks do not establish that no individual column has a write grant, so a runtime login may otherwise obtain a narrow privilege to change `users.role`, `users.password_hash`, `users.active`, or insert selected identity columns without a table-wide grant.
 
 ### Acceptance criteria
-- Verify effective INSERT, UPDATE, and DELETE privileges on the `users` relation for both `current_user` and `session_user`, including inherited/PUBLIC grants via PostgreSQL privilege functions.
-- Fail closed at runtime startup when any user-table mutation privilege is effective.
-- Preserve required SELECT access, session lifecycle writes, durable login rate limiting, audit append-only protections, migration separation, and the least-privilege runtime path.
-- Add PostgreSQL integration regressions for each user-table mutation privilege and ensure the least-privilege role still passes.
+- Extend the read-only startup verifier to reject effective column-level INSERT or UPDATE privileges on `users` for both `current_user` and `session_user`, including inherited/PUBLIC grants.
+- Retain the existing table-level INSERT/UPDATE/DELETE checks and least-privilege runtime behavior.
+- Add genuine PostgreSQL integration regressions for column-level INSERT and UPDATE grants, including sensitive `role` and `password_hash` columns.
 - Update README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md.
 - Validate focused PostgreSQL privilege/migration/API tests, the full PostgreSQL-backed suite without skips, Ruff, diff checks, and package wheel build before closing the gate.
 
+## Next Required Action
+
+Implement and validate Gate 67 on the exact `main` revision. Fix any failure before advancing. Continue using GitHub `main` only; no feature branches, pull requests, or force pushes.
 ## Next Required Action
 
 Implement and validate Gate 66 on the exact `main` revision. Fix any failure before advancing. Continue using GitHub `main` only; no feature branches, pull requests, or force pushes.

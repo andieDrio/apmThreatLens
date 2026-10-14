@@ -781,6 +781,10 @@ The authenticated workspace now exposes overview, assets, findings, scan activit
 The user confirmed Gate 65 clean and successful on 2026-10-14. This is user-confirmed validation; local test, PostgreSQL suite, Ruff, and wheel-build output were not independently executed in this environment.
 
 
-## Architecture Gate 66 — Fail-Closed Runtime User-Identity Mutation Privilege Verification — IN PROGRESS
+## Architecture Gate 66 — Fail-Closed Runtime User-Identity Mutation Privilege Verification — COMPLETE
 
-The PostgreSQL runtime privilege verifier must explicitly reject effective INSERT, UPDATE, or DELETE privilege on the authentication `users` relation for either `current_user` or `session_user`. These checks use PostgreSQL's effective privilege functions so inherited role and PUBLIC grants are included. User identity provisioning is outside the runtime API and belongs to a trusted deployment/admin workflow. The runtime still requires SELECT on users, and continues to need scoped write access to `auth_sessions`, `auth_login_rate_limits`, domain data, and append-only audit inserts. Gate 66 adds PostgreSQL regressions for each forbidden user-table mutation right and preserves the least-privilege runtime role.
+The PostgreSQL runtime privilege verifier rejects effective table-level INSERT, UPDATE, or DELETE privilege on the authentication `users` relation for either `current_user` or `session_user`, including inherited role and PUBLIC grants. User identity provisioning is outside the runtime API and belongs to a trusted deployment/admin workflow. The user confirmed Gate 66 clean and successful on 2026-10-14; this is user-confirmed validation.
+
+## Architecture Gate 67 — Fail-Closed Runtime Column-Level User-Identity Mutation Privilege Verification — IN PROGRESS
+
+PostgreSQL supports column-level INSERT and UPDATE grants. Gate 67 extends the read-only startup check with `has_any_column_privilege` checks for `users`, preventing narrow grants from allowing runtime changes to sensitive identity columns such as `role`, `password_hash`, or `active`. Checks cover `current_user` and `session_user`, including inherited/PUBLIC grants. Preserve table-level mutation checks, required user lookup, session/rate-limit writes, audit protections, and the separate migration identity. Add PostgreSQL integration regressions for column-level INSERT and UPDATE and validate the full required suite before closure.

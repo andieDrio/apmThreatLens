@@ -456,6 +456,10 @@ Expose the existing authenticated campaign, evidence, attack-path relationship, 
 The workspace now contains the existing authenticated SOC read models, but its active navigation state is click-driven rather than scroll-aware. Gate 65 synchronizes the active navigation item with the visible section, adds keyboard-visible focus treatment, and respects reduced-motion preferences while preserving the restrictive CSP and existing API contracts. The user confirmed Gate 65 clean and successful on 2026-10-14; this is user-confirmed validation, not an independently executed local test result.
 
 
-### Architecture Gate 66 — Fail-Closed Runtime User-Identity Mutation Privilege Verification: IN PROGRESS
+### Architecture Gate 66 — Fail-Closed Runtime User-Identity Mutation Privilege Verification: COMPLETE
 
-The runtime privilege verifier now needs to explicitly reject effective INSERT, UPDATE, and DELETE on the authentication `users` table. The application runtime requires user lookup but has no runtime user-provisioning API; identity changes belong to a trusted deployment/admin workflow. Gate 66 preserves SELECT and existing session/rate-limit writes while adding PostgreSQL-backed regressions for each forbidden user-table mutation privilege. Validation is pending.
+The runtime privilege verifier rejects effective table-level INSERT, UPDATE, and DELETE on the authentication `users` table. Identity provisioning belongs to a trusted deployment/admin workflow. The user confirmed Gate 66 clean and successful on 2026-10-14; this is user-confirmed validation.
+
+### Architecture Gate 67 — Fail-Closed Runtime Column-Level User-Identity Mutation Privilege Verification: IN PROGRESS
+
+PostgreSQL supports column-level INSERT and UPDATE grants that may not be detected by table-level privilege checks. Gate 67 extends startup verification to reject effective column-level INSERT or UPDATE rights on `users` for `current_user` or `session_user`, including inherited/PUBLIC grants, and adds real PostgreSQL regressions for selected identity columns. Preserve required read-only authentication and separate migration credentials. Validation is pending.

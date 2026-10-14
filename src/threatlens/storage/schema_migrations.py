@@ -212,9 +212,13 @@ def verify_runtime_privileges(repository: object) -> None:
                           has_table_privilege(current_user, registry.oid, 'TRIGGER')
                             OR has_table_privilege(session_user, registry.oid, 'TRIGGER'),
                           has_table_privilege(current_user, users.oid, 'INSERT')
-                            OR has_table_privilege(session_user, users.oid, 'INSERT'),
+                            OR has_table_privilege(session_user, users.oid, 'INSERT')
+                            OR has_any_column_privilege(current_user, users.oid, 'INSERT')
+                            OR has_any_column_privilege(session_user, users.oid, 'INSERT'),
                           has_table_privilege(current_user, users.oid, 'UPDATE')
-                            OR has_table_privilege(session_user, users.oid, 'UPDATE'),
+                            OR has_table_privilege(session_user, users.oid, 'UPDATE')
+                            OR has_any_column_privilege(current_user, users.oid, 'UPDATE')
+                            OR has_any_column_privilege(session_user, users.oid, 'UPDATE'),
                           has_table_privilege(current_user, users.oid, 'DELETE')
                             OR has_table_privilege(session_user, users.oid, 'DELETE'),
                           current_user::regrole::oid = d.datdba

@@ -31,6 +31,7 @@ def _runtime_role(
     sequence_privilege=None,
     security_definer_routine=False,
     user_table_privilege=None,
+    user_table_column_privilege=None,
 ):
     connection = repository.connection
     role_name = f"tl_runtime_test_{uuid4().hex[:12]}"
@@ -97,6 +98,15 @@ def _runtime_role(
                 cursor.execute(
                     sql.SQL("GRANT {} ON users TO {}").format(
                         sql.SQL(user_table_privilege), sql.Identifier(role_name)
+                    )
+                )
+            if user_table_column_privilege:
+                privilege, column_name = user_table_column_privilege
+                cursor.execute(
+                    sql.SQL("GRANT {} ({}) ON users TO {}").format(
+                        sql.SQL(privilege),
+                        sql.Identifier(column_name),
+                        sql.Identifier(role_name),
                     )
                 )
             cursor.execute(
@@ -477,6 +487,29 @@ def test_runtime_role_with_user_table_mutation_privilege_fails_closed(
     admin_repository = postgres_repository
     role_name, owner_role, dsn, sequence_name = _runtime_role(
         admin_repository, user_table_privilege=user_table_privilege
+    )
+    runtime_repository = None
+    try:
+        runtime_repository = PostgresRepository(dsn)
+        with pytest.raises(RuntimeError, match="user-table mutation privilege"):
+            runtime_repository.verify_runtime_privileges()
+    finally:
+        if runtime_repository is not None:
+            runtime_repository.close()
+        _drop_roles(admin_repository, role_name, owner_role, sequence_name)
+
+
+@pytest.mark.parametrize(
+    ("privilege", "column_name"),
+    [("INSERT", "username"), ("UPDATE", "role"), ("UPDATE", "password_hash")],
+)
+def test_runtime_role_with_user_column_mutation_privilege_fails_closed(
+    postgres_repository, privilege, column_name
+):
+    admin_repository = postgres_repository
+    role_name, owner_role, dsn, sequence_name = _runtime_role(
+        admin_repository,
+        user_table_column_privilege=(privilege, column_name),
     )
     runtime_repository = None
     try:
