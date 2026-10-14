@@ -1,4 +1,7 @@
 from datetime import UTC, datetime, timedelta
+import hashlib
+
+import pytest
 
 from threatlens.auth import AuthenticationService, Role
 
@@ -28,10 +31,6 @@ def test_postgres_login_rate_limits_are_durable_and_expire(postgres_repository):
     assert postgres_repository.count("auth_login_rate_limits") == 2
 
 def test_postgres_logout_session_and_success_audit_are_atomic(postgres_repository):
-    import hashlib
-
-    import pytest
-
     auth = AuthenticationService(postgres_repository)
     auth.create_user("logout-atomic", "correct horse battery staple", Role.ANALYST)
     principal, token = auth.authenticate("logout-atomic", "correct horse battery staple")
@@ -40,7 +39,9 @@ def test_postgres_logout_session_and_success_audit_are_atomic(postgres_repositor
 
     with connection.transaction():
         with connection.cursor() as cursor:
-            cursor.execute("DROP TRIGGER IF EXISTS test_fail_logout_audit_trigger ON audit_events")
+            cursor.execute(
+                "DROP TRIGGER IF EXISTS test_fail_logout_audit_trigger ON audit_events"
+            )
             cursor.execute("DROP FUNCTION IF EXISTS test_fail_logout_audit()")
             cursor.execute(
                 """
