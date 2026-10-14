@@ -375,7 +375,11 @@ def create_app(
         if not dsn:
             raise RuntimeError("THREATLENS_DATABASE_URL is required")
         repository = PostgresRepository(dsn)
-        repository.verify_schema_ready()
+        try:
+            repository.verify_schema_ready()
+        except BaseException:
+            repository.close()
+            raise
     if auth_service is None:
         auth_service = AuthenticationService(repository)
     if orchestrator is None:
