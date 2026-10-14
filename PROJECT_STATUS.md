@@ -3,9 +3,9 @@
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
 **Highest architecture gate reached:** Gate 60  
-**Highest fully validated gate:** Gate 59  
-**Current gate:** Gate 60 — Fail-Closed Runtime Ownership Boundary for Application Schema Objects  
-**Current status:** Gate 59 is complete and validated on `78f7856677d029c2f01d0000831b080e16c8f45c`. Gate 60 implementation is committed directly to `main`; exact-revision validation is pending.
+**Highest fully validated gate:** Gate 60  
+**Current gate:** Gate 61 — Fail-Closed Runtime Relation Privilege Verification  
+**Current status:** Gate 60 is complete and validated on `080cc28ee38a207f3a5da83f36497510495a4a1a`. Gate 61 implementation is committed directly to `main`; exact-revision validation is pending.
 
 ## Executive Summary
 
@@ -130,7 +130,7 @@ Gate 58 separates migration and runtime DSNs, but the API could still be configu
 ### Validation closure
 On 2026-10-14, the user confirmed exact-main revision `78f7856677d029c2f01d0000831b080e16c8f45c` passed 43 focused PostgreSQL migration/runtime-privilege/API tests, the full PostgreSQL-backed suite reached 100% without a reported failure or skip summary, `ruff check .`, `git diff --check`, and package wheel build. Wheel SHA-256: `f5315fe6366d53d9607e11aa1f4624978266c3e29a75376377bd17d03d63bb71`. Five Starlette deprecation warnings were non-failing. The user confirmed generated `build/` and `src/apm_threatlens.egg-info/` artifacts were removed and the working tree was clean.
 
-## Gate 60 — Fail-Closed Runtime Ownership Boundary for Application Schema Objects — IMPLEMENTED, VALIDATION PENDING
+## Gate 60 — Fail-Closed Runtime Ownership Boundary for Application Schema Objects — COMPLETE
 
 ### Root cause
 Gate 59 verifies ownership/membership for the database, active schema, audit table, migration registry, and audit trigger function. It does not enumerate all application-schema relations, routines, or types. A runtime login that owns another application object may still possess destructive DDL authority over that object.
@@ -144,9 +144,24 @@ Gate 59 verifies ownership/membership for the database, active schema, audit tab
 - Implementation and documentation commit: `eb9670bbdfe8552759588efe6f61d44b72ebbb8f`.
 - PostgreSQL test fixture refinement (creates the owned table through the actual runtime login, then revokes schema CREATE): `52776227a15b28301286be0db2339064a13c7354`.
 
+### Validation closure
+On 2026-10-14, the user confirmed the required PostgreSQL-focused tests, full PostgreSQL-backed suite, Ruff, diff check, and wheel build were clean and successful on main revision `080cc28ee38a207f3a5da83f36497510495a4a1a`. No failures were reported.
+
+## Gate 61 — Fail-Closed Runtime Relation Privilege Verification — IMPLEMENTED, VALIDATION PENDING
+
+### Root cause
+Gate 60 blocks runtime ownership but does not detect high-impact relation ACLs granted to non-owner roles. TRUNCATE can erase a table without row-by-row DELETE behavior; TRIGGER and REFERENCES allow structural capabilities that the runtime application does not need.
+
+### Implementation
+- Extended the existing read-only runtime verifier to inspect ordinary and partitioned tables in the active application schema.
+- Rejects effective TRUNCATE, TRIGGER, or REFERENCES privileges granted to `current_user`, `session_user`, or inherited roles.
+- Added PostgreSQL-backed parameterized regressions granting each privilege separately on the ordinary `assets` table.
+- Preserved normal application DML, Gate 58 migration separation, and Gate 59/60 protections.
+- Updated README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md directly on `main`.
+
 ### Validation required
-On the exact current `main` SHA, run focused schema migration/runtime privilege/API tests, the full PostgreSQL-backed `python -m pytest -q -rs` suite without skips, `ruff check .`, `git diff --check`, and package wheel build. The integration test requires a PostgreSQL test account allowed to create/drop temporary roles and connect as a test login. If any check fails, fix it and remain on Gate 60; do not close the gate before user-confirmed validation.
+Run focused schema migration/runtime privilege/API tests, the full PostgreSQL-backed `python -m pytest -q -rs` suite without skips, `ruff check .`, `git diff --check`, and package wheel build on the exact current `main` SHA. If any check fails, fix it and remain on Gate 61. Do not close the gate until user-confirmed exact-revision validation.
 
 ## Next Required Action
 
-Validate Gate 60 on the exact latest `main` revision. Confirm the new owned-application-table regression rejects runtime ownership while the least-privilege role still passes.
+Validate Gate 61 on latest `main`, including all three dangerous privilege regressions and the existing least-privilege login test.

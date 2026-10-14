@@ -27,6 +27,7 @@ def _runtime_role(
     audit_update=False,
     registry_update=False,
     owned_schema_object=False,
+    relation_privilege=None,
 ):
     connection = repository.connection
     role_name = f"tl_runtime_test_{uuid4().hex[:12]}"
@@ -86,6 +87,12 @@ def _runtime_role(
                 cursor.execute(
                     sql.SQL("GRANT UPDATE ON threatlens_schema_migrations TO {}").format(
                         sql.Identifier(role_name)
+                    )
+                )
+            if relation_privilege:
+                cursor.execute(
+                    sql.SQL("GRANT {} ON TABLE assets TO {}").format(
+                        sql.SQL(relation_privilege), sql.Identifier(role_name)
                     )
                 )
             cursor.execute(
@@ -195,6 +202,28 @@ def test_runtime_role_cannot_own_application_schema_objects(postgres_repository)
         runtime_repository = PostgresRepository(dsn)
         with pytest.raises(
             RuntimeError, match="ownership of application schema objects"
+        ):
+            runtime_repository.verify_runtime_privileges()
+    finally:
+        if runtime_repository is not None:
+            runtime_repository.close()
+        _drop_roles(admin_repository, role_name, owner_role)
+
+
+@pytest.mark.parametrize("relation_privilege", ["TRUNCATE", "TRIGGER", "REFERENCES"])
+def test_runtime_role_with_dangerous_application_table_privilege_fails_closed(
+    postgres_repository, relation_privilege
+):
+    admin_repository = postgres_repository
+    role_name, owner_role, dsn = _runtime_role(
+        admin_repository, relation_privilege=relation_privilege
+    )
+    runtime_repository = None
+    try:
+        runtime_repository = PostgresRepository(dsn)
+        with pytest.raises(
+            RuntimeError,
+            match="TRUNCATE, TRIGGER, or REFERENCES privilege on application tables",
         ):
             runtime_repository.verify_runtime_privileges()
     finally:

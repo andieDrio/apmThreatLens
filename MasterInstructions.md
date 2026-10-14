@@ -120,8 +120,12 @@ On 2026-10-14, the user confirmed exact-main revision `c39a7cd9d757e2a63cc27365e
 
 On 2026-10-14, the user confirmed exact-main revision `78f7856677d029c2f01d0000831b080e16c8f45c` passed 43 focused PostgreSQL migration/runtime-privilege/API tests, the full PostgreSQL-backed suite at 100% without a reported failure or skip summary, Ruff, `git diff --check`, and package wheel build. Wheel SHA-256: `f5315fe6366d53d9607e11aa1f4624978266c3e29a75376377bd17d03d63bb71`. Five Starlette deprecation warnings were non-failing. The user confirmed generated artifacts were removed and the working tree was clean.
 
-## Current Gate Directive — Gate 60: Fail-Closed Runtime Ownership Boundary for Application Schema Objects
+## Gate 60 Validation Closure — COMPLETE
 
-Gate 60 extends the Gate 59 startup privilege verifier to detect application-schema relations, routines, and types owned by either the effective runtime identity or any role inherited by `current_user` or `session_user`. Protected-object checks alone do not prove that other application tables or routines are not runtime-owned. Keep startup read-only, preserve the dedicated migration DSN, add real PostgreSQL role/ownership integration coverage, and fail closed with safe diagnostics.
+On 2026-10-14, the user confirmed the required PostgreSQL-focused tests, full PostgreSQL-backed suite, Ruff, diff check, and wheel build were clean and successful on main revision `080cc28ee38a207f3a5da83f36497510495a4a1a`.
 
-Inspect latest `main` before every cycle. Run focused PostgreSQL migration/runtime privilege/API tests, full `python -m pytest -q -rs` without skips, Ruff, diff check, and package wheel build. Fix blockers and remain on Gate 60 until the exact revision is user-validated. Maintain README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md. All changes stay directly on `main`; no feature branches, no branch switching, no PR workflow, and no force pushes.
+## Current Gate Directive — Gate 61: Fail-Closed Runtime Relation Privilege Verification
+
+Extend the Gate 59/60 startup verifier to reject TRUNCATE, TRIGGER, and REFERENCES privileges on ordinary and partitioned application tables for either `current_user` or `session_user`, including inherited grants. Preserve expected application DML, audit append-only controls, migration registry integrity, read-only startup, and the dedicated migration identity. Add PostgreSQL-backed regressions for each dangerous table privilege.
+
+Inspect latest `main` before every cycle. Run focused PostgreSQL migration/runtime privilege/API tests, full `python -m pytest -q -rs` without skips, Ruff, diff check, and package wheel build. Fix blockers and remain on Gate 61 until the exact revision is user-validated. Maintain README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md. All changes stay directly on `main`; no feature branches, no branch switching, no PR workflow, and no force pushes.

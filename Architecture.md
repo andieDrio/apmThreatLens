@@ -742,10 +742,16 @@ API startup calls `verify_runtime_privileges()` after read-only schema readiness
 
 **Validation status:** On 2026-10-14, the user confirmed 43 focused PostgreSQL migration/runtime-privilege/API tests passed, the full PostgreSQL-backed suite reached 100% without a reported failure or skip summary, Ruff and diff checks passed, and the package wheel built successfully on main commit `78f7856677d029c2f01d0000831b080e16c8f45c`. Wheel SHA-256: `f5315fe6366d53d9607e11aa1f4624978266c3e29a75376377bd17d03d63bb71`. Five Starlette deprecation warnings were non-failing.
 
-## Architecture Gate 60 — Fail-Closed Runtime Ownership Boundary for Application Schema Objects — IMPLEMENTED, VALIDATION PENDING
+## Architecture Gate 60 — Fail-Closed Runtime Ownership Boundary for Application Schema Objects — COMPLETE
 
 Gate 59 checked ownership of the database, active schema, audit table, migration registry, and audit trigger function, but it did not enumerate ownership across all application-schema relations and routines. A runtime identity owning another table, view, sequence, routine, or user-defined type could retain destructive DDL authority even while protected-object checks passed.
 
 Gate 60 extends the startup verifier to inspect ownership across every relation, routine, and type in the active application schema. It evaluates both `current_user` and `session_user` and inherited role membership, and fails closed when any such object is owned by the runtime identity or a role it can assume. It preserves read-only startup checks and the separately provisioned migration identity.
 
-**Validation status:** Implementation is committed directly to `main`; focused PostgreSQL ownership/privilege tests, the full PostgreSQL-backed suite without skips, Ruff, diff checks, and wheel build remain pending.
+**Validation status: COMPLETE.** On 2026-10-14, the user confirmed the required PostgreSQL-focused tests, full PostgreSQL-backed suite, Ruff, diff check, and wheel build were clean and successful on main revision `080cc28ee38a207f3a5da83f36497510495a4a1a`.
+
+## Architecture Gate 61 — Fail-Closed Runtime Relation Privilege Verification — IMPLEMENTED, VALIDATION PENDING
+
+Gate 60 rejects runtime ownership of relations, routines, and types but does not inspect high-impact relation ACLs granted to non-owner roles. Gate 61 extends startup verification across ordinary and partitioned application tables and fails closed when either `current_user` or `session_user` has effective TRUNCATE, TRIGGER, or REFERENCES privilege, including inherited role grants. Application DML remains permitted according to the existing least-privilege deployment contract. The verifier remains read-only, and migrations remain in the separately controlled migration process.
+
+PostgreSQL integration coverage grants each dangerous privilege independently on the ordinary `assets` table and asserts that runtime privilege verification rejects the role. Focused tests, full PostgreSQL-backed suite without skips, Ruff, diff checks, and wheel build remain pending on the exact implementation revision.

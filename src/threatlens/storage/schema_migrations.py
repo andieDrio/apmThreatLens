@@ -242,6 +242,31 @@ def verify_runtime_privileges(repository: object) -> None:
                               )
                           ),
                           EXISTS (
+                            SELECT 1 FROM pg_class privileged_relation
+                            WHERE privileged_relation.relnamespace = n.oid
+                              AND privileged_relation.relkind IN ('r', 'p')
+                              AND (
+                                has_table_privilege(
+                                    current_user, privileged_relation.oid, 'TRUNCATE'
+                                )
+                                OR has_table_privilege(
+                                    session_user, privileged_relation.oid, 'TRUNCATE'
+                                )
+                                OR has_table_privilege(
+                                    current_user, privileged_relation.oid, 'TRIGGER'
+                                )
+                                OR has_table_privilege(
+                                    session_user, privileged_relation.oid, 'TRIGGER'
+                                )
+                                OR has_table_privilege(
+                                    current_user, privileged_relation.oid, 'REFERENCES'
+                                )
+                                OR has_table_privilege(
+                                    session_user, privileged_relation.oid, 'REFERENCES'
+                                )
+                              )
+                          ),
+                          EXISTS (
                             SELECT 1 FROM pg_proc owned_routine
                             WHERE owned_routine.pronamespace = n.oid
                               AND (
@@ -308,6 +333,7 @@ def verify_runtime_privileges(repository: object) -> None:
             registry_owner_member,
             function_owner_member,
             owns_schema_relation,
+            has_dangerous_relation_privilege,
             owns_schema_routine,
             owns_schema_type,
         ) = row
@@ -336,6 +362,8 @@ def verify_runtime_privileges(repository: object) -> None:
             violations.append("ownership or membership in an owning role")
         if any((owns_schema_relation, owns_schema_routine, owns_schema_type)):
             violations.append("ownership of application schema objects")
+        if has_dangerous_relation_privilege:
+            violations.append("TRUNCATE, TRIGGER, or REFERENCES privilege on application tables")
         if violations:
             raise RuntimeError(
                 "unsafe PostgreSQL runtime identity: " + ", ".join(violations)
