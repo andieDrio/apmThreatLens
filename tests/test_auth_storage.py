@@ -40,6 +40,8 @@ def test_postgres_logout_session_and_success_audit_are_atomic(postgres_repositor
 
     with connection.transaction():
         with connection.cursor() as cursor:
+            cursor.execute("DROP TRIGGER IF EXISTS test_fail_logout_audit_trigger ON audit_events")
+            cursor.execute("DROP FUNCTION IF EXISTS test_fail_logout_audit()")
             cursor.execute(
                 """
                 CREATE OR REPLACE FUNCTION test_fail_logout_audit()
@@ -80,7 +82,9 @@ def test_postgres_logout_session_and_success_audit_are_atomic(postgres_repositor
     finally:
         with connection.transaction():
             with connection.cursor() as cursor:
-                cursor.execute("DROP TRIGGER IF EXISTS test_fail_logout_audit_trigger ON audit_events")
+                cursor.execute(
+                    "DROP TRIGGER IF EXISTS test_fail_logout_audit_trigger ON audit_events"
+                )
                 cursor.execute("DROP FUNCTION IF EXISTS test_fail_logout_audit()")
 
     auth.logout(principal)
