@@ -803,6 +803,10 @@ Successful login persists the authentication session and its success audit event
 
 **Validation closure:** On 2026-10-14, the user confirmed focused API tests, the full PostgreSQL-backed pytest suite, Ruff, diff check, package wheel build, and final main synchronization were clean. Five Starlette deprecation warnings were non-failing. The optional `python -m build` command was unavailable because the module was not installed; the established pip wheel build was used instead. This is user-confirmed validation.
 
-## Architecture Gate 71 — Atomic Logout Session Revocation and Success-Audit Persistence — IN PROGRESS
+## Architecture Gate 71 — Atomic Logout Session Revocation and Success-Audit Persistence — COMPLETE
 
-`AuthenticationService.logout()` now calls `revoke_session_with_audit()`. The PostgreSQL implementation holds the repository transaction lock and commits session revocation plus the LOGOUT success audit event in one database transaction. The SQLite compatibility implementation uses one connection transaction and the repository transaction lock when available. Added SQLite and PostgreSQL failure-injection regressions that assert an audit-write failure leaves the session unrevoked, then verify successful logout revokes it and writes one success event. Full validation remains pending.
+`AuthenticationService.logout()` calls `revoke_session_with_audit()`. The PostgreSQL implementation holds the repository transaction lock and commits session revocation plus the LOGOUT success audit event in one database transaction. The SQLite compatibility implementation uses one connection transaction and the repository transaction lock when available. SQLite and PostgreSQL failure-injection regressions assert an audit-write failure leaves the session unrevoked, then verify successful logout revokes it and writes one success event. On 2026-10-14, the user confirmed Gate 71 clean and successful; this is user-confirmed validation.
+
+## Architecture Gate 72 — Atomic User Provisioning and Success-Audit Persistence — IN PROGRESS
+
+`AuthenticationService.create_user()` delegates to `save_user_with_audit()`, atomically persisting the new user and USER_CREATED success audit event in one PostgreSQL transaction and one SQLite compatibility transaction. Failure-injection regressions verify audit insertion failure rolls back account creation. Password hashing, role validation, and append-only audit protections remain unchanged. Focused/full validation, Ruff, diff check, and package wheel build remain pending.
