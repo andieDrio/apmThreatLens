@@ -543,6 +543,7 @@ def test_app_startup_verifies_schema_without_running_migrations(monkeypatch):
     repository = FakeRepository()
     calls = []
     repository.verify_schema_ready = lambda: calls.append("verified")
+    repository.verify_runtime_privileges = lambda: calls.append("privileges-verified")
     repository.initialize = lambda: pytest.fail(
         "runtime application startup must not run schema migrations"
     )
@@ -555,7 +556,7 @@ def test_app_startup_verifies_schema_without_running_migrations(monkeypatch):
 
     create_app()
 
-    assert calls == ["verified"]
+    assert calls == ["verified", "privileges-verified"]
 
 def test_app_closes_runtime_connection_when_schema_readiness_fails(monkeypatch):
     repository = FakeRepository()
