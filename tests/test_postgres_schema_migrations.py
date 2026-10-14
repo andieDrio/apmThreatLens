@@ -6,6 +6,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
+import psycopg
 import pytest
 
 from threatlens.storage.postgres import PostgresRepository
@@ -26,7 +27,7 @@ def test_postgres_baseline_is_recorded_and_repeat_initialize_preserves_data(
         cursor.execute(
             "SELECT version, name FROM threatlens_schema_migrations ORDER BY version"
         )
-        assert cursor.fetchall() == [(1, "legacy_schema_baseline")]
+        assert cursor.fetchall() == [(1, "legacy_schema_baseline"), (2, "audit_events_append_only")]
 
         campaign_id = uuid4()
         cursor.execute(
@@ -42,7 +43,7 @@ def test_postgres_baseline_is_recorded_and_repeat_initialize_preserves_data(
         cursor.execute("SELECT name FROM campaigns WHERE id=%s", (campaign_id,))
         assert cursor.fetchone() == ("gate54-preservation",)
         cursor.execute("SELECT COUNT(*) FROM threatlens_schema_migrations")
-        assert cursor.fetchone()[0] == 1
+        assert cursor.fetchone()[0] == 2
 
 
 def test_postgres_migration_failure_is_not_recorded_and_can_be_retried(
@@ -107,6 +108,39 @@ def test_postgres_migration_failure_is_not_recorded_and_can_be_retried(
         assert cursor.fetchall() == [(1, "failure-retry-test")]
         cursor.execute("SELECT id FROM gate54_migration_probe")
         assert cursor.fetchall() == [(2,)]
+    repository.connection.commit()
+
+
+def test_postgres_audit_events_reject_update_and_delete(postgres_repository):
+    repository = postgres_repository
+    event_id = uuid4()
+    with repository.connection.cursor() as cursor:
+        cursor.execute(
+            """INSERT INTO audit_events
+                   (id, actor_user_id, action, resource_type, resource_id,
+                    outcome, detail, created_at)
+               VALUES (%s, NULL, 'GATE55_TEST', 'AUDIT_EVENT', %s,
+                       'SUCCESS', 'original', NOW())""",
+            (event_id, event_id),
+        )
+    repository.connection.commit()
+
+    with pytest.raises(psycopg.errors.ObjectNotInPrerequisiteState, match="append-only"):
+        with repository.connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE audit_events SET detail='tampered' WHERE id=%s",
+                (event_id,),
+            )
+    repository.connection.rollback()
+
+    with pytest.raises(psycopg.errors.ObjectNotInPrerequisiteState, match="append-only"):
+        with repository.connection.cursor() as cursor:
+            cursor.execute("DELETE FROM audit_events WHERE id=%s", (event_id,))
+    repository.connection.rollback()
+
+    with repository.connection.cursor() as cursor:
+        cursor.execute("SELECT detail FROM audit_events WHERE id=%s", (event_id,))
+        assert cursor.fetchone() == ("original",)
     repository.connection.commit()
 
 
