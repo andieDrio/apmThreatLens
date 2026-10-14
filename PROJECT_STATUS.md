@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 59  
+**Highest architecture gate reached:** Gate 60  
 **Highest fully validated gate:** Gate 59  
 **Current gate:** Gate 60 — Fail-Closed Runtime Ownership Boundary for Application Schema Objects  
 **Current status:** Gate 59 is complete and validated on `78f7856677d029c2f01d0000831b080e16c8f45c`. Gate 60 implementation is committed directly to `main`; exact-revision validation is pending.
@@ -141,6 +141,7 @@ Gate 59 verifies ownership/membership for the database, active schema, audit tab
 - Added PostgreSQL integration coverage using a genuine temporary login that owns an application-schema table.
 - Preserved read-only API startup and the separate migration identity.
 - Updated README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md directly on `main`.
+- Implementation and documentation commit: `eb9670bbdfe8552759588efe6f61d44b72ebbb8f`.
 
 ### Validation required
 On the exact current `main` SHA, run focused schema migration/runtime privilege/API tests, the full PostgreSQL-backed `python -m pytest -q -rs` suite without skips, `ruff check .`, `git diff --check`, and package wheel build. The integration test requires a PostgreSQL test account allowed to create/drop temporary roles and connect as a test login. If any check fails, fix it and remain on Gate 60; do not close the gate before user-confirmed validation.
