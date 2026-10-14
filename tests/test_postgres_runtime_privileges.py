@@ -9,7 +9,6 @@ import psycopg
 import pytest
 from psycopg import sql
 
-from threatlens.storage.postgres import PostgresRepository
 
 
 def _dsn() -> str:
