@@ -2,10 +2,10 @@
 
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 68  
+**Highest architecture gate reached:** Gate 69  
 **Highest fully validated gate:** Gate 67 (user-confirmed)  
-**Current gate:** Gate 68 — Fail-Closed Handling of Invalid Persisted User Roles  
-**Current status:** The user confirmed Gate 67 clean and successful on 2026-10-14. Gate 68 hardens login and session authentication against unsupported persisted role values so malformed data cannot escape as an unhandled exception.
+**Current gate:** Gate 69 — Fail-Closed Handling of Corrupt Persisted Session Records  
+**Current status:** Gate 68 was confirmed clean and successful by the user. Gate 69 is in progress and hardens session authentication against malformed persisted session identifiers and expiry values.
 
 ## Executive Summary
 
@@ -251,19 +251,28 @@ PostgreSQL supports column-level INSERT and UPDATE grants that are not reliably 
 
 **Validation closure:** On 2026-10-14, the user confirmed Gate 67 clean and successful. This is user-confirmed validation; the assistant did not independently execute the local test, PostgreSQL, lint, or wheel-build commands in this environment.
 
-## Gate 68 — Fail-Closed Handling of Invalid Persisted User Roles — IN PROGRESS
+## Gate 68 — Fail-Closed Handling of Invalid Persisted User Roles — COMPLETE
 
 ### Root cause
-The authentication service converts stored role values into the fixed `Role` enum in login and session-authentication paths. A malformed or unsupported persisted role raises `ValueError`, which is not handled by the API's normal authentication-failure path.
+The authentication service converts stored role values into the fixed `Role` enum in login and session-authentication paths. A malformed or unsupported persisted role could otherwise escape as an unhandled `ValueError`.
+
+### Implementation
+- Invalid persisted roles now follow the existing fail-closed authentication/session error paths.
+- Login records a denied audit event with fixed generic detail `invalid stored role`, creates no session, and does not disclose the stored value.
+- Existing sessions fail closed if the associated user's persisted role is invalid.
+- Added regression tests for both login and session authentication.
+- Updated README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md.
+
+**Validation closure:** On 2026-10-14, the user confirmed Gate 68 clean and successful. This is user-confirmed validation; the assistant did not independently execute local test, PostgreSQL, lint, diff-check, or wheel-build commands in this environment.
+
+## Gate 69 — Fail-Closed Handling of Corrupt Persisted Session Records — IN PROGRESS
+
+### Root cause
+Session authentication parses persisted expiry timestamps and UUID identifiers at the repository/service boundary. Corrupt or malformed SQLite-compatible persisted values can raise `ValueError`, `TypeError`, or key/attribute errors before the established authentication-failure response is returned.
 
 ### Acceptance criteria
-- Convert unsupported or malformed persisted roles into the existing fail-closed authentication/session errors.
-- Log a denied login audit event using a fixed generic detail; do not expose stored role values.
-- Ensure login creates no session for an invalid stored role.
-- Ensure existing sessions fail closed if the associated user's stored role becomes invalid.
-- Add regressions for login and session authentication while preserving valid roles, password verification, active-user checks, expiry/revocation, and permission mappings.
-- Validate focused auth/API tests, full PostgreSQL-backed suite without skips, Ruff, diff checks, and wheel build.
-
-## Next Required Action
-
-Implement and validate Gate 68 on the exact `main` revision. Fix any failure before advancing. Continue using GitHub `main` only; no feature branches, pull requests, or force pushes.
+- Convert malformed persisted session timestamps, session IDs, user IDs, and role fields into the existing generic invalid-session error.
+- Preserve explicit invalid-session, expired/revoked-session, and inactive-user behavior.
+- Do not swallow database connectivity, transaction, or other infrastructure exceptions.
+- Add regression tests for malformed expiry, session ID, and user ID records.
+- Validate focused auth/API tests, the full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build.

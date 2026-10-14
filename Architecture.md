@@ -789,6 +789,10 @@ The PostgreSQL runtime privilege verifier rejects effective table-level INSERT, 
 
 The runtime privilege verifier rejects effective column-level INSERT or UPDATE grants on the authentication `users` relation for either `current_user` or `session_user`, including inherited and PUBLIC grants. The user confirmed Gate 67 clean and successful on 2026-10-14; this is user-confirmed validation.
 
-## Architecture Gate 68 — Fail-Closed Handling of Invalid Persisted User Roles — IN PROGRESS
+## Architecture Gate 68 — Fail-Closed Handling of Invalid Persisted User Roles — COMPLETE
 
-The authentication service maps persisted role strings to the fixed `Role` enum during login and session authentication. An unsupported stored value could raise an unhandled `ValueError` instead of following the API's normal authentication-failure path. Gate 68 translates malformed/unsupported stored roles into the existing fail-closed `PermissionError` paths, audits denied login attempts without disclosing role data, ensures login creates no session, and adds regression tests for both login and already-issued sessions. Preserve valid role behavior, session revocation/expiry, password verification, and authorization mappings. Validate focused auth/API tests, full PostgreSQL-backed suite without skips, Ruff, diff checks, and wheel build before closure.
+The authentication service maps unsupported persisted role values to the established fail-closed authentication/session errors. Login writes a denied audit event with a fixed generic detail and creates no session; existing sessions with an invalid role are rejected. The user confirmed Gate 68 clean and successful on 2026-10-14; this is user-confirmed validation.
+
+## Architecture Gate 69 — Fail-Closed Handling of Corrupt Persisted Session Records — IN PROGRESS
+
+Session authentication maps malformed persisted timestamps and UUID identifiers to the established generic invalid-session response rather than leaking parsing exceptions through the API. Explicit inactive-user behavior and infrastructure exception visibility are preserved. Regression tests cover malformed expiry, session ID, and user ID records. Validation is pending.

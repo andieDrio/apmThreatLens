@@ -1,3 +1,5 @@
+import hashlib
+
 import pytest
 
 from threatlens.auth import AuthenticationService, Permission, Role
@@ -99,6 +101,40 @@ def test_existing_session_with_unsupported_persisted_role_fails_closed(tmp_path)
     _, token = auth.authenticate("analyst", "correct horse battery staple")
     with repo.connection:
         repo.connection.execute("UPDATE users SET role = ? WHERE id = ?", ("ROOT", str(user.id)))
+
+    with pytest.raises(PermissionError, match="session is invalid or expired"):
+        auth.authenticate_session(token)
+    repo.close()
+
+@pytest.mark.parametrize("corruption", ["expires_at", "session_id", "user_id"])
+def test_corrupt_persisted_session_fails_closed(tmp_path, corruption):
+    repo = SQLiteRepository(tmp_path / "threatlens.db")
+    repo.initialize()
+    auth = AuthenticationService(repo)
+    auth.create_user("analyst", "correct horse battery staple", Role.ANALYST)
+    _, token = auth.authenticate("analyst", "correct horse battery staple")
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+
+    if corruption == "expires_at":
+        with repo.connection:
+            repo.connection.execute(
+                "UPDATE auth_sessions SET expires_at = ? WHERE token_hash = ?",
+                ("not-a-timestamp", token_hash),
+            )
+    elif corruption == "session_id":
+        with repo.connection:
+            repo.connection.execute(
+                "UPDATE auth_sessions SET id = ? WHERE token_hash = ?",
+                ("not-a-uuid", token_hash),
+            )
+    else:
+        repo.connection.execute("PRAGMA foreign_keys = OFF")
+        with repo.connection:
+            repo.connection.execute(
+                "UPDATE auth_sessions SET user_id = ? WHERE token_hash = ?",
+                ("not-a-uuid", token_hash),
+            )
+        repo.connection.execute("PRAGMA foreign_keys = ON")
 
     with pytest.raises(PermissionError, match="session is invalid or expired"):
         auth.authenticate_session(token)

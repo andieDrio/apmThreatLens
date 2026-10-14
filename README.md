@@ -464,6 +464,10 @@ The runtime privilege verifier rejects effective table-level INSERT, UPDATE, and
 
 The runtime startup verifier rejects effective column-level INSERT or UPDATE grants on the authentication `users` table for `current_user` or `session_user`, including inherited/PUBLIC grants. The user confirmed Gate 67 clean and successful on 2026-10-14; this is user-confirmed validation.
 
-### Architecture Gate 68 — Fail-Closed Handling of Invalid Persisted User Roles: IN PROGRESS
+### Architecture Gate 68 — Fail-Closed Handling of Invalid Persisted User Roles: COMPLETE
 
-The authentication service maps stored role strings to the fixed `Role` enum during login and session authentication. Unsupported or malformed persisted role values could otherwise escape as an unhandled `ValueError`. Gate 68 converts these cases into the existing fail-closed authentication/session errors, records a denied login audit event for the login path, and adds regression tests proving no session is issued for an invalid stored role. Validation is pending.
+Unsupported or malformed persisted roles use the established generic authentication/session failure paths. Login writes a denied audit event with a fixed non-sensitive detail and does not create a session when the stored role is invalid. The user confirmed Gate 68 clean and successful on 2026-10-14; this is user-confirmed validation.
+
+### Architecture Gate 69 — Fail-Closed Handling of Corrupt Persisted Session Records: IN PROGRESS
+
+Session authentication maps malformed persisted timestamps and UUID identifiers to the existing generic invalid-session response rather than leaking parsing exceptions through the API. Explicit inactive-user behavior and infrastructure exception visibility are preserved. Regression tests cover malformed expiry, session ID, and user ID records. Validation is pending.

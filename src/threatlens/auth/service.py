@@ -168,20 +168,25 @@ class AuthenticationService:
     def authenticate_session(self, raw_token: str) -> AuthenticatedPrincipal:
         if not raw_token:
             raise PermissionError("authentication required")
-        session = self.repository.session_by_token_hash(
-            hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
-        )
-        now = datetime.now(UTC)
-        if session is None or session["revoked"] or session["expires_at"] <= now:
-            raise PermissionError("session is invalid or expired")
-        user = self.repository.user_by_id(UUID(session["user_id"]))
-        if user is None or not user.active:
-            raise PermissionError("user is inactive")
         try:
+            session = self.repository.session_by_token_hash(
+                hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+            )
+            now = datetime.now(UTC)
+            if session is None or session["revoked"] or session["expires_at"] <= now:
+                raise PermissionError("session is invalid or expired")
+            user = self.repository.user_by_id(UUID(session["user_id"]))
+            if user is None or not user.active:
+                raise PermissionError("user is inactive")
             role = Role(user.role)
-        except (TypeError, ValueError) as exc:
+            session_id = UUID(session["id"])
+            return AuthenticatedPrincipal(user.id, user.username, role, session_id)
+        except PermissionError:
+            raise
+        except (ValueError, TypeError, KeyError, AttributeError, OverflowError) as exc:
+            # Corrupt persisted session/user fields must never become an API 500 or
+            # accidentally authenticate a partially valid session.
             raise PermissionError("session is invalid or expired") from exc
-        return AuthenticatedPrincipal(user.id, user.username, role, UUID(session["id"]))
 
     def logout(self, principal: AuthenticatedPrincipal) -> None:
         self.repository.revoke_session(principal.session_id)
