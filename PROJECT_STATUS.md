@@ -104,12 +104,21 @@ API startup previously ran `PostgresRepository.initialize()` using the same DSN 
 - Added an API factory regression proving startup verifies schema and does not invoke migrations.
 - Updated `.env.example` and deployment documentation with separate runtime/migration DSNs and example role grants, including restrictions on the audit table and migration registry.
 
+### Changed files and implementation commits
+
+- `src/threatlens/storage/schema_migrations.py`: read-only migration-history and audit-protection readiness verifier (commit `e07ce456b801f7f06be38d5a1760c66322e81fb8`).
+- `src/threatlens/storage/postgres.py`: repository readiness boundary (commit `488ff8719afef54d0def781c8447d3aece856e52`).
+- `src/threatlens/api/app.py`: runtime startup verifies readiness and closes the connection if verification fails (latest code fix `0190c88c5b83ac586415a7b670f9d11ddef020ba`).
+- `src/threatlens/storage/migrate.py`: explicit migration-only command (commit `7c887049939d32ffd95dc3d138257950d1466c6d`).
+- `tests/test_postgres_runtime_privileges.py`: non-owner runtime ACL regression for audit DDL, audit mutations, and migration registry changes (latest test fix `b6eb6129813269fcfc5b897f3308f023b4068c0f`).
+- `tests/test_api_app.py`: API startup readiness and failed-readiness cleanup tests (latest test commit `93c51b82998939640210107a51aeeff88b85f591`).
+- `.env.example`, `README.md`, `Architecture.md`, `MasterInstructions.md`, and `PROJECT_STATUS.md`: runtime/migration configuration, deployment grants, architecture state, and validation requirements.
+
 ### Validation required
 
-On the exact latest `main` SHA, run the focused schema and privilege tests, the full PostgreSQL-backed suite without skips, Ruff, diff checks, and wheel build. The privilege test requires the test database account to be able to create/drop a temporary PostgreSQL role. Production provisioning must ensure the runtime identity is not a member of the migration role and does not inherit owner, database-owner, or superuser privileges.
+On the exact latest `main` SHA, run the focused schema and privilege tests, the full suite without skips, Ruff, diff checks, and wheel build. The privilege test requires the test database account to be able to create/drop a temporary PostgreSQL role. Production provisioning must ensure the runtime identity is not a member of the migration role and does not inherit owner, database-owner, or superuser privileges.
 
 **Current blocker:** Local execution has not yet been confirmed. Do not mark Gate 58 complete until validation passes.
-
 ## Next Required Action
 
 Validate Gate 58. If any test or check fails, fix it and remain on Gate 58. All code and documentation changes stay directly on `main`; no feature branches and no pull requests.
