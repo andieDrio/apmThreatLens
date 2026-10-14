@@ -578,3 +578,26 @@ def test_app_closes_runtime_connection_when_schema_readiness_fails(monkeypatch):
         create_app()
 
     assert closed == [True]
+
+
+def test_app_closes_runtime_connection_when_privilege_verification_fails(monkeypatch):
+    repository = FakeRepository()
+    closed = []
+    repository.verify_schema_ready = lambda: None
+
+    def fail_privileges():
+        raise RuntimeError("unsafe PostgreSQL runtime identity")
+
+    repository.verify_runtime_privileges = fail_privileges
+    repository.close = lambda: closed.append(True)
+    monkeypatch.setenv(
+        "THREATLENS_DATABASE_URL", "postgresql://runtime:unused@127.0.0.1/threatlens"
+    )
+    monkeypatch.setattr(
+        "threatlens.api.app.PostgresRepository", lambda _dsn: repository
+    )
+
+    with pytest.raises(RuntimeError, match="unsafe PostgreSQL runtime identity"):
+        create_app()
+
+    assert closed == [True]
