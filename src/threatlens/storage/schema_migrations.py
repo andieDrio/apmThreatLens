@@ -209,15 +209,25 @@ def verify_runtime_privileges(repository: object) -> None:
                             OR has_table_privilege(session_user, registry.oid, 'DELETE'),
                           has_table_privilege(current_user, registry.oid, 'TRUNCATE')
                             OR has_table_privilege(session_user, registry.oid, 'TRUNCATE'),
-                          pg_has_role(current_user, d.datdba, 'MEMBER')
+                          current_user::regrole::oid = d.datdba
+                            OR session_user::regrole::oid = d.datdba
+                            OR pg_has_role(current_user, d.datdba, 'MEMBER')
                             OR pg_has_role(session_user, d.datdba, 'MEMBER'),
-                          pg_has_role(current_user, n.nspowner, 'MEMBER')
+                          current_user::regrole::oid = n.nspowner
+                            OR session_user::regrole::oid = n.nspowner
+                            OR pg_has_role(current_user, n.nspowner, 'MEMBER')
                             OR pg_has_role(session_user, n.nspowner, 'MEMBER'),
-                          pg_has_role(current_user, audit.relowner, 'MEMBER')
+                          current_user::regrole::oid = audit.relowner
+                            OR session_user::regrole::oid = audit.relowner
+                            OR pg_has_role(current_user, audit.relowner, 'MEMBER')
                             OR pg_has_role(session_user, audit.relowner, 'MEMBER'),
-                          pg_has_role(current_user, registry.relowner, 'MEMBER')
+                          current_user::regrole::oid = registry.relowner
+                            OR session_user::regrole::oid = registry.relowner
+                            OR pg_has_role(current_user, registry.relowner, 'MEMBER')
                             OR pg_has_role(session_user, registry.relowner, 'MEMBER'),
-                          pg_has_role(current_user, audit_fn.proowner, 'MEMBER')
+                          current_user::regrole::oid = audit_fn.proowner
+                            OR session_user::regrole::oid = audit_fn.proowner
+                            OR pg_has_role(current_user, audit_fn.proowner, 'MEMBER')
                             OR pg_has_role(session_user, audit_fn.proowner, 'MEMBER')
                    FROM pg_database d
                    JOIN pg_namespace n ON n.nspname = current_schema()
