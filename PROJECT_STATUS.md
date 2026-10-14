@@ -142,6 +142,7 @@ Gate 59 verifies ownership/membership for the database, active schema, audit tab
 - Preserved read-only API startup and the separate migration identity.
 - Updated README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md directly on `main`.
 - Implementation and documentation commit: `eb9670bbdfe8552759588efe6f61d44b72ebbb8f`.
+- PostgreSQL test fixture refinement (creates the owned table through the actual runtime login, then revokes schema CREATE): `52776227a15b28301286be0db2339064a13c7354`.
 
 ### Validation required
 On the exact current `main` SHA, run focused schema migration/runtime privilege/API tests, the full PostgreSQL-backed `python -m pytest -q -rs` suite without skips, `ruff check .`, `git diff --check`, and package wheel build. The integration test requires a PostgreSQL test account allowed to create/drop temporary roles and connect as a test login. If any check fails, fix it and remain on Gate 60; do not close the gate before user-confirmed validation.
