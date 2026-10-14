@@ -287,7 +287,9 @@ def verify_runtime_privileges(repository: object) -> None:
             violations.append("schema CREATE privilege")
         if any((audit_update, audit_delete, audit_truncate, audit_trigger)):
             violations.append("audit-table mutation or trigger privilege")
-        if any((registry_insert, registry_update, registry_delete, registry_truncate, registry_trigger)):
+        if any(
+            (registry_insert, registry_update, registry_delete, registry_truncate, registry_trigger)
+        ):
             violations.append("migration-registry mutation privilege")
         if any(
             (
