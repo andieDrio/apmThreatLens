@@ -556,3 +556,24 @@ def test_app_startup_verifies_schema_without_running_migrations(monkeypatch):
     create_app()
 
     assert calls == ["verified"]
+
+def test_app_closes_runtime_connection_when_schema_readiness_fails(monkeypatch):
+    repository = FakeRepository()
+    closed = []
+
+    def fail_readiness():
+        raise RuntimeError("schema is not ready")
+
+    repository.verify_schema_ready = fail_readiness
+    repository.close = lambda: closed.append(True)
+    monkeypatch.setenv(
+        "THREATLENS_DATABASE_URL", "postgresql://runtime:unused@127.0.0.1/threatlens"
+    )
+    monkeypatch.setattr(
+        "threatlens.api.app.PostgresRepository", lambda _dsn: repository
+    )
+
+    with pytest.raises(RuntimeError, match="schema is not ready"):
+        create_app()
+
+    assert closed == [True]
