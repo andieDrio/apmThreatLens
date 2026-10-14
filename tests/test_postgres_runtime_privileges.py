@@ -58,6 +58,17 @@ def test_runtime_role_cannot_alter_audit_protection(postgres_repository):
                     ).format(sql.Identifier(role_name))
                 )
                 cursor.execute(
+                    sql.SQL(
+                        "REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER "
+                        "ON threatlens_schema_migrations FROM {}"
+                    ).format(sql.Identifier(role_name))
+                )
+                cursor.execute(
+                    sql.SQL(
+                        "GRANT SELECT ON threatlens_schema_migrations TO {}"
+                    ).format(sql.Identifier(role_name))
+                )
+                cursor.execute(
                     sql.SQL("REVOKE CREATE ON SCHEMA public FROM {}").format(
                         sql.Identifier(role_name)
                     )
