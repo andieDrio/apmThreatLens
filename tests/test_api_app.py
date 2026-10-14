@@ -63,6 +63,20 @@ class FakeRepository:
             if session["id"] == str(session_id):
                 session["revoked"] = True
 
+    def revoke_session_with_audit(self, session_id, event: AuditEvent):
+        previous = {
+            token_hash: session["revoked"]
+            for token_hash, session in self.sessions.items()
+            if session["id"] == str(session_id)
+        }
+        self.revoke_session(session_id)
+        try:
+            self.save_audit_event(event)
+        except Exception:
+            for token_hash, revoked in previous.items():
+                self.sessions[token_hash]["revoked"] = revoked
+            raise
+
     def save_audit_event(self, event: AuditEvent):
         self.audit_events.append(event)
 
