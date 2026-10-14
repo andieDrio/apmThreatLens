@@ -750,8 +750,14 @@ Gate 60 extends the startup verifier to inspect ownership across every relation,
 
 **Validation status: COMPLETE.** On 2026-10-14, the user confirmed the required PostgreSQL-focused tests, full PostgreSQL-backed suite, Ruff, diff check, and wheel build were clean and successful on main revision `080cc28ee38a207f3a5da83f36497510495a4a1a`.
 
-## Architecture Gate 61 — Fail-Closed Runtime Relation Privilege Verification — IMPLEMENTED, VALIDATION PENDING
+## Architecture Gate 61 — Fail-Closed Runtime Relation Privilege Verification — COMPLETE
 
 Gate 60 rejects runtime ownership of relations, routines, and types but does not inspect high-impact relation ACLs granted to non-owner roles. Gate 61 extends startup verification across ordinary and partitioned application tables and fails closed when either `current_user` or `session_user` has effective TRUNCATE, TRIGGER, or REFERENCES privilege, including inherited role grants. Application DML remains permitted according to the existing least-privilege deployment contract. The verifier remains read-only, and migrations remain in the separately controlled migration process.
 
-PostgreSQL integration coverage grants each dangerous privilege independently on the ordinary `assets` table and asserts that runtime privilege verification rejects the role. Focused tests, full PostgreSQL-backed suite without skips, Ruff, diff checks, and wheel build remain pending on the exact implementation revision.
+PostgreSQL integration coverage grants each dangerous privilege independently on the ordinary `assets` table and asserts that runtime privilege verification rejects the role.
+
+**Validation status: COMPLETE.** On 2026-10-14, the user confirmed all focused PostgreSQL migration/runtime privilege/API tests, the full PostgreSQL-backed suite, Ruff, diff check, and wheel build completed cleanly on main revision `0c6f22281f3242187ec2c1b3165b50557d9665d1`.
+
+## Architecture Gate 62 — Fail-Closed Runtime Sequence Privilege Verification — IMPLEMENTED, VALIDATION PENDING
+
+The current domain schema uses UUID-backed identifiers, so the runtime identity does not require sequence access. Gate 62 extends the read-only startup verifier to enumerate application-schema sequences and reject effective SELECT, USAGE, or UPDATE privileges granted to `current_user`, `session_user`, or inherited roles. This closes the sequence ACL gap without adding startup DDL or changing the controlled migration identity. PostgreSQL integration tests create an administrator-owned test sequence, grant each privilege separately to a genuine runtime login, and require fail-closed rejection. The least-privilege role must continue to pass.

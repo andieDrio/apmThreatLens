@@ -28,11 +28,13 @@ def _runtime_role(
     registry_update=False,
     owned_schema_object=False,
     relation_privilege=None,
+    sequence_privilege=None,
 ):
     connection = repository.connection
     role_name = f"tl_runtime_test_{uuid4().hex[:12]}"
     password = uuid4().hex + uuid4().hex
     owner_role = f"tl_ddl_test_{uuid4().hex[:12]}" if inherited_ddl else None
+    sequence_name = f"tl_runtime_seq_{uuid4().hex[:12]}" if sequence_privilege else None
     with connection.transaction():
         with connection.cursor() as cursor:
             cursor.execute(
@@ -45,6 +47,19 @@ def _runtime_role(
                     sql.Identifier(connection.info.dbname), sql.Identifier(role_name)
                 )
             )
+            if sequence_privilege:
+                cursor.execute(
+                    sql.SQL("CREATE SEQUENCE public.{}").format(
+                        sql.Identifier(sequence_name)
+                    )
+                )
+                cursor.execute(
+                    sql.SQL("GRANT {} ON SEQUENCE public.{} TO {}").format(
+                        sql.SQL(sequence_privilege),
+                        sql.Identifier(sequence_name),
+                        sql.Identifier(role_name),
+                    )
+                )
             cursor.execute(
                 sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(
                     sql.Identifier(role_name)
@@ -145,13 +160,19 @@ def _runtime_role(
                         sql.Identifier(role_name)
                     )
                 )
-    return role_name, owner_role, dsn
+    return role_name, owner_role, dsn, sequence_name
 
 
-def _drop_roles(repository, role_name, owner_role=None):
+def _drop_roles(repository, role_name, owner_role=None, sequence_name=None):
     connection = repository.connection
     with connection.transaction():
         with connection.cursor() as cursor:
+            if sequence_name:
+                cursor.execute(
+                    sql.SQL("DROP SEQUENCE IF EXISTS public.{}").format(
+                        sql.Identifier(sequence_name)
+                    )
+                )
             if owner_role:
                 cursor.execute(
                     sql.SQL("DROP OWNED BY {}").format(sql.Identifier(owner_role))
@@ -179,7 +200,7 @@ def test_runtime_role_with_least_privilege_passes_readiness_and_privilege_checks
     postgres_repository,
 ):
     admin_repository = postgres_repository
-    role_name, owner_role, dsn = _runtime_role(admin_repository)
+    role_name, owner_role, dsn, sequence_name = _runtime_role(admin_repository)
     runtime_repository = None
     try:
         runtime_repository = PostgresRepository(dsn)
@@ -189,12 +210,12 @@ def test_runtime_role_with_least_privilege_passes_readiness_and_privilege_checks
     finally:
         if runtime_repository is not None:
             runtime_repository.close()
-        _drop_roles(admin_repository, role_name, owner_role)
+        _drop_roles(admin_repository, role_name, owner_role, sequence_name)
 
 
 def test_runtime_role_cannot_own_application_schema_objects(postgres_repository):
     admin_repository = postgres_repository
-    role_name, owner_role, dsn = _runtime_role(
+    role_name, owner_role, dsn, sequence_name = _runtime_role(
         admin_repository, owned_schema_object=True
     )
     runtime_repository = None
@@ -207,15 +228,14 @@ def test_runtime_role_cannot_own_application_schema_objects(postgres_repository)
     finally:
         if runtime_repository is not None:
             runtime_repository.close()
-        _drop_roles(admin_repository, role_name, owner_role)
-
+        _drop_roles(admin_repository, role_name, owner_role, sequence_name)
 
 @pytest.mark.parametrize("relation_privilege", ["TRUNCATE", "TRIGGER", "REFERENCES"])
 def test_runtime_role_with_dangerous_application_table_privilege_fails_closed(
     postgres_repository, relation_privilege
 ):
     admin_repository = postgres_repository
-    role_name, owner_role, dsn = _runtime_role(
+    role_name, owner_role, dsn, sequence_name = _runtime_role(
         admin_repository, relation_privilege=relation_privilege
     )
     runtime_repository = None
@@ -229,12 +249,32 @@ def test_runtime_role_with_dangerous_application_table_privilege_fails_closed(
     finally:
         if runtime_repository is not None:
             runtime_repository.close()
-        _drop_roles(admin_repository, role_name, owner_role)
+        _drop_roles(admin_repository, role_name, owner_role, sequence_name)
+
+@pytest.mark.parametrize("sequence_privilege", ["SELECT", "USAGE", "UPDATE"])
+def test_runtime_role_with_sequence_privilege_fails_closed(
+    postgres_repository, sequence_privilege
+):
+    admin_repository = postgres_repository
+    role_name, owner_role, dsn, sequence_name = _runtime_role(
+        admin_repository, sequence_privilege=sequence_privilege
+    )
+    runtime_repository = None
+    try:
+        runtime_repository = PostgresRepository(dsn)
+        with pytest.raises(
+            RuntimeError, match="sequence privilege on application sequences"
+        ):
+            runtime_repository.verify_runtime_privileges()
+    finally:
+        if runtime_repository is not None:
+            runtime_repository.close()
+        _drop_roles(admin_repository, role_name, owner_role, sequence_name)
 
 
 def test_runtime_role_with_schema_create_privilege_fails_closed(postgres_repository):
     admin_repository = postgres_repository
-    role_name, owner_role, dsn = _runtime_role(
+    role_name, owner_role, dsn, sequence_name = _runtime_role(
         admin_repository, schema_create=True
     )
     runtime_repository = None
@@ -245,12 +285,12 @@ def test_runtime_role_with_schema_create_privilege_fails_closed(postgres_reposit
     finally:
         if runtime_repository is not None:
             runtime_repository.close()
-        _drop_roles(admin_repository, role_name, owner_role)
+        _drop_roles(admin_repository, role_name, owner_role, sequence_name)
 
 
 def test_runtime_role_rejects_inherited_ddl_privilege(postgres_repository):
     admin_repository = postgres_repository
-    role_name, owner_role, dsn = _runtime_role(
+    role_name, owner_role, dsn, sequence_name = _runtime_role(
         admin_repository, inherited_ddl=True
     )
     runtime_repository = None
@@ -261,8 +301,7 @@ def test_runtime_role_rejects_inherited_ddl_privilege(postgres_repository):
     finally:
         if runtime_repository is not None:
             runtime_repository.close()
-        _drop_roles(admin_repository, role_name, owner_role)
-
+        _drop_roles(admin_repository, role_name, owner_role, sequence_name)
 
 
 @pytest.mark.parametrize(
@@ -276,7 +315,7 @@ def test_runtime_role_with_protected_table_write_privilege_fails_closed(
     postgres_repository, privilege_option, expected_detail
 ):
     admin_repository = postgres_repository
-    role_name, owner_role, dsn = _runtime_role(admin_repository, **privilege_option)
+    role_name, owner_role, dsn, sequence_name = _runtime_role(admin_repository, **privilege_option)
     runtime_repository = None
     try:
         runtime_repository = PostgresRepository(dsn)
@@ -285,7 +324,7 @@ def test_runtime_role_with_protected_table_write_privilege_fails_closed(
     finally:
         if runtime_repository is not None:
             runtime_repository.close()
-        _drop_roles(admin_repository, role_name, owner_role)
+        _drop_roles(admin_repository, role_name, owner_role, sequence_name)
 
 def test_runtime_role_cannot_alter_audit_protection(postgres_repository):
     """A non-owner runtime role can use the schema but cannot change audit DDL."""

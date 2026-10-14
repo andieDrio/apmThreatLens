@@ -2,10 +2,10 @@
 
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 60  
-**Highest fully validated gate:** Gate 60  
-**Current gate:** Gate 61 — Fail-Closed Runtime Relation Privilege Verification  
-**Current status:** Gate 60 is complete and validated on `080cc28ee38a207f3a5da83f36497510495a4a1a`. Gate 61 implementation is committed directly to `main`; exact-revision validation is pending.
+**Highest architecture gate reached:** Gate 62  
+**Highest fully validated gate:** Gate 61  
+**Current gate:** Gate 62 — Fail-Closed Runtime Sequence Privilege Verification  
+**Current status:** Gate 61 is complete and validated on `0c6f22281f3242187ec2c1b3165b50557d9665d1`. Gate 62 implementation is committed directly to `main`; exact-revision validation is pending.
 
 ## Executive Summary
 
@@ -147,7 +147,7 @@ Gate 59 verifies ownership/membership for the database, active schema, audit tab
 ### Validation closure
 On 2026-10-14, the user confirmed the required PostgreSQL-focused tests, full PostgreSQL-backed suite, Ruff, diff check, and wheel build were clean and successful on main revision `080cc28ee38a207f3a5da83f36497510495a4a1a`. No failures were reported.
 
-## Gate 61 — Fail-Closed Runtime Relation Privilege Verification — IMPLEMENTED, VALIDATION PENDING
+## Gate 61 — Fail-Closed Runtime Relation Privilege Verification — COMPLETE
 
 ### Root cause
 Gate 60 blocks runtime ownership but does not detect high-impact relation ACLs granted to non-owner roles. TRUNCATE can erase a table without row-by-row DELETE behavior; TRIGGER and REFERENCES allow structural capabilities that the runtime application does not need.
@@ -160,9 +160,24 @@ Gate 60 blocks runtime ownership but does not detect high-impact relation ACLs g
 - Updated README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md directly on `main`.
 - Gate 61 implementation commit: `7c297c8f5084a48674106eb4392c4c2536546b62`.
 
+### Validation closure
+On 2026-10-14, the user confirmed all focused PostgreSQL migration/runtime privilege/API tests, the full PostgreSQL-backed suite, Ruff, diff check, and wheel build completed cleanly on main revision `0c6f22281f3242187ec2c1b3165b50557d9665d1`. No failures were reported.
+
+## Gate 62 — Fail-Closed Runtime Sequence Privilege Verification — IMPLEMENTED, VALIDATION PENDING
+
+### Root cause
+Gate 61 checks destructive/structural privileges on application tables but does not inspect application-schema sequence ACLs. Sequence UPDATE permits `setval`, and USAGE permits `nextval`; neither is needed for UUID-backed runtime identifiers. SELECT is likewise unnecessary under the current storage contract.
+
+### Implementation
+- Extended read-only startup verification to inspect all application-schema sequences.
+- Rejects effective SELECT, USAGE, and UPDATE sequence privileges for `current_user`, `session_user`, or inherited roles.
+- Added PostgreSQL-backed regressions that grant each privilege separately on an administrator-owned sequence to a genuine runtime login.
+- Preserved the least-privilege runtime path, audit/migration protections, and controlled migration identity.
+- Updated README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md directly on `main`.
+
 ### Validation required
-Run focused schema migration/runtime privilege/API tests, the full PostgreSQL-backed `python -m pytest -q -rs` suite without skips, `ruff check .`, `git diff --check`, and package wheel build on the exact current `main` SHA. If any check fails, fix it and remain on Gate 61. Do not close the gate until user-confirmed exact-revision validation.
+Run focused schema migration/runtime privilege/API tests, the full PostgreSQL-backed `python -m pytest -q -rs` suite without skips, `ruff check .`, `git diff --check`, and package wheel build on the exact current `main` SHA. Fix blockers and remain on Gate 62 if any check fails. Do not close the gate before user-confirmed exact-revision validation.
 
 ## Next Required Action
 
-Validate Gate 61 on latest `main`, including all three dangerous privilege regressions and the existing least-privilege login test.
+Validate Gate 62 on latest `main`, including the SELECT/USAGE/UPDATE sequence regressions and the existing least-privilege login test.

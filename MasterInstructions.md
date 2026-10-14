@@ -124,8 +124,12 @@ On 2026-10-14, the user confirmed exact-main revision `78f7856677d029c2f01d00008
 
 On 2026-10-14, the user confirmed the required PostgreSQL-focused tests, full PostgreSQL-backed suite, Ruff, diff check, and wheel build were clean and successful on main revision `080cc28ee38a207f3a5da83f36497510495a4a1a`.
 
-## Current Gate Directive — Gate 61: Fail-Closed Runtime Relation Privilege Verification
+## Gate 61 Validation Closure — COMPLETE
 
-Extend the Gate 59/60 startup verifier to reject TRUNCATE, TRIGGER, and REFERENCES privileges on ordinary and partitioned application tables for either `current_user` or `session_user`, including inherited grants. Preserve expected application DML, audit append-only controls, migration registry integrity, read-only startup, and the dedicated migration identity. Add PostgreSQL-backed regressions for each dangerous table privilege.
+On 2026-10-14, the user confirmed all focused PostgreSQL migration/runtime privilege/API tests, the full PostgreSQL-backed suite, Ruff, diff check, and wheel build completed cleanly on main revision `0c6f22281f3242187ec2c1b3165b50557d9665d1`. No failures were reported.
 
-Inspect latest `main` before every cycle. Run focused PostgreSQL migration/runtime privilege/API tests, full `python -m pytest -q -rs` without skips, Ruff, diff check, and package wheel build. Fix blockers and remain on Gate 61 until the exact revision is user-validated. Maintain README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md. All changes stay directly on `main`; no feature branches, no branch switching, no PR workflow, and no force pushes.
+## Current Gate Directive — Gate 62: Fail-Closed Runtime Sequence Privilege Verification
+
+Extend the read-only runtime verifier to reject effective SELECT, USAGE, or UPDATE privileges on every application-schema sequence for either `current_user` or `session_user`, including inherited role grants. Current identifiers are UUID-backed, so runtime sequence access is unnecessary. Preserve least-privilege application DML, audit append-only controls, migration-registry integrity, schema/ownership checks, and the separate migration identity. Add real PostgreSQL integration regressions for each sequence privilege and retain a passing least-privilege runtime role.
+
+Inspect latest `main` before every cycle. Run focused PostgreSQL migration/runtime privilege/API tests, full `python -m pytest -q -rs` without skips, Ruff, diff check, and package wheel build. Fix blockers and remain on Gate 62 until the exact revision is user-validated. Maintain README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md. All changes stay directly on `main`; no feature branches, no branch switching, no PR workflow, and no force pushes.
