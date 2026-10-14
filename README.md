@@ -350,8 +350,14 @@ Gate 48 adds the admin-only, read-only `GET /api/v1/audit-events` endpoint backe
 **Validation status:** User confirmed 33 focused API/PostgreSQL integration tests passed, the full pytest suite passed, `ruff check .` passed, `git diff --check` passed, and the package wheel built successfully. Five existing Starlette deprecation warnings were reported during the full suite; they did not fail validation.
 
 
-### Architecture Gate 52 — Execution-Lease-Fenced Evidence and Finding Persistence — VALIDATION REVIEW PENDING
+### Architecture Gate 52 — Execution-Lease-Fenced Evidence and Finding Persistence — COMPLETE
 
-Gate 52 hardens the production evidence/finding persistence boundary against late writes and misconfigured compatibility paths. PostgreSQL execution-bound writes lock the authoritative scan row, require the execution to remain RUNNING, and persist under the same transaction. The production repository declares execution fencing mandatory; ProviderHandoff and DurableFindingCorrelator fail closed when a fenced method is unavailable, and generic PostgreSQL evidence writes reject execution-bound evidence.
+PostgreSQL execution-bound evidence and finding writes lock the authoritative scan row, require the execution to remain RUNNING, and persist under the same transaction. The production repository declares execution fencing mandatory; ProviderHandoff and DurableFindingCorrelator fail closed when a fenced method is unavailable, and generic PostgreSQL evidence writes reject execution-bound evidence.
 
-**Validation status:** User confirmed `ruff check .`, `git diff --check`, `python -m pytest -q`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel` all completed successfully. The full test run contained many skips. The output does not identify whether the PostgreSQL-backed execution-fence tests were among the skipped tests, so run `python -m pytest -q -rs` and verify those tests actually execute before declaring the gate complete. Five Starlette deprecation warnings were reported; the wheel built successfully.
+**Validation status:** On 2026-10-14, the user confirmed the full suite reached 100% with no skip summary, the PostgreSQL-backed regression tests executed, Ruff passed, diff checks were clean, and the package wheel built successfully. Five Starlette deprecation warnings were non-failing.
+
+### Architecture Gate 53 — Durable Finding Remediation Idempotency — COMPLETE
+
+The authenticated finding-remediation API requires a bounded `Idempotency-Key`. PostgreSQL persists the actor/key-scoped request fingerprint and original result atomically with the remediation transition and audit event. Exact retries replay without duplicate audit events; conflicting key reuse returns HTTP 409.
+
+**Validation status:** On 2026-10-14, 9 focused API tests and 5 focused PostgreSQL tests passed; the full suite, Ruff, diff checks, and package wheel build also passed.
