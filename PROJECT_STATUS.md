@@ -79,47 +79,18 @@ Gate 54 implementation is committed to `main`. Local PostgreSQL-backed tests, th
 4. After Gate 52's required PostgreSQL-backed tests are confirmed executed, re-fetch latest `main`, inspect the architecture and implementation, and select the next highest-priority unfinished gap.
 
 
-## Gate 52 Main-Branch Change References
+## Gate 52 and Gate 53 Validation Closure
 
-The following implementation and report commits were pushed directly to `main` during this cycle:
+### Gate 52 — Execution-Lease-Fenced Evidence and Finding Persistence — COMPLETE
 
-- `c9aa400` — fail closed on unfenced provider handoff
-- `06e6e6e` — guard unfenced execution evidence writes
-- `96176aa` — require fenced durable finding correlation
-- `0c66c72`, `59f6397`, `bead258`, `c699bd6` — regression tests and test cleanup
-- `e4281df` — README Gate 52 status
-- `322714a` — Architecture.md Gate 52 security hardening
-- `8f86db0` — require per-cycle project status reporting
-- `f8e57d3` — add this living project status report
+On 2026-10-14, the user confirmed the PostgreSQL-backed full test suite completed at 100% with no skip summary, along with clean Ruff and diff checks and a successful package wheel build. The run included the PostgreSQL integration tests, resolving the prior skip-review blocker.
 
-The user confirmed successful local validation on 2026-10-13 after the latest implementation and regression-test commits.
+### Gate 53 — Durable Finding Remediation Idempotency — COMPLETE
+
+On 2026-10-14, the user confirmed 9 focused API tests and 5 focused PostgreSQL remediation tests passed. The full test suite reached 100%, Ruff and diff checks were clean, and the package wheel built successfully.
+
+The five Starlette deprecation warnings about `HTTP_422_UNPROCESSABLE_ENTITY` were non-failing warnings.
 
 ## Next Required Action
 
-The validation commands passed, but Gate 52 remains pending until `python -m pytest -q -rs` confirms that the required PostgreSQL-backed execution-fence regressions were not skipped. Once confirmed, re-fetch latest `main`, inspect the implementation, and select the next highest-priority unfinished architecture gap; do not assume Gate 53's objective from numbering alone.
-
-
-## Gate 53 — Durable Finding Remediation Idempotency — VALIDATION PENDING
-
-### Objective and root cause
-
-The authenticated finding remediation command previously applied a state transition and audit event on every request. A network retry could repeat audit events or encounter a different state than the original response. There was no durable request identity for this command.
-
-### Implementation on main
-
-- Require a bounded safe-ASCII `Idempotency-Key` on the remediation API.
-- Fingerprint the canonical finding ID, target state, and rationale; scope keys to the authenticated actor.
-- Serialize cross-instance retries with a transaction-scoped PostgreSQL advisory lock.
-- Commit the idempotency mapping, remediation transition, and audit event atomically.
-- Replay the original changed/state/allowed result without duplicating audit events.
-- Reject reuse of the same actor/key with a different request using HTTP 409.
-- Persist denied transition results so exact retries do not duplicate denial audit events.
-- Add API replay/conflict/missing-key tests and PostgreSQL replay/conflict tests.
-
-### Validation
-
-Not yet executed on this commit. Run focused API/PostgreSQL tests, `python -m pytest -q -rs`, `ruff check .`, `git diff --check`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel`. Gate 52's PostgreSQL skip review also remains unresolved.
-
-### Next required action
-
-Validate Gate 53 on the exact main revision. If any test, lint, build, or runtime check fails, fix it and return to Gate 53 before selecting another gate.
+Validate Gate 54 — Versioned PostgreSQL Schema Migrations — against the exact current `main` revision using focused PostgreSQL tests, `python -m pytest -q -rs`, `ruff check .`, `git diff --check`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel`. Do not mark Gate 54 complete until the test output confirms the PostgreSQL migration regressions actually executed.
