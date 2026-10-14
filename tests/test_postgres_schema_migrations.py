@@ -30,6 +30,7 @@ def test_postgres_baseline_is_recorded_and_repeat_initialize_preserves_data(
         assert cursor.fetchall() == [
             (1, "legacy_schema_baseline"),
             (2, "audit_events_append_only"),
+            (3, "audit_events_no_truncate"),
         ]
 
         campaign_id = uuid4()
@@ -46,7 +47,7 @@ def test_postgres_baseline_is_recorded_and_repeat_initialize_preserves_data(
         cursor.execute("SELECT name FROM campaigns WHERE id=%s", (campaign_id,))
         assert cursor.fetchone() == ("gate54-preservation",)
         cursor.execute("SELECT COUNT(*) FROM threatlens_schema_migrations")
-        assert cursor.fetchone()[0] == 2
+        assert cursor.fetchone()[0] == 3
 
 
 def test_postgres_migration_failure_is_not_recorded_and_can_be_retried(
@@ -141,6 +142,11 @@ def test_postgres_audit_events_reject_update_and_delete(postgres_repository):
             cursor.execute("DELETE FROM audit_events WHERE id=%s", (event_id,))
     repository.connection.rollback()
 
+    with pytest.raises(psycopg.errors.ObjectNotInPrerequisiteState, match="append-only"):
+        with repository.connection.cursor() as cursor:
+            cursor.execute("TRUNCATE TABLE audit_events")
+    repository.connection.rollback()
+
     with repository.connection.cursor() as cursor:
         cursor.execute("SELECT detail FROM audit_events WHERE id=%s", (event_id,))
         assert cursor.fetchone() == ("original",)
@@ -171,4 +177,5 @@ def test_postgres_concurrent_initialize_serializes_migrations(postgres_repositor
         assert cursor.fetchall() == [
             (1, "legacy_schema_baseline"),
             (2, "audit_events_append_only"),
+            (3, "audit_events_no_truncate"),
         ]
