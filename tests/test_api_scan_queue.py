@@ -69,6 +69,21 @@ class FakeRepository:
         }
         return session_id
 
+    def create_session_with_audit(self, user_id, token_hash, expires_at, event: AuditEvent):
+        session_id = uuid4()
+        self.sessions[token_hash] = {
+            "id": str(session_id),
+            "user_id": str(user_id),
+            "expires_at": expires_at,
+            "revoked": False,
+        }
+        try:
+            self.audit_events.append(event)
+        except Exception:
+            self.sessions.pop(token_hash, None)
+            raise
+        return session_id
+
     def session_by_token_hash(self, token_hash):
         return self.sessions.get(token_hash)
 
