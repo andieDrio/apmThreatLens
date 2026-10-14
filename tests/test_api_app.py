@@ -30,6 +30,14 @@ class FakeRepository:
     def save_user(self, user: User):
         self.users[user.username] = user
 
+    def save_user_with_audit(self, user: User, event: AuditEvent):
+        self.save_user(user)
+        try:
+            self.save_audit_event(event)
+        except Exception:
+            self.users.pop(user.username, None)
+            raise
+
     def user_by_username(self, username):
         return self.users.get(username)
 
