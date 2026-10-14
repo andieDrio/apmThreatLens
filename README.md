@@ -367,3 +367,8 @@ PostgreSQL execution-bound evidence and finding writes lock the authoritative sc
 The authenticated finding-remediation API requires a bounded `Idempotency-Key`. PostgreSQL persists the actor/key-scoped request fingerprint and original result atomically with the remediation transition and audit event. Exact retries replay without duplicate audit events; conflicting key reuse returns HTTP 409.
 
 **Validation status:** On 2026-10-14, 9 focused API tests and 5 focused PostgreSQL tests passed; the full suite, Ruff, diff checks, and package wheel build also passed.
+
+
+### Architecture Gate 57 — Fail-Closed Audit Protection Drift Detection
+
+PostgreSQL startup verifies the required row-level UPDATE/DELETE trigger and statement-level TRUNCATE trigger using catalog event bits, enabled state, and expected trigger-function identity. It fails closed when a trigger is missing, disabled, or structurally altered. The verifier also compares the normalized function body with the expected unconditional fail-closed implementation; marker-string presence alone is not accepted as proof of behavior. Startup does not repair drift automatically. Gate 57 validation of the final function-body hardening is pending.
