@@ -26,6 +26,7 @@ def _runtime_role(
     inherited_ddl=False,
     audit_update=False,
     registry_update=False,
+    owned_schema_object=False,
 ):
     connection = repository.connection
     role_name = f"tl_runtime_test_{uuid4().hex[:12]}"
@@ -114,6 +115,28 @@ def _runtime_role(
                         sql.Identifier(owner_role), sql.Identifier(role_name)
                     )
                 )
+            if owned_schema_object:
+                owned_table = f"{role_name}_owned"
+                cursor.execute(
+                    sql.SQL("CREATE TABLE public.{} (id INTEGER)").format(
+                        sql.Identifier(owned_table)
+                    )
+                )
+                cursor.execute(
+                    sql.SQL("GRANT CREATE ON SCHEMA public TO {}").format(
+                        sql.Identifier(role_name)
+                    )
+                )
+                cursor.execute(
+                    sql.SQL("ALTER TABLE public.{} OWNER TO {}").format(
+                        sql.Identifier(owned_table), sql.Identifier(role_name)
+                    )
+                )
+                cursor.execute(
+                    sql.SQL("REVOKE CREATE ON SCHEMA public FROM {}").format(
+                        sql.Identifier(role_name)
+                    )
+                )
     dsn = make_conninfo(_dsn(), user=role_name, password=password)
     return role_name, owner_role, dsn
 
@@ -156,6 +179,24 @@ def test_runtime_role_with_least_privilege_passes_readiness_and_privilege_checks
         runtime_repository.verify_schema_ready()
         runtime_repository.verify_runtime_privileges()
         assert runtime_repository.connection.info.transaction_status.name == "IDLE"
+    finally:
+        if runtime_repository is not None:
+            runtime_repository.close()
+        _drop_roles(admin_repository, role_name, owner_role)
+
+
+def test_runtime_role_cannot_own_application_schema_objects(postgres_repository):
+    admin_repository = postgres_repository
+    role_name, owner_role, dsn = _runtime_role(
+        admin_repository, owned_schema_object=True
+    )
+    runtime_repository = None
+    try:
+        runtime_repository = PostgresRepository(dsn)
+        with pytest.raises(
+            RuntimeError, match="ownership of application schema objects"
+        ):
+            runtime_repository.verify_runtime_privileges()
     finally:
         if runtime_repository is not None:
             runtime_repository.close()

@@ -3,9 +3,9 @@
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
 **Highest architecture gate reached:** Gate 59  
-**Highest fully validated gate:** Gate 58  
-**Current gate:** Gate 59 — Fail-Closed Runtime Database Privilege Verification  
-**Current status:** Gate 58 is complete and validated on `c39a7cd9d757e2a63cc27365e6e2b8e8a5e529b3`. Gate 59 implementation is committed directly to `main`; exact-revision validation is pending.
+**Highest fully validated gate:** Gate 59  
+**Current gate:** Gate 60 — Fail-Closed Runtime Ownership Boundary for Application Schema Objects  
+**Current status:** Gate 59 is complete and validated on `78f7856677d029c2f01d0000831b080e16c8f45c`. Gate 60 implementation is committed directly to `main`; exact-revision validation is pending.
 
 ## Executive Summary
 
@@ -114,7 +114,7 @@ On 2026-10-14, the user confirmed validation on exact main commit `c39a7cd9d757e
 ### Security review
 API startup no longer applies schema migrations. The test suite demonstrates a non-owner runtime role cannot disable/drop audit triggers or replace their function, and cannot mutate protected audit/migration-registry rows. Production deployment must still provision roles with correct ownership and effective grants.
 
-## Gate 59 — Fail-Closed Runtime Database Privilege Verification — IMPLEMENTED, VALIDATION PENDING
+## Gate 59 — Fail-Closed Runtime Database Privilege Verification — COMPLETE
 
 ### Root cause
 Gate 58 separates migration and runtime DSNs, but the API could still be configured with a superuser, database/schema owner, or role inheriting unsafe DDL privileges. Schema readiness and audit-trigger verification alone do not establish that the effective API identity is least-privileged.
@@ -127,9 +127,24 @@ Gate 58 separates migration and runtime DSNs, but the API could still be configu
 - Implementation commits on `main`: verifier `b0376c5` (hardened in `e387355`, `415c3db`, `2f63434`, and `fb965a7`), repository method `2233ceb`, API enforcement `df9c541`, PostgreSQL integration tests `7881afa`, `0bf8a82`, and helper formatting `6fea147`, API startup tests `4c35909` and `0743d97`, documentation updates `7d375b7`, `42fc76d`, `c8e2861`, `64655b2`, `5383aca`, `8c30e17`, `295640d`, and this status update. All commits are direct-to-main.
 - All changes are committed directly to `main`; no feature branches or pull requests.
 
+### Validation closure
+On 2026-10-14, the user confirmed exact-main revision `78f7856677d029c2f01d0000831b080e16c8f45c` passed 43 focused PostgreSQL migration/runtime-privilege/API tests, the full PostgreSQL-backed suite reached 100% without a reported failure or skip summary, `ruff check .`, `git diff --check`, and package wheel build. Wheel SHA-256: `f5315fe6366d53d9607e11aa1f4624978266c3e29a75376377bd17d03d63bb71`. Five Starlette deprecation warnings were non-failing. The user confirmed generated `build/` and `src/apm_threatlens.egg-info/` artifacts were removed and the working tree was clean.
+
+## Gate 60 — Fail-Closed Runtime Ownership Boundary for Application Schema Objects — IMPLEMENTED, VALIDATION PENDING
+
+### Root cause
+Gate 59 verifies ownership/membership for the database, active schema, audit table, migration registry, and audit trigger function. It does not enumerate all application-schema relations, routines, or types. A runtime login that owns another application object may still possess destructive DDL authority over that object.
+
+### Implementation
+- Extended the existing runtime startup verifier to detect relations, routines, and types in the active application schema owned by `current_user`, `session_user`, or any role inherited by either identity.
+- Fails closed with a safe diagnostic when any application-schema object is runtime-owned.
+- Added PostgreSQL integration coverage using a genuine temporary login that owns an application-schema table.
+- Preserved read-only API startup and the separate migration identity.
+- Updated README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md directly on `main`.
+
 ### Validation required
-Run the focused schema migration/runtime privilege/API tests, full PostgreSQL-backed `python -m pytest -q -rs` suite without skips, `ruff check .`, `git diff --check`, and package wheel build on the exact current `main` SHA. The integration tests require a PostgreSQL test account allowed to create/drop temporary roles and connect as a test login. Fix any blocker and remain on Gate 59. Do not mark complete until exact-revision results are confirmed.
+On the exact current `main` SHA, run focused schema migration/runtime privilege/API tests, the full PostgreSQL-backed `python -m pytest -q -rs` suite without skips, `ruff check .`, `git diff --check`, and package wheel build. The integration test requires a PostgreSQL test account allowed to create/drop temporary roles and connect as a test login. If any check fails, fix it and remain on Gate 60; do not close the gate before user-confirmed validation.
 
 ## Next Required Action
 
-Validate Gate 59 on the exact latest `main` revision. The runtime privilege verifier must be tested against an actual least-privilege PostgreSQL login and unsafe direct/inherited grants before this gate can close.
+Validate Gate 60 on the exact latest `main` revision. Confirm the new owned-application-table regression rejects runtime ownership while the least-privilege role still passes.

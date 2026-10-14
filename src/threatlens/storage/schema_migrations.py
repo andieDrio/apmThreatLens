@@ -230,7 +230,37 @@ def verify_runtime_privileges(repository: object) -> None:
                           current_user::regrole::oid = audit_fn.proowner
                             OR session_user::regrole::oid = audit_fn.proowner
                             OR pg_has_role(current_user, audit_fn.proowner, 'MEMBER')
-                            OR pg_has_role(session_user, audit_fn.proowner, 'MEMBER')
+                            OR pg_has_role(session_user, audit_fn.proowner, 'MEMBER'),
+                          EXISTS (
+                            SELECT 1 FROM pg_class owned_relation
+                            WHERE owned_relation.relnamespace = n.oid
+                              AND (
+                                current_user::regrole::oid = owned_relation.relowner
+                                OR session_user::regrole::oid = owned_relation.relowner
+                                OR pg_has_role(current_user, owned_relation.relowner, 'MEMBER')
+                                OR pg_has_role(session_user, owned_relation.relowner, 'MEMBER')
+                              )
+                          ),
+                          EXISTS (
+                            SELECT 1 FROM pg_proc owned_routine
+                            WHERE owned_routine.pronamespace = n.oid
+                              AND (
+                                current_user::regrole::oid = owned_routine.proowner
+                                OR session_user::regrole::oid = owned_routine.proowner
+                                OR pg_has_role(current_user, owned_routine.proowner, 'MEMBER')
+                                OR pg_has_role(session_user, owned_routine.proowner, 'MEMBER')
+                              )
+                          ),
+                          EXISTS (
+                            SELECT 1 FROM pg_type owned_type
+                            WHERE owned_type.typnamespace = n.oid
+                              AND (
+                                current_user::regrole::oid = owned_type.typowner
+                                OR session_user::regrole::oid = owned_type.typowner
+                                OR pg_has_role(current_user, owned_type.typowner, 'MEMBER')
+                                OR pg_has_role(session_user, owned_type.typowner, 'MEMBER')
+                              )
+                          )
                    FROM pg_database d
                    JOIN pg_namespace n ON n.nspname = current_schema()
                    JOIN pg_class audit
@@ -277,6 +307,9 @@ def verify_runtime_privileges(repository: object) -> None:
             audit_owner_member,
             registry_owner_member,
             function_owner_member,
+            owns_schema_relation,
+            owns_schema_routine,
+            owns_schema_type,
         ) = row
         violations = []
         if current_superuser or session_superuser:
@@ -301,6 +334,8 @@ def verify_runtime_privileges(repository: object) -> None:
             )
         ):
             violations.append("ownership or membership in an owning role")
+        if any((owns_schema_relation, owns_schema_routine, owns_schema_type)):
+            violations.append("ownership of application schema objects")
         if violations:
             raise RuntimeError(
                 "unsafe PostgreSQL runtime identity: " + ", ".join(violations)
