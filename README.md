@@ -476,6 +476,10 @@ Session authentication maps malformed persisted expiry timestamps and UUID ident
 
 Successful login persists the authentication session and corresponding success audit event in one repository transaction. If audit insertion fails, the transaction rolls back session creation. SQLite and PostgreSQL regression tests inject audit failures and verify rollback. On 2026-10-14, the user confirmed focused API tests, the full PostgreSQL-backed suite, Ruff, diff check, package wheel build, and final main synchronization were clean. Five Starlette deprecation warnings were non-failing; the optional `python -m build` command was unavailable, so the established pip wheel build was used.
 
-### Architecture Gate 71 — Atomic Logout Session Revocation and Success-Audit Persistence: IN PROGRESS
+### Architecture Gate 71 — Atomic Logout Session Revocation and Success-Audit Persistence: COMPLETE
 
-Logout now routes through a dedicated repository operation that revokes the session and writes the LOGOUT success audit event in one transaction for PostgreSQL and SQLite compatibility paths. Failure-injection regressions cover audit-write failure and assert that revocation rolls back. Focused and full PostgreSQL-backed validation, Ruff, diff check, and package wheel build remain pending.
+Logout routes through a dedicated repository operation that revokes the session and writes the LOGOUT success audit event in one transaction for PostgreSQL and SQLite compatibility paths. Failure-injection regressions verify audit-write failure rolls back revocation and successful logout records the audit event. On 2026-10-14, the user confirmed Gate 71 clean and successful. This is user-confirmed validation.
+
+### Architecture Gate 72 — Atomic User Provisioning and Success-Audit Persistence: IN PROGRESS
+
+AuthenticationService.create_user() now delegates to save_user_with_audit(), which persists the new user and USER_CREATED success event in one transaction in PostgreSQL and SQLite compatibility storage. Failure-injection regressions assert that an audit-write failure rolls back user creation. Focused/full validation, Ruff, diff check, and package wheel build remain pending.
