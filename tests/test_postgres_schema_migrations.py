@@ -50,6 +50,17 @@ def test_postgres_baseline_is_recorded_and_repeat_initialize_preserves_data(
         assert cursor.fetchone()[0] == 3
 
 
+def test_postgres_initialize_leaves_connection_idle_after_audit_verification(
+    postgres_repository,
+):
+    repository = postgres_repository
+    repository.connection.commit()
+
+    repository.initialize()
+
+    assert repository.connection.info.transaction_status.name == "IDLE"
+
+
 def test_postgres_migration_failure_is_not_recorded_and_can_be_retried(
     postgres_repository,
 ):
@@ -190,6 +201,7 @@ def test_postgres_initialize_fails_closed_when_audit_trigger_is_disabled(postgre
     try:
         with pytest.raises(RuntimeError, match="audit protection trigger is disabled"):
             repository.initialize()
+        assert repository.connection.info.transaction_status.name == "IDLE"
     finally:
         with repository.connection.cursor() as cursor:
             cursor.execute("ALTER TABLE audit_events ENABLE TRIGGER audit_events_no_truncate")
@@ -207,6 +219,7 @@ def test_postgres_initialize_fails_closed_when_audit_trigger_is_missing(postgres
     try:
         with pytest.raises(RuntimeError, match="audit protection trigger is missing"):
             repository.initialize()
+        assert repository.connection.info.transaction_status.name == "IDLE"
     finally:
         with repository.connection.cursor() as cursor:
             cursor.execute(
