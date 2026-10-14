@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 57  
+**Highest architecture gate reached:** Gate 58  
 **Highest fully validated gate:** Gate 57  
 **Current gate:** Gate 58 — PostgreSQL Runtime/Migration Privilege Separation  
 **Current status:** Gate 57 is complete and validated on `db3b98165bb10351cb3fc2b10de964c44a5dcd90`. Gate 58 implementation is committed directly to `main`; validation on the exact current revision is pending.
