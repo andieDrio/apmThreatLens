@@ -785,6 +785,10 @@ The user confirmed Gate 65 clean and successful on 2026-10-14. This is user-conf
 
 The PostgreSQL runtime privilege verifier rejects effective table-level INSERT, UPDATE, or DELETE privilege on the authentication `users` relation for either `current_user` or `session_user`, including inherited role and PUBLIC grants. User identity provisioning is outside the runtime API and belongs to a trusted deployment/admin workflow. The user confirmed Gate 66 clean and successful on 2026-10-14; this is user-confirmed validation.
 
-## Architecture Gate 67 — Fail-Closed Runtime Column-Level User-Identity Mutation Privilege Verification — IN PROGRESS
+## Architecture Gate 67 — Fail-Closed Runtime Column-Level User-Identity Mutation Privilege Verification — COMPLETE
 
-PostgreSQL supports column-level INSERT and UPDATE grants. Gate 67 extends the read-only startup check with `has_any_column_privilege` checks for `users`, preventing narrow grants from allowing runtime changes to sensitive identity columns such as `role`, `password_hash`, or `active`. Checks cover `current_user` and `session_user`, including inherited/PUBLIC grants. Preserve table-level mutation checks, required user lookup, session/rate-limit writes, audit protections, and the separate migration identity. Add PostgreSQL integration regressions for column-level INSERT and UPDATE and validate the full required suite before closure.
+The runtime privilege verifier rejects effective column-level INSERT or UPDATE grants on the authentication `users` relation for either `current_user` or `session_user`, including inherited and PUBLIC grants. The user confirmed Gate 67 clean and successful on 2026-10-14; this is user-confirmed validation.
+
+## Architecture Gate 68 — Fail-Closed Handling of Invalid Persisted User Roles — IN PROGRESS
+
+The authentication service maps persisted role strings to the fixed `Role` enum during login and session authentication. An unsupported stored value could raise an unhandled `ValueError` instead of following the API's normal authentication-failure path. Gate 68 translates malformed/unsupported stored roles into the existing fail-closed `PermissionError` paths, audits denied login attempts without disclosing role data, ensures login creates no session, and adds regression tests for both login and already-issued sessions. Preserve valid role behavior, session revocation/expiry, password verification, and authorization mappings. Validate focused auth/API tests, full PostgreSQL-backed suite without skips, Ruff, diff checks, and wheel build before closure.

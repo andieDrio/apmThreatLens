@@ -460,6 +460,10 @@ The workspace now contains the existing authenticated SOC read models, but its a
 
 The runtime privilege verifier rejects effective table-level INSERT, UPDATE, and DELETE on the authentication `users` table. Identity provisioning belongs to a trusted deployment/admin workflow. The user confirmed Gate 66 clean and successful on 2026-10-14; this is user-confirmed validation.
 
-### Architecture Gate 67 — Fail-Closed Runtime Column-Level User-Identity Mutation Privilege Verification: IN PROGRESS
+### Architecture Gate 67 — Fail-Closed Runtime Column-Level User-Identity Mutation Privilege Verification: COMPLETE
 
-PostgreSQL supports column-level INSERT and UPDATE grants that may not be detected by table-level privilege checks. Gate 67 extends startup verification to reject effective column-level INSERT or UPDATE rights on `users` for `current_user` or `session_user`, including inherited/PUBLIC grants, and adds real PostgreSQL regressions for selected identity columns. Preserve required read-only authentication and separate migration credentials. Validation is pending.
+The runtime startup verifier rejects effective column-level INSERT or UPDATE grants on the authentication `users` table for `current_user` or `session_user`, including inherited/PUBLIC grants. The user confirmed Gate 67 clean and successful on 2026-10-14; this is user-confirmed validation.
+
+### Architecture Gate 68 — Fail-Closed Handling of Invalid Persisted User Roles: IN PROGRESS
+
+The authentication service maps stored role strings to the fixed `Role` enum during login and session authentication. Unsupported or malformed persisted role values could otherwise escape as an unhandled `ValueError`. Gate 68 converts these cases into the existing fail-closed authentication/session errors, records a denied login audit event for the login path, and adds regression tests proving no session is issued for an invalid stored role. Validation is pending.

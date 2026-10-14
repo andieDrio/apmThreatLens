@@ -2,10 +2,10 @@
 
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 67  
-**Highest fully validated gate:** Gate 66 (user-confirmed)  
-**Current gate:** Gate 67 — Fail-Closed Runtime Column-Level User-Identity Mutation Privilege Verification  
-**Current status:** The user confirmed Gate 66 clean and successful on 2026-10-14. Gate 67 extends the PostgreSQL runtime verifier to detect column-level INSERT/UPDATE grants on the authentication `users` table, which table-level privilege checks alone may miss.
+**Highest architecture gate reached:** Gate 68  
+**Highest fully validated gate:** Gate 67 (user-confirmed)  
+**Current gate:** Gate 68 — Fail-Closed Handling of Invalid Persisted User Roles  
+**Current status:** The user confirmed Gate 67 clean and successful on 2026-10-14. Gate 68 hardens login and session authentication against unsupported persisted role values so malformed data cannot escape as an unhandled exception.
 
 ## Executive Summary
 
@@ -240,18 +240,33 @@ The runtime privilege verifier rejects effective table-level INSERT, UPDATE, or 
 
 **Validation closure:** On 2026-10-14, the user confirmed Gate 66 clean and successful. This is user-confirmed validation; the assistant did not independently execute the local test, PostgreSQL, lint, or wheel-build commands in this environment.
 
-## Gate 67 — Fail-Closed Runtime Column-Level User-Identity Mutation Privilege Verification — IN PROGRESS
+## Gate 67 — Fail-Closed Runtime Column-Level User-Identity Mutation Privilege Verification — COMPLETE
+
+### Root cause and implementation
+PostgreSQL supports column-level INSERT and UPDATE grants that are not reliably covered by table-level privilege checks alone.
+
+- Added effective `has_any_column_privilege` checks for both `current_user` and `session_user`.
+- Added PostgreSQL integration regressions for column-level INSERT and UPDATE grants to sensitive user columns.
+- Updated README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md.
+
+**Validation closure:** On 2026-10-14, the user confirmed Gate 67 clean and successful. This is user-confirmed validation; the assistant did not independently execute the local test, PostgreSQL, lint, or wheel-build commands in this environment.
+
+## Gate 68 — Fail-Closed Handling of Invalid Persisted User Roles — IN PROGRESS
 
 ### Root cause
-PostgreSQL supports column-level INSERT and UPDATE grants. Table-level `has_table_privilege(...)` checks do not establish that no individual column has a write grant, so a runtime login may otherwise obtain a narrow privilege to change `users.role`, `users.password_hash`, `users.active`, or insert selected identity columns without a table-wide grant.
+The authentication service converts stored role values into the fixed `Role` enum in login and session-authentication paths. A malformed or unsupported persisted role raises `ValueError`, which is not handled by the API's normal authentication-failure path.
 
 ### Acceptance criteria
-- Extend the read-only startup verifier to reject effective column-level INSERT or UPDATE privileges on `users` for both `current_user` and `session_user`, including inherited/PUBLIC grants.
-- Retain the existing table-level INSERT/UPDATE/DELETE checks and least-privilege runtime behavior.
-- Add genuine PostgreSQL integration regressions for column-level INSERT and UPDATE grants, including sensitive `role` and `password_hash` columns.
-- Update README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md.
-- Validate focused PostgreSQL privilege/migration/API tests, the full PostgreSQL-backed suite without skips, Ruff, diff checks, and package wheel build before closing the gate.
+- Convert unsupported or malformed persisted roles into the existing fail-closed authentication/session errors.
+- Log a denied login audit event using a fixed generic detail; do not expose stored role values.
+- Ensure login creates no session for an invalid stored role.
+- Ensure existing sessions fail closed if the associated user's stored role becomes invalid.
+- Add regressions for login and session authentication while preserving valid roles, password verification, active-user checks, expiry/revocation, and permission mappings.
+- Validate focused auth/API tests, full PostgreSQL-backed suite without skips, Ruff, diff checks, and wheel build.
 
+## Next Required Action
+
+Implement and validate Gate 68 on the exact `main` revision. Fix any failure before advancing. Continue using GitHub `main` only; no feature branches, pull requests, or force pushes.
 ## Next Required Action
 
 Implement and validate Gate 67 on the exact `main` revision. Fix any failure before advancing. Continue using GitHub `main` only; no feature branches, pull requests, or force pushes.

@@ -133,7 +133,20 @@ class AuthenticationService:
                 )
             )
             raise PermissionError("authentication failed")
-        role = Role(user.role)
+        try:
+            role = Role(user.role)
+        except (TypeError, ValueError) as exc:
+            self.repository.save_audit_event(
+                AuditEvent(
+                    actor_user_id=user.id,
+                    action="LOGIN",
+                    resource_type="AUTH",
+                    resource_id=user.id,
+                    outcome="DENIED",
+                    detail="invalid stored role",
+                )
+            )
+            raise PermissionError("authentication failed") from exc
         raw_token = secrets.token_urlsafe(32)
         session_id = self.repository.create_session(
             user.id,
@@ -164,7 +177,11 @@ class AuthenticationService:
         user = self.repository.user_by_id(UUID(session["user_id"]))
         if user is None or not user.active:
             raise PermissionError("user is inactive")
-        return AuthenticatedPrincipal(user.id, user.username, Role(user.role), UUID(session["id"]))
+        try:
+            role = Role(user.role)
+        except (TypeError, ValueError) as exc:
+            raise PermissionError("session is invalid or expired") from exc
+        return AuthenticatedPrincipal(user.id, user.username, role, UUID(session["id"]))
 
     def logout(self, principal: AuthenticatedPrincipal) -> None:
         self.repository.revoke_session(principal.session_id)

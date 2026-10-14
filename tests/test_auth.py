@@ -63,3 +63,43 @@ def test_password_verifier_rejects_malformed_salt_or_digest():
     assert not AuthenticationService._verify_password(
         "password", "pbkdf2_sha256$600000$" + "00" * 16 + "$00"
     )
+
+
+def test_login_with_unsupported_persisted_role_fails_closed_and_audits(tmp_path):
+    repo = SQLiteRepository(tmp_path / "threatlens.db")
+    repo.initialize()
+    auth = AuthenticationService(repo)
+    user = auth.create_user("analyst", "correct horse battery staple", Role.ANALYST)
+    with repo.connection:
+        repo.connection.execute("UPDATE users SET role = ? WHERE id = ?", ("ROOT", str(user.id)))
+
+    with pytest.raises(PermissionError, match="authentication failed"):
+        auth.authenticate("analyst", "correct horse battery staple")
+
+    events = repo.connection.execute(
+        "SELECT action, outcome, detail FROM audit_events "
+        "WHERE actor_user_id = ? ORDER BY created_at DESC",
+        (str(user.id),),
+    ).fetchall()
+    assert any(
+        event["action"] == "LOGIN"
+        and event["outcome"] == "DENIED"
+        and event["detail"] == "invalid stored role"
+        for event in events
+    )
+    assert repo.connection.execute("SELECT COUNT(*) FROM auth_sessions").fetchone()[0] == 0
+    repo.close()
+
+
+def test_existing_session_with_unsupported_persisted_role_fails_closed(tmp_path):
+    repo = SQLiteRepository(tmp_path / "threatlens.db")
+    repo.initialize()
+    auth = AuthenticationService(repo)
+    user = auth.create_user("analyst", "correct horse battery staple", Role.ANALYST)
+    _, token = auth.authenticate("analyst", "correct horse battery staple")
+    with repo.connection:
+        repo.connection.execute("UPDATE users SET role = ? WHERE id = ?", ("ROOT", str(user.id)))
+
+    with pytest.raises(PermissionError, match="session is invalid or expired"):
+        auth.authenticate_session(token)
+    repo.close()
