@@ -158,6 +158,7 @@ Gate 60 blocks runtime ownership but does not detect high-impact relation ACLs g
 - Added PostgreSQL-backed parameterized regressions granting each privilege separately on the ordinary `assets` table.
 - Preserved normal application DML, Gate 58 migration separation, and Gate 59/60 protections.
 - Updated README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md directly on `main`.
+- Gate 61 implementation commit: `7c297c8f5084a48674106eb4392c4c2536546b62`.
 
 ### Validation required
 Run focused schema migration/runtime privilege/API tests, the full PostgreSQL-backed `python -m pytest -q -rs` suite without skips, `ruff check .`, `git diff --check`, and package wheel build on the exact current `main` SHA. If any check fails, fix it and remain on Gate 61. Do not close the gate until user-confirmed exact-revision validation.
