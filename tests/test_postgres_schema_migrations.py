@@ -165,4 +165,7 @@ def test_postgres_concurrent_initialize_serializes_migrations(postgres_repositor
         cursor.execute(
             "SELECT version, name FROM threatlens_schema_migrations ORDER BY version"
         )
-        assert cursor.fetchall() == [(1, "legacy_schema_baseline")]
+        assert cursor.fetchall() == [
+            (1, "legacy_schema_baseline"),
+            (2, "audit_events_append_only"),
+        ]
