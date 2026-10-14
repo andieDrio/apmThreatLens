@@ -2,9 +2,9 @@
 
 **Last updated:** 2026-10-14  
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 54  
-**Current gate:** Gate 54 — Versioned PostgreSQL Schema Migrations  
-**Current status:** Implementation committed to main; local PostgreSQL validation pending
+**Highest architecture gate reached:** Gate 55  
+**Current gate:** Gate 55 — Database-Enforced Append-Only Security Audit Trail  
+**Current status:** Gate 54 validated by user on 2026-10-14; Gate 55 implementation committed to main, local validation pending
 
 ## Executive Summary
 
@@ -12,44 +12,30 @@ APM ThreatLens is an authorized VAPT orchestration platform with PostgreSQL pers
 
 Gates 49–51 remain complete based on prior user-confirmed validation. Gate 52's PostgreSQL execution-fence regression tests and Gate 53's API/PostgreSQL remediation-idempotency tests were confirmed executed successfully on 2026-10-14: the full suite reached 100% without a skip summary, focused remediation tests passed (9 API tests and 5 PostgreSQL tests), Ruff passed, diff checks were clean, and the package wheel built successfully. Five Starlette deprecation warnings remain non-blocking.
 
-## Current Gate — Gate 54: Versioned PostgreSQL Schema Migrations
+## Completed Gate 54 — Versioned PostgreSQL Schema Migrations
+
+The versioned migration registry is active. Startup uses a stable PostgreSQL session advisory lock, validates ordered version/name/checksum history, adopts pre-versioned installations through the retry-safe legacy baseline, and records transactional migrations atomically. Startup fails closed on unknown future versions, history gaps, and identity/checksum drift.
+
+**Validation closure:** On 2026-10-14, the user confirmed 3 focused migration tests, 14 focused remediation API/PostgreSQL tests, the full PostgreSQL-backed suite at 100% with no skip summary, Ruff, diff checks, and wheel build all passed on `f0f4d543947f864ff05d6e7173839b105562cd2c`. Five Starlette deprecation warnings were non-failing.
+
+## Current Gate 55 — Database-Enforced Append-Only Security Audit Trail
 
 ### Objective and root cause
 
-Replace implicit, scattered PostgreSQL schema initialization with a durable, ordered migration registry. Previously, the initial schema, additive column changes, authentication, finding correlation, evidence validation, and remediation-idempotency tables were initialized through separate code paths without a central record of applied schema versions.
+Audit events are written through application persistence methods, but PostgreSQL currently allows ordinary UPDATE and DELETE statements to modify prior audit records. That weakens the integrity of security-relevant history if an application bug or compromised ordinary database role attempts to rewrite it.
 
 ### Implementation on main
 
-- Added `src/threatlens/storage/schema_migrations.py` with ordered migration definitions and the `threatlens_schema_migrations` registry.
-- Serialized migration execution across application instances using a stable PostgreSQL session advisory lock.
-- Added migration name/checksum verification, history-gap detection, and fail-closed handling for unknown future versions.
-- Adopted the existing initializer as retry-safe baseline migration version 1.
-- Required new migrations to be append-only and transactional wherever supported.
-- Routed `PostgresRepository.initialize()` through the migration runner and retained the existing DDL in `_initialize_legacy_schema()`.
-- Added PostgreSQL tests for baseline adoption, repeat initialization/data preservation, migration failure/retry, and concurrent initialization.
+- Added migration version 2, `audit_events_append_only`, through the Gate 54 migration framework.
+- Added a PostgreSQL trigger function that rejects UPDATE and DELETE on `audit_events` with SQLSTATE `55000`.
+- Kept ordinary audit inserts and existing audit history intact.
+- Added a focused PostgreSQL regression test that verifies mutation attempts fail and the original record remains unchanged.
 
-### Relevant files
-
-- `src/threatlens/storage/schema_migrations.py`
-- `src/threatlens/storage/postgres.py`
-- `tests/test_postgres_schema_migrations.py`
-- `README.md`
-- `Architecture.md`
-- `MasterInstructions.md`
-- `PROJECT_STATUS.md`
+This guard does not claim protection against superusers or database owners able to disable triggers.
 
 ### Validation
 
-Gate 54 implementation is committed to `main`. Local PostgreSQL-backed tests, the full suite, Ruff, diff checks, and wheel build for this revision remain unconfirmed. Run the validation commands against the dedicated disposable PostgreSQL test database before marking the gate complete.
-
-### Security and recovery review
-
-- The migration registry identifier is validated before SQL interpolation; migration values are parameterized.
-- Session-level advisory locking survives commits in the legacy baseline, preventing concurrent app instances from racing through schema setup.
-- The baseline is explicitly non-transactional because existing initialization helpers commit internally; the DDL is idempotent and safe to retry if version registration fails.
-- New migrations run transactionally with their version record, so a failed migration is not marked applied.
-- Unknown future versions, version gaps, and applied migration identity/checksum drift fail closed.
-- No existing application data is rewritten by this baseline adoption.
+Gate 55 changes are committed to `main`. Local focused PostgreSQL tests, full suite, Ruff, diff checks, and package build are pending confirmation.
 
 ## Recent Completed Gates
 
@@ -58,7 +44,7 @@ Gate 54 implementation is committed to `main`. Local PostgreSQL-backed tests, th
 | 49 | Durable cross-instance scan-queue idempotency; replay returns original execution, conflicting key reuse rejected | Complete — user-confirmed validation |
 | 50 | Durable idempotency for cancellation and stale-recovery commands; atomic command result and audit | Complete — user-confirmed validation |
 | 51 | Fail-closed heartbeat lease handling, cooperative cancellation on lease loss, and heartbeat-worker shutdown | Complete — user-confirmed validation |
-| 52 | Execution-lease-fenced evidence/finding persistence and fail-closed compatibility behavior | Validation commands pass; review skipped PostgreSQL-backed tests before completion |
+| 52 | Execution-lease-fenced evidence/finding persistence and fail-closed compatibility behavior | Complete — PostgreSQL-backed tests executed and user-confirmed on 2026-10-14 |
 
 ## Broader Capability Improvements Recorded in Repository
 
@@ -93,4 +79,4 @@ The five Starlette deprecation warnings about `HTTP_422_UNPROCESSABLE_ENTITY` we
 
 ## Next Required Action
 
-Validate Gate 54 — Versioned PostgreSQL Schema Migrations — against the exact current `main` revision using focused PostgreSQL tests, `python -m pytest -q -rs`, `ruff check .`, `git diff --check`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel`. Do not mark Gate 54 complete until the test output confirms the PostgreSQL migration regressions actually executed.
+Validate Gate 55 against the exact current `main` revision using `python -m pytest -q tests/test_postgres_schema_migrations.py`, `python -m pytest -q -rs`, `ruff check .`, `git diff --check`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel`. Confirm the focused test exercises PostgreSQL and does not skip. If any check fails, fix it and remain on Gate 55.
