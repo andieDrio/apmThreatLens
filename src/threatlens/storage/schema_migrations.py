@@ -186,7 +186,7 @@ def verify_runtime_privileges(repository: object) -> None:
         with connection.cursor() as cursor:
             cursor.execute(
                 """SELECT current_user, session_user,
-                          current_role.rolsuper, session_role.rolsuper,
+                          effective_role.rolsuper, login_role.rolsuper,
                           d.datdba, n.nspowner, audit.relowner, registry.relowner,
                           audit_fn.proowner,
                           has_database_privilege(current_user, d.datname, 'CREATE')
@@ -230,8 +230,8 @@ def verify_runtime_privileges(repository: object) -> None:
                      ON audit_fn.pronamespace = n.oid
                     AND audit_fn.proname = 'threatlens_reject_audit_mutation'
                     AND audit_fn.pronargs = 0
-                   JOIN pg_roles current_role ON current_role.rolname = current_user
-                   JOIN pg_roles session_role ON session_role.rolname = session_user
+                   JOIN pg_roles effective_role ON effective_role.rolname = current_user
+                   JOIN pg_roles login_role ON login_role.rolname = session_user
                    WHERE d.datname = current_database()"""
             )
             row = cursor.fetchone()
