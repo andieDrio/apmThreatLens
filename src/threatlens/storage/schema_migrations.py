@@ -151,6 +151,33 @@ def _verify_audit_protection(repository: object) -> None:
             raise RuntimeError(f"required audit protection function drifted: {name}")
 
 
+def verify_schema_ready(repository: object) -> None:
+    """Verify deployed schema and audit protections without requiring DDL privileges."""
+    connection = repository.connection
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"SELECT version, name, checksum FROM {REGISTRY_TABLE} ORDER BY version"
+            )
+            rows = cursor.fetchall()
+        expected = [
+            (migration.version, migration.name, migration.checksum)
+            for migration in MIGRATIONS
+        ]
+        if rows != expected:
+            raise RuntimeError(
+                "database schema is not ready for this application; run the controlled "
+                "schema migration command with the migration database identity"
+            )
+        _verify_audit_protection(repository)
+    except BaseException:
+        connection.rollback()
+        raise
+    else:
+        connection.commit()
+        repository.schema_migrations_managed = True
+
+
 def _validate_migrations(migrations: tuple[Migration, ...]) -> None:
     versions = [migration.version for migration in migrations]
     if versions != list(range(1, len(migrations) + 1)):
