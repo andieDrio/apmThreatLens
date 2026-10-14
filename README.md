@@ -120,6 +120,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO threatlen
 REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
   ON audit_events FROM threatlens_runtime;
 GRANT SELECT, INSERT ON audit_events TO threatlens_runtime;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+  ON threatlens_schema_migrations FROM threatlens_runtime;
+GRANT SELECT ON threatlens_schema_migrations TO threatlens_runtime;
 REVOKE CREATE ON SCHEMA public FROM threatlens_runtime;
 ```
 
