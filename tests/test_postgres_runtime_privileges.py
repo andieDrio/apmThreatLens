@@ -29,12 +29,17 @@ def _runtime_role(
     owned_schema_object=False,
     relation_privilege=None,
     sequence_privilege=None,
+    security_definer_routine=False,
 ):
     connection = repository.connection
     role_name = f"tl_runtime_test_{uuid4().hex[:12]}"
     password = uuid4().hex + uuid4().hex
     owner_role = f"tl_ddl_test_{uuid4().hex[:12]}" if inherited_ddl else None
-    sequence_name = f"tl_runtime_seq_{uuid4().hex[:12]}" if sequence_privilege else None
+    sequence_name = (
+        f"tl_runtime_obj_{uuid4().hex[:12]}"
+        if sequence_privilege or security_definer_routine
+        else None
+    )
     with connection.transaction():
         with connection.cursor() as cursor:
             cursor.execute(
@@ -58,6 +63,18 @@ def _runtime_role(
                         sql.SQL(sequence_privilege),
                         sql.Identifier(sequence_name),
                         sql.Identifier(role_name),
+                    )
+                )
+            elif security_definer_routine:
+                cursor.execute(
+                    sql.SQL(
+                        "CREATE FUNCTION public.{}() RETURNS integer "
+                        "LANGUAGE sql SECURITY DEFINER AS {}"
+                    ).format(sql.Identifier(sequence_name), sql.Literal("SELECT 1"))
+                )
+                cursor.execute(
+                    sql.SQL("GRANT EXECUTE ON FUNCTION public.{}() TO {}").format(
+                        sql.Identifier(sequence_name), sql.Identifier(role_name)
                     )
                 )
             cursor.execute(
@@ -173,6 +190,11 @@ def _drop_roles(repository, role_name, owner_role=None, sequence_name=None):
                         sql.Identifier(sequence_name)
                     )
                 )
+                cursor.execute(
+                    sql.SQL("DROP FUNCTION IF EXISTS public.{}()").format(
+                        sql.Identifier(sequence_name)
+                    )
+                )
             if owner_role:
                 cursor.execute(
                     sql.SQL("DROP OWNED BY {}").format(sql.Identifier(owner_role))
@@ -251,6 +273,26 @@ def test_runtime_role_with_dangerous_application_table_privilege_fails_closed(
         if runtime_repository is not None:
             runtime_repository.close()
         _drop_roles(admin_repository, role_name, owner_role, sequence_name)
+
+
+def test_runtime_role_can_execute_security_definer_routine_fails_closed(
+    postgres_repository,
+):
+    admin_repository = postgres_repository
+    role_name, owner_role, dsn, routine_name = _runtime_role(
+        admin_repository, security_definer_routine=True
+    )
+    runtime_repository = None
+    try:
+        runtime_repository = PostgresRepository(dsn)
+        with pytest.raises(
+            RuntimeError, match="EXECUTE privilege on SECURITY DEFINER routines"
+        ):
+            runtime_repository.verify_runtime_privileges()
+    finally:
+        if runtime_repository is not None:
+            runtime_repository.close()
+        _drop_roles(admin_repository, role_name, owner_role, routine_name)
 
 
 @pytest.mark.parametrize("sequence_privilege", ["SELECT", "USAGE", "UPDATE"])
