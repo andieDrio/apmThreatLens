@@ -178,6 +178,124 @@ def verify_schema_ready(repository: object) -> None:
         repository.schema_migrations_managed = True
 
 
+
+def verify_runtime_privileges(repository: object) -> None:
+    """Reject a runtime identity with effective schema/audit/migration DDL authority."""
+    connection = repository.connection
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT current_user, session_user,
+                          current_role.rolsuper, session_role.rolsuper,
+                          d.datdba, n.nspowner, audit.relowner, registry.relowner,
+                          audit_fn.proowner,
+                          has_database_privilege(current_user, d.datname, 'CREATE')
+                            OR has_database_privilege(session_user, d.datname, 'CREATE'),
+                          has_schema_privilege(current_user, n.oid, 'CREATE')
+                            OR has_schema_privilege(session_user, n.oid, 'CREATE'),
+                          has_table_privilege(current_user, audit.oid, 'UPDATE')
+                            OR has_table_privilege(session_user, audit.oid, 'UPDATE'),
+                          has_table_privilege(current_user, audit.oid, 'DELETE')
+                            OR has_table_privilege(session_user, audit.oid, 'DELETE'),
+                          has_table_privilege(current_user, audit.oid, 'TRUNCATE')
+                            OR has_table_privilege(session_user, audit.oid, 'TRUNCATE'),
+                          has_table_privilege(current_user, audit.oid, 'TRIGGER')
+                            OR has_table_privilege(session_user, audit.oid, 'TRIGGER'),
+                          has_table_privilege(current_user, registry.oid, 'INSERT')
+                            OR has_table_privilege(session_user, registry.oid, 'INSERT'),
+                          has_table_privilege(current_user, registry.oid, 'UPDATE')
+                            OR has_table_privilege(session_user, registry.oid, 'UPDATE'),
+                          has_table_privilege(current_user, registry.oid, 'DELETE')
+                            OR has_table_privilege(session_user, registry.oid, 'DELETE'),
+                          has_table_privilege(current_user, registry.oid, 'TRUNCATE')
+                            OR has_table_privilege(session_user, registry.oid, 'TRUNCATE'),
+                          pg_has_role(current_user, d.datdba, 'MEMBER')
+                            OR pg_has_role(session_user, d.datdba, 'MEMBER'),
+                          pg_has_role(current_user, n.nspowner, 'MEMBER')
+                            OR pg_has_role(session_user, n.nspowner, 'MEMBER'),
+                          pg_has_role(current_user, audit.relowner, 'MEMBER')
+                            OR pg_has_role(session_user, audit.relowner, 'MEMBER'),
+                          pg_has_role(current_user, registry.relowner, 'MEMBER')
+                            OR pg_has_role(session_user, registry.relowner, 'MEMBER'),
+                          pg_has_role(current_user, audit_fn.proowner, 'MEMBER')
+                            OR pg_has_role(session_user, audit_fn.proowner, 'MEMBER')
+                   FROM pg_database d
+                   JOIN pg_namespace n ON n.nspname = current_schema()
+                   JOIN pg_class audit
+                     ON audit.relnamespace = n.oid AND audit.relname = 'audit_events'
+                   JOIN pg_class registry
+                     ON registry.relnamespace = n.oid
+                    AND registry.relname = 'threatlens_schema_migrations'
+                   JOIN pg_proc audit_fn
+                     ON audit_fn.pronamespace = n.oid
+                    AND audit_fn.proname = 'threatlens_reject_audit_mutation'
+                    AND audit_fn.pronargs = 0
+                   JOIN pg_roles current_role ON current_role.rolname = current_user
+                   JOIN pg_roles session_role ON session_role.rolname = session_user
+                   WHERE d.datname = current_database()"""
+            )
+            row = cursor.fetchone()
+        if row is None:
+            raise RuntimeError(
+                "runtime database privilege verification could not resolve required schema objects"
+            )
+        (
+            _current_user,
+            _session_user,
+            current_superuser,
+            session_superuser,
+            _database_owner,
+            _schema_owner,
+            _audit_owner,
+            _registry_owner,
+            _function_owner,
+            database_create,
+            schema_create,
+            audit_update,
+            audit_delete,
+            audit_truncate,
+            audit_trigger,
+            registry_insert,
+            registry_update,
+            registry_delete,
+            registry_truncate,
+            database_owner_member,
+            schema_owner_member,
+            audit_owner_member,
+            registry_owner_member,
+            function_owner_member,
+        ) = row
+        violations = []
+        if current_superuser or session_superuser:
+            violations.append("superuser identity")
+        if database_create:
+            violations.append("database CREATE privilege")
+        if schema_create:
+            violations.append("schema CREATE privilege")
+        if any((audit_update, audit_delete, audit_truncate, audit_trigger)):
+            violations.append("audit-table mutation or trigger privilege")
+        if any((registry_insert, registry_update, registry_delete, registry_truncate)):
+            violations.append("migration-registry mutation privilege")
+        if any(
+            (
+                database_owner_member,
+                schema_owner_member,
+                audit_owner_member,
+                registry_owner_member,
+                function_owner_member,
+            )
+        ):
+            violations.append("ownership or membership in an owning role")
+        if violations:
+            raise RuntimeError(
+                "unsafe PostgreSQL runtime identity: " + ", ".join(violations)
+            )
+    except BaseException:
+        connection.rollback()
+        raise
+    else:
+        connection.commit()
+
 def _validate_migrations(migrations: tuple[Migration, ...]) -> None:
     versions = [migration.version for migration in migrations]
     if versions != list(range(1, len(migrations) + 1)):
