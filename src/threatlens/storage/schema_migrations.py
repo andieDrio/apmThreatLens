@@ -56,6 +56,7 @@ def _audit_events_append_only(repository: object) -> None:
                EXECUTE FUNCTION threatlens_reject_audit_mutation()"""
         )
 
+
 MIGRATIONS = (
     Migration(
         version=1,
