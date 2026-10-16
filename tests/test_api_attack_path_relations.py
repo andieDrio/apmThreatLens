@@ -7,7 +7,7 @@ import pytest
 from threatlens.api.app import create_app
 from threatlens.auth.service import AuthenticationService, Role
 from threatlens.attack_paths.engine import AttackPathRelation, AttackPathRelationType
-from threatlens.domain.models import AuditEvent, Finding, Severity
+from threatlens.domain.models import AuditEvent, Finding, Severity, User
 
 
 class FakeRepository:
