@@ -189,9 +189,9 @@ On 2026-10-14, the user confirmed Gate 71 clean and successful after the atomic 
 
 On 2026-10-19, the user confirmed 20 focused authentication/storage tests passed, including PostgreSQL-backed atomic user creation and success-audit rollback. The full PostgreSQL-backed suite passed with 309 passed, 0 skipped, and 5 non-failing Starlette deprecation warnings. Ruff and `git diff --check` passed, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel` successfully built the package (SHA-256 `eb66201f4e2622b35d262e399e12df464b58b014011be7ab54ac167575e98f49`). This is user-confirmed validation; the assistant did not independently execute the local commands.
 
-## Next-Cycle Directive — Architecture Gap Review
+## Previous-Cycle Directive — Architecture Gap Review Before Gate 73
 
-Gate 72 is complete. Before implementing another gate, fetch the latest GitHub `main`, read README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md, deeply inspect the relevant implementation and tests, and identify the highest-priority unfinished architecture gap using the documented priority order. State the root cause, bounded scope, acceptance criteria, and required validation before changing code. Keep the professional SOC UI goal in view, but prioritize backend/security/data-integrity blockers first. Run the full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build for the exact revision. Fix blockers before advancing. Commit directly to `main`; no feature branches, branch switching, pull requests, or force pushes.
+This review was completed after Gate 72 and resulted in Gate 73, which is now IN PROGRESS below. Preserve the same review-first process for subsequent gates: inspect the latest `main`, read all governing documents, identify the highest-priority unfinished gap, and state scope and acceptance criteria before editing. Keep the professional SOC UI goal in view while prioritizing backend/security/data-integrity blockers. All changes remain directly on `main`; no branches, branch switching, pull requests, or force pushes.
 
 ## Gate 73 — Atomic Login Rate-Limit Threshold Audit Persistence — IN PROGRESS
 
