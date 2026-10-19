@@ -113,6 +113,109 @@ def test_postgres_login_threshold_audit_is_atomic(postgres_repository):
             assert cursor.fetchone()[0] == 1
 
 
+
+def test_postgres_failed_login_counter_and_denial_audit_are_atomic(postgres_repository):
+    key = "identity:" + "d" * 64
+    now = datetime.now(UTC)
+    connection = postgres_repository.connection
+
+    with connection.transaction():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "DROP TRIGGER IF EXISTS test_fail_login_denial_audit ON audit_events"
+            )
+            cursor.execute("DROP FUNCTION IF EXISTS test_fail_login_denial_audit()")
+            cursor.execute(
+                """
+                CREATE FUNCTION test_fail_login_denial_audit()
+                RETURNS trigger LANGUAGE plpgsql AS $threatlens_failed_login_audit$
+                BEGIN
+                    IF NEW.action = 'LOGIN' AND NEW.outcome = 'DENIED' THEN
+                        RAISE EXCEPTION 'injected failed-login denial audit failure';
+                    END IF;
+                    RETURN NEW;
+                END;
+                $threatlens_failed_login_audit$
+                """
+            )
+            cursor.execute(
+                "CREATE TRIGGER test_fail_login_denial_audit "
+                "BEFORE INSERT ON audit_events FOR EACH ROW "
+                "EXECUTE FUNCTION test_fail_login_denial_audit()"
+            )
+
+    try:
+        with pytest.raises(Exception, match="injected failed-login denial audit failure"):
+            with postgres_repository.login_attempt_transaction():
+                postgres_repository.record_login_attempts(
+                    (key,), now=now, window_seconds=60
+                )
+                from threatlens.domain.models import AuditEvent
+
+                postgres_repository.save_audit_event(
+                    AuditEvent(
+                        actor_user_id=None,
+                        action="LOGIN",
+                        resource_type="AUTH",
+                        outcome="DENIED",
+                        detail="invalid credentials",
+                        created_at=now,
+                    )
+                )
+
+        with connection.transaction():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT COUNT(*) FROM auth_login_rate_limits WHERE bucket_key = %s",
+                    (key,),
+                )
+                assert cursor.fetchone()[0] == 0
+                cursor.execute(
+                    "SELECT COUNT(*) FROM audit_events "
+                    "WHERE action = %s AND outcome = %s",
+                    ("LOGIN", "DENIED"),
+                )
+                assert cursor.fetchone()[0] == 0
+    finally:
+        with connection.transaction():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DROP TRIGGER IF EXISTS test_fail_login_denial_audit ON audit_events"
+                )
+                cursor.execute("DROP FUNCTION IF EXISTS test_fail_login_denial_audit()")
+
+    with postgres_repository.login_attempt_transaction():
+        result = postgres_repository.record_login_attempts(
+            (key,), now=now, window_seconds=60
+        )
+        from threatlens.domain.models import AuditEvent
+
+        postgres_repository.save_audit_event(
+            AuditEvent(
+                actor_user_id=None,
+                action="LOGIN",
+                resource_type="AUTH",
+                outcome="DENIED",
+                detail="invalid credentials",
+                created_at=now,
+            )
+        )
+    assert result[key][0] == 1
+    with connection.transaction():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT attempts FROM auth_login_rate_limits WHERE bucket_key = %s",
+                (key,),
+            )
+            assert cursor.fetchone()[0] == 1
+            cursor.execute(
+                "SELECT COUNT(*) FROM audit_events "
+                "WHERE action = %s AND outcome = %s",
+                ("LOGIN", "DENIED"),
+            )
+            assert cursor.fetchone()[0] == 1
+
+
 def test_postgres_logout_session_and_success_audit_are_atomic(postgres_repository):
     auth = AuthenticationService(postgres_repository)
     auth.create_user("logout-atomic", "correct horse battery staple", Role.ANALYST)
