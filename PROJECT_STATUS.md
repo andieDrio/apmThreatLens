@@ -1,11 +1,11 @@
 # APM ThreatLens — Project Status
 
-**Last updated:** 2026-10-14  
+**Last updated:** 2026-10-19  
 **Source of truth:** GitHub `main`  
 **Highest architecture gate reached:** Gate 72
-**Highest fully validated gate:** Gate 71 (user-confirmed)
+**Highest fully validated gate:** Gate 72 (user-confirmed)
 **Current gate:** Gate 72 — Atomic User Provisioning and Success-Audit Persistence
-**Current status:** Gate 71 was confirmed clean and successful by the user on 2026-10-14. Gate 72 closes the separate user-row and USER_CREATED audit transaction boundary. Implementation and regression tests are committed directly to `main`; post-change focused/full PostgreSQL-backed validation, Ruff, diff check, and wheel build remain pending user confirmation.
+**Current status:** Gate 72 implementation and validation are complete on `main`. The user confirmed 20 focused authentication/storage tests passed, including PostgreSQL-backed atomic user creation and audit rollback; the full PostgreSQL-backed suite passed (309 passed, 0 skipped, 5 non-failing Starlette deprecation warnings); Ruff and `git diff --check` passed; and the package wheel built successfully. Wheel SHA-256: `eb66201f4e2622b35d262e399e12df464b58b014011be7ab54ac167575e98f49`. Next cycle: inspect the latest `main` and select the highest-priority unfinished architecture gap, preserving the main-only workflow.
 
 ## Executive Summary
 
@@ -322,5 +322,8 @@ The uploaded full-suite log showed repeated `AttributeError: 'FakeRepository' ob
 ### Lint blocker correction
 Ruff subsequently found `F821 Undefined name User` in `tests/test_api_attack_path_relations.py`: the Gate 72 fake repository annotated `save_user_with_audit()` with `User` but the module did not import it. Added `User` to the existing `threatlens.domain.models` import directly on `main` in commit `cb61cf8cbb63f0fb3456da202957243215e2b9d0`. Re-run Ruff and the full validation against the latest `main`; do not close Gate 72 until confirmed.
 
-### Validation status
-**PENDING USER VALIDATION.** The root cause is addressed in the test doubles, but tests have not yet been rerun against the latest main revision. Pull latest `main`, run focused auth/scan-control/scan-queue tests, then the full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build. Fix any further blocker and remain on Gate 72 until the exact main revision is validated.
+### Validation closure — COMPLETE
+
+On 2026-10-19, the user confirmed the dedicated PostgreSQL test database was `threatlens_gate72_test`. Focused authentication/storage validation passed: **20 passed**, including `test_postgres_user_creation_and_success_audit_are_atomic`, `test_user_creation_and_success_audit_are_atomic_on_audit_failure`, and the PostgreSQL logout atomicity regression. The full PostgreSQL-backed suite then passed with **309 passed, 0 skipped, 5 non-failing Starlette deprecation warnings**. `ruff check .` reported all checks passed; `git diff --check` was clean; and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel` successfully built `apm_threatlens-0.1.0-py3-none-any.whl` (SHA-256 `eb66201f4e2622b35d262e399e12df464b58b014011be7ab54ac167575e98f49`). Validation is user-confirmed from terminal output, not independently executed by the assistant.
+
+Gate 72 is complete. Before the next implementation gate, fetch and inspect the latest `main`, review the governing architecture documents and relevant code, identify the highest-priority unfinished architecture gap, and state the acceptance criteria before making a surgical change. Continue committing directly to `main`; no branches, pull requests, branch switching, or force pushes.
