@@ -484,8 +484,14 @@ def create_app(
             client_key: (30, "scope=client"),
             identity_key: (5, "scope=client_username"),
         }
-        transaction_factory = getattr(context.repository, "login_attempt_transaction", None)
-        transaction = transaction_factory() if callable(transaction_factory) else contextlib.nullcontext()
+        transaction_factory = getattr(
+            context.repository, "login_attempt_transaction", None
+        )
+        transaction = (
+            transaction_factory()
+            if callable(transaction_factory)
+            else contextlib.nullcontext()
+        )
         exceeded = []
         login_denied = False
         token = None
