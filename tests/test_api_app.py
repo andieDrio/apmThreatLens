@@ -336,7 +336,7 @@ async def test_login_rate_limit_blocks_before_password_verification(client):
     assert blocked.headers["retry-after"].isdigit()
     assert blocked.json()["detail"] == "too many login attempts; retry later"
     threshold_events = [
-        event for event in client.app.state.context.repository.audit_events
+        event for event in client._transport.app.state.context.repository.audit_events
         if event.action == "LOGIN_RATE_LIMITED"
     ]
     assert len(threshold_events) == 1
