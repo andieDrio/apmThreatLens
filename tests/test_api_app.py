@@ -16,15 +16,39 @@ class FakeRepository:
         self.audit_events = []
         self.login_attempts = {}
 
-    def record_login_attempts(self, bucket_keys, now, window_seconds=60):
+    def record_login_attempts(
+        self, bucket_keys, now, window_seconds=60, audit_limits=None
+    ):
         result = {}
+        updated_attempts = dict(self.login_attempts)
+        pending_audits = []
         for key in sorted(set(bucket_keys)):
-            started, count = self.login_attempts.get(key, (now, 0))
+            started, count = updated_attempts.get(key, (now, 0))
             if (now - started).total_seconds() >= window_seconds:
                 started, count = now, 0
             count += 1
-            self.login_attempts[key] = (started, count)
+            updated_attempts[key] = (started, count)
             result[key] = (count, started)
+            threshold = (audit_limits or {}).get(key)
+            if threshold is not None and count == threshold[0] + 1:
+                pending_audits.append(
+                    AuditEvent(
+                        actor_user_id=None,
+                        action="LOGIN_RATE_LIMITED",
+                        resource_type="AUTH",
+                        outcome="DENIED",
+                        detail=threshold[1],
+                        created_at=now,
+                    )
+                )
+        previous_audit_count = len(self.audit_events)
+        try:
+            for event in pending_audits:
+                self.save_audit_event(event)
+        except Exception:
+            del self.audit_events[previous_audit_count:]
+            raise
+        self.login_attempts = updated_attempts
         return result
 
     def save_user(self, user: User):
@@ -311,6 +335,12 @@ async def test_login_rate_limit_blocks_before_password_verification(client):
     assert blocked.status_code == 429
     assert blocked.headers["retry-after"].isdigit()
     assert blocked.json()["detail"] == "too many login attempts; retry later"
+    threshold_events = [
+        event for event in client.app.state.context.repository.audit_events
+        if event.action == "LOGIN_RATE_LIMITED"
+    ]
+    assert len(threshold_events) == 1
+    assert threshold_events[0].detail == "scope=client_username"
 
 
 @pytest.mark.anyio
