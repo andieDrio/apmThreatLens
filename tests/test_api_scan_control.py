@@ -19,7 +19,9 @@ class FakeRepository:
         self.login_attempts = {}
         self.states = {EXECUTION_ID: LifecycleState.QUEUED}
 
-    def record_login_attempts(self, bucket_keys, now, window_seconds=60):
+    def record_login_attempts(
+        self, bucket_keys, now, window_seconds=60, audit_limits=None
+    ):
         result = {}
         for key in sorted(set(bucket_keys)):
             started, count = self.login_attempts.get(key, (now, 0))
