@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, UTC
 import uuid
 from uuid import UUID
@@ -10,6 +11,27 @@ from threatlens.domain.models import AuditEvent, User
 
 
 class SQLiteAuthMixin:
+    @contextmanager
+    def login_attempt_transaction(self):
+        """Keep rate-limit counters and authentication audit writes atomic."""
+        lock = getattr(self, "_transaction_lock", None)
+        if lock is not None:
+            lock.acquire()
+        savepoint = "threatlens_login_attempt"
+        try:
+            self.connection.execute(f"SAVEPOINT {savepoint}")
+            try:
+                yield
+            except BaseException:
+                self.connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                self.connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+                raise
+            else:
+                self.connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+        finally:
+            if lock is not None:
+                lock.release()
+
     def initialize_auth(self) -> None:
         with self.connection:
             self.connection.execute("""CREATE TABLE IF NOT EXISTS users (
@@ -250,6 +272,13 @@ class SQLiteAuthMixin:
 
 
 class PostgresAuthMixin:
+    @contextmanager
+    def login_attempt_transaction(self):
+        """Atomically commit the attempt counter with its authentication audit."""
+        with self._transaction_lock:
+            with self.connection.transaction():
+                yield
+
     def initialize_auth(self) -> None:
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
