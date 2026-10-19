@@ -303,7 +303,7 @@ On 2026-10-14, the user confirmed focused API tests, the full PostgreSQL-backed 
 On 2026-10-14, the user confirmed Gate 71 clean and successful. This is user-confirmed validation; the assistant did not independently execute local test, PostgreSQL, lint, diff-check, or wheel-build commands.
 
 
-## Gate 72 — Atomic User Provisioning and Success-Audit Persistence — IN PROGRESS
+## Gate 72 — Atomic User Provisioning and Success-Audit Persistence — COMPLETE
 
 ### Root cause
 `AuthenticationService.create_user()` previously committed the user row through `save_user()` and then separately inserted the USER_CREATED success audit event. An audit-write failure could leave a provisioned account without its corresponding success audit event.
@@ -320,7 +320,7 @@ On 2026-10-14, the user confirmed Gate 71 clean and successful. This is user-con
 The uploaded full-suite log showed repeated `AttributeError: 'FakeRepository' object has no attribute 'save_user_with_audit'` failures. Gate 72 changed `AuthenticationService.create_user()` to require the atomic repository operation, but several API-test fakes still implemented only `save_user()`. Updated the fakes in scan-control, scan-queue, evidence read model, evidence validation, finding remediation, risk assessment, risk-assessment read model, attack-path relations, and campaign-control tests. Each fake now rolls back its in-memory user/audit state if audit persistence raises. Commits are on `main`; latest corrective commits include `9284cb387813fada3ef05b0c0edfa520b236c584`, `417479b19ba389b46e41b45103c0008bc42c0f6e`, `09b0d617582eb2f2ac702777ec4cf6e045bce3bd`, `ddbef9e128af973a9033dd32d3525380e2ccb258`, `6c0fcae6df1a5fe43f8ddb86598fee74de60afec`, `e63cd4f13b1cce3eec36693a93fdd0a60b2c2984`, and `4812361b4b1138b5ed6028d4b1ef3d701b5a0bac`.
 
 ### Lint blocker correction
-Ruff subsequently found `F821 Undefined name User` in `tests/test_api_attack_path_relations.py`: the Gate 72 fake repository annotated `save_user_with_audit()` with `User` but the module did not import it. Added `User` to the existing `threatlens.domain.models` import directly on `main` in commit `cb61cf8cbb63f0fb3456da202957243215e2b9d0`. Re-run Ruff and the full validation against the latest `main`; do not close Gate 72 until confirmed.
+Ruff subsequently found `F821 Undefined name User` in `tests/test_api_attack_path_relations.py`: the Gate 72 fake repository annotated `save_user_with_audit()` with `User` but the module did not import it. Added `User` to the existing `threatlens.domain.models` import directly on `main` in commit `cb61cf8cbb63f0fb3456da202957243215e2b9d0`. This lint blocker was corrected in commit `cb61cf8cbb63f0fb3456da202957243215e2b9d0`; the final Ruff and full-suite validation subsequently passed as recorded in the validation closure below.
 
 ### Validation closure — COMPLETE
 
