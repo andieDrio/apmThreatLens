@@ -339,7 +339,7 @@ The API previously incremented durable login-attempt buckets in one repository t
 - Extend the PostgreSQL login-attempt operation with optional threshold metadata and insert only threshold-crossing audit events in the same transaction as bucket updates.
 - Pass client and client/username thresholds from the login API; remove the separate post-transaction audit write.
 - Preserve privacy-preserving hashed bucket keys, the existing 30-attempt client and 5-attempt identity limits, the 60-second window, Retry-After behavior, and threshold-crossing-only audit volume.
-- Add API regression coverage for the threshold event and PostgreSQL failure-injection coverage proving a failed audit insert rolls back the corresponding counter increment.
+- Add API regression coverage for one threshold event across repeated blocked retries and PostgreSQL failure-injection coverage proving a failed audit insert rolls back the corresponding counter increment.
 
 ### Acceptance criteria
 
@@ -352,7 +352,7 @@ The API previously incremented durable login-attempt buckets in one repository t
 
 - `src/threatlens/storage/auth.py` — atomic counter/audit transaction: `930b10ee10f70f86ab81b6509f09b340e9bf2536`
 - `src/threatlens/api/app.py` — pass thresholds to repository; remove separate audit write: `2a0e9a17c4a4ce1452855bbd53a6c1559ee8d8ab`
-- `tests/test_api_app.py` — threshold audit assertion and fake repository transaction behavior: `9188bbd85a8402c1a01fcc68cf7abfe15901f3af`, `b42bf08165d0077602aee749ff03e74e3b8bd47b`
+- `tests/test_api_app.py` — threshold audit assertion and fake repository transaction behavior: `9188bbd85a8402c1a01fcc68cf7abfe15901f3af`, `b42bf08165d0077602aee749ff03e74e3b8bd47b`, `1c5186146e23938a472fe0b4f44390e4710e28be`
 - `tests/test_auth_storage.py` — PostgreSQL failure-injection regression and trigger quoting correction: `10750ad70ee193c0c951c3d4ddd7eca33f9cd396`, `c2eb06be9d418c3cb3c36c49a482a5a2d2b8348e`, `36276c7a0605cc74e64cb5a7800e533b3a64e077`
 - Governing documentation updated directly on `main`: `3f8b1463a4155a8edb4f7e41e4dffd451b9f7b6e`, `d4f8db5f7dcc002ecc2f2f924e431a59efbea3a7`, `524be433bf4fcd22d0c05dc34a0f3ba3c452f918`, `402434f069ee938b6586dd52e32a378f235e3845`
 
