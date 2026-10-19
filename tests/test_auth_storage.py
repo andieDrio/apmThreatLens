@@ -52,14 +52,14 @@ def test_postgres_login_threshold_audit_is_atomic(postgres_repository):
             cursor.execute(
                 """
                 CREATE FUNCTION test_fail_login_rate_limit_audit()
-                RETURNS trigger LANGUAGE plpgsql AS $
+                RETURNS trigger LANGUAGE plpgsql AS $threatlens_login_audit$
                 BEGIN
                     IF NEW.action = 'LOGIN_RATE_LIMITED' THEN
                         RAISE EXCEPTION 'injected login rate-limit audit failure';
                     END IF;
                     RETURN NEW;
                 END;
-                $
+                $threatlens_login_audit$
                 """
             )
             cursor.execute(
