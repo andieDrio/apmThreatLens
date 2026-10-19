@@ -39,8 +39,11 @@ class FakeRepository:
         self.scan_states = {}
         self.lifecycle_records = {}
 
-    def record_login_attempts(self, bucket_keys, now, window_seconds=60):
+    def record_login_attempts(
+        self, bucket_keys, now, window_seconds=60, audit_limits=None
+    ):
         result = {}
+        pending_audits = []
         for key in sorted(set(bucket_keys)):
             started, count = self.login_attempts.get(key, (now, 0))
             if (now - started).total_seconds() >= window_seconds:
@@ -48,6 +51,19 @@ class FakeRepository:
             count += 1
             self.login_attempts[key] = (started, count)
             result[key] = (count, started)
+            threshold = (audit_limits or {}).get(key)
+            if threshold is not None and count == threshold[0] + 1:
+                pending_audits.append(
+                    AuditEvent(
+                        actor_user_id=None,
+                        action="LOGIN_RATE_LIMITED",
+                        resource_type="AUTH",
+                        outcome="DENIED",
+                        detail=threshold[1],
+                        created_at=now,
+                    )
+                )
+        self.audit_events.extend(pending_audits)
         return result
 
     def save_user(self, user: User):
