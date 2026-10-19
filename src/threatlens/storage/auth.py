@@ -307,14 +307,20 @@ class PostgresAuthMixin:
         bucket_keys: tuple[str, ...],
         now: datetime,
         window_seconds: int = 60,
+        audit_limits: dict[str, tuple[int, str]] | None = None,
     ) -> dict[str, tuple[int, datetime]]:
-        """Atomically increment privacy-preserving login buckets across all app instances."""
+        """Atomically increment login buckets and audit threshold crossings."""
         if not bucket_keys or len(bucket_keys) > 4:
             raise ValueError("one to four login rate-limit buckets are required")
         if not 30 <= window_seconds <= 300:
             raise ValueError("login rate-limit window must be within 30..300 seconds")
         if any(not key or len(key) > 128 or any(ch.isspace() for ch in key) for key in bucket_keys):
             raise ValueError("invalid login rate-limit bucket key")
+        if audit_limits is not None:
+            if not set(audit_limits).issubset(set(bucket_keys)):
+                raise ValueError("audit thresholds must reference configured login buckets")
+            if any(limit < 1 or not detail for limit, detail in audit_limits.values()):
+                raise ValueError("login audit thresholds require positive limits and details")
         result: dict[str, tuple[int, datetime]] = {}
         with self._transaction_lock:
             with self.connection.transaction():
@@ -348,7 +354,33 @@ class PostgresAuthMixin:
                             (bucket_key, now, window_seconds, window_seconds),
                         )
                         attempts, window_started_at = cursor.fetchone()
-                        result[bucket_key] = (int(attempts), window_started_at)
+                        attempts = int(attempts)
+                        result[bucket_key] = (attempts, window_started_at)
+                        threshold = (audit_limits or {}).get(bucket_key)
+                        if threshold is not None and attempts == threshold[0] + 1:
+                            event = AuditEvent(
+                                actor_user_id=None,
+                                action="LOGIN_RATE_LIMITED",
+                                resource_type="AUTH",
+                                outcome="DENIED",
+                                detail=threshold[1],
+                                created_at=now,
+                            )
+                            cursor.execute(
+                                "INSERT INTO audit_events "
+                                "(id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at) "
+                                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                                (
+                                    event.id,
+                                    event.actor_user_id,
+                                    event.action,
+                                    event.resource_type,
+                                    event.resource_id,
+                                    event.outcome,
+                                    event.detail,
+                                    event.created_at,
+                                ),
+                            )
         return result
 
     def save_user(self, user: User) -> None:
