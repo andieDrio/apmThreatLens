@@ -118,6 +118,8 @@ def test_postgres_failed_login_counter_and_denial_audit_are_atomic(postgres_repo
     key = "identity:" + "d" * 64
     now = datetime.now(UTC)
     connection = postgres_repository.connection
+    auth = AuthenticationService(postgres_repository)
+    auth.create_user("failed-login-atomic", "correct horse battery staple", Role.ANALYST)
 
     with connection.transaction():
         with connection.cursor() as cursor:
@@ -150,16 +152,8 @@ def test_postgres_failed_login_counter_and_denial_audit_are_atomic(postgres_repo
                 postgres_repository.record_login_attempts(
                     (key,), now=now, window_seconds=60
                 )
-                postgres_repository.save_audit_event(
-                    AuditEvent(
-                        actor_user_id=None,
-                        action="LOGIN",
-                        resource_type="AUTH",
-                        outcome="DENIED",
-                        detail="invalid credentials",
-                        created_at=now,
-                    )
-                )
+                with pytest.raises(PermissionError, match="authentication failed"):
+                    auth.authenticate("failed-login-atomic", "wrong password")
 
         with connection.transaction():
             with connection.cursor() as cursor:
@@ -186,16 +180,8 @@ def test_postgres_failed_login_counter_and_denial_audit_are_atomic(postgres_repo
         result = postgres_repository.record_login_attempts(
             (key,), now=now, window_seconds=60
         )
-        postgres_repository.save_audit_event(
-            AuditEvent(
-                actor_user_id=None,
-                action="LOGIN",
-                resource_type="AUTH",
-                outcome="DENIED",
-                detail="invalid credentials",
-                created_at=now,
-            )
-        )
+        with pytest.raises(PermissionError, match="authentication failed"):
+            auth.authenticate("failed-login-atomic", "wrong password")
     assert result[key][0] == 1
     with connection.transaction():
         with connection.cursor() as cursor:
