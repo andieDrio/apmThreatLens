@@ -335,6 +335,12 @@ async def test_login_rate_limit_blocks_before_password_verification(client):
     assert blocked.status_code == 429
     assert blocked.headers["retry-after"].isdigit()
     assert blocked.json()["detail"] == "too many login attempts; retry later"
+
+    blocked_again = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "analyst", "password": "correct-horse-battery-123"},
+    )
+    assert blocked_again.status_code == 429
     threshold_events = [
         event for event in client._transport.app.state.context.repository.audit_events
         if event.action == "LOGIN_RATE_LIMITED"
