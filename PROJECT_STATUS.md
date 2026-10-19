@@ -2,10 +2,10 @@
 
 **Last updated:** 2026-10-19  
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 72
+**Highest architecture gate reached:** Gate 73
 **Highest fully validated gate:** Gate 72 (user-confirmed)
-**Current gate:** Gate 72 — Atomic User Provisioning and Success-Audit Persistence
-**Current status:** Gate 72 implementation and validation are complete on `main`. The user confirmed 20 focused authentication/storage tests passed, including PostgreSQL-backed atomic user creation and audit rollback; the full PostgreSQL-backed suite passed (309 passed, 0 skipped, 5 non-failing Starlette deprecation warnings); Ruff and `git diff --check` passed; and the package wheel built successfully. Wheel SHA-256: `eb66201f4e2622b35d262e399e12df464b58b014011be7ab54ac167575e98f49`. Next cycle: inspect the latest `main` and select the highest-priority unfinished architecture gap, preserving the main-only workflow.
+**Current gate:** Gate 73 — Atomic Login Rate-Limit Threshold Audit Persistence
+**Current status:** Gate 73 is IN PROGRESS on `main`. Code now passes threshold metadata into PostgreSQL `record_login_attempts()` so a `LOGIN_RATE_LIMITED` audit event is inserted in the same transaction as the counter increment when a configured threshold is crossed. The API no longer performs a separate audit insert. Regression tests are being added for threshold behavior and audit-failure rollback. Validation is PENDING; do not mark this gate complete until the user confirms focused PostgreSQL tests, the full PostgreSQL-backed suite with no skips, Ruff, `git diff --check`, and package wheel build. All work stays directly on `main`.
 
 ## Executive Summary
 
@@ -327,3 +327,27 @@ Ruff subsequently found `F821 Undefined name User` in `tests/test_api_attack_pat
 On 2026-10-19, the user confirmed the dedicated PostgreSQL test database was `threatlens_gate72_test`. Focused authentication/storage validation passed: **20 passed**, including `test_postgres_user_creation_and_success_audit_are_atomic`, `test_user_creation_and_success_audit_are_atomic_on_audit_failure`, and the PostgreSQL logout atomicity regression. The full PostgreSQL-backed suite then passed with **309 passed, 0 skipped, 5 non-failing Starlette deprecation warnings**. `ruff check .` reported all checks passed; `git diff --check` was clean; and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel` successfully built `apm_threatlens-0.1.0-py3-none-any.whl` (SHA-256 `eb66201f4e2622b35d262e399e12df464b58b014011be7ab54ac167575e98f49`). Validation is user-confirmed from terminal output, not independently executed by the assistant.
 
 Gate 72 is complete. Before the next implementation gate, fetch and inspect the latest `main`, review the governing architecture documents and relevant code, identify the highest-priority unfinished architecture gap, and state the acceptance criteria before making a surgical change. Continue committing directly to `main`; no branches, pull requests, branch switching, or force pushes.
+
+## Gate 73 — Atomic Login Rate-Limit Threshold Audit Persistence — IN PROGRESS
+
+### Root cause
+
+The API previously incremented durable login-attempt buckets in one repository transaction, then separately inserted `LOGIN_RATE_LIMITED` audit events after observing the threshold crossing. An audit insert failure could leave the rate-limit counter committed without its corresponding threshold-crossing audit record.
+
+### Bounded implementation scope
+
+- Extend the PostgreSQL login-attempt operation with optional threshold metadata and insert only threshold-crossing audit events in the same transaction as bucket updates.
+- Pass client and client/username thresholds from the login API; remove the separate post-transaction audit write.
+- Preserve privacy-preserving hashed bucket keys, the existing 30-attempt client and 5-attempt identity limits, the 60-second window, Retry-After behavior, and threshold-crossing-only audit volume.
+- Add API regression coverage for the threshold event and PostgreSQL failure-injection coverage proving a failed audit insert rolls back the corresponding counter increment.
+
+### Acceptance criteria
+
+1. Threshold-crossing counter changes and the corresponding audit event commit or roll back together.
+2. Repeated blocked attempts do not create an audit event for every request.
+3. Existing rate-limit and authentication behavior remains unchanged when persistence succeeds.
+4. Focused PostgreSQL and API tests, full PostgreSQL-backed `python -m pytest -q -rs` with no skips, `ruff check .`, `git diff --check`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel` pass on the exact `main` revision.
+
+### Current validation state
+
+Implementation and regression tests have been committed directly to `main`, but no local validation result has yet been confirmed for Gate 73. Status remains IN PROGRESS pending test review and user-run validation. No branches, branch switching, pull requests, or force pushes.
