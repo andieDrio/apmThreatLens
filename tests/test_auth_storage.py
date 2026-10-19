@@ -30,6 +30,89 @@ def test_postgres_login_rate_limits_are_durable_and_expire(postgres_repository):
     assert {key: value[0] for key, value in after_window.items()} == {key: 1 for key in keys}
     assert postgres_repository.count("auth_login_rate_limits") == 2
 
+def test_postgres_login_threshold_audit_is_atomic(postgres_repository):
+    key = "identity:" + "c" * 64
+    now = datetime.now(UTC)
+    connection = postgres_repository.connection
+
+    first = postgres_repository.record_login_attempts(
+        (key,),
+        now=now,
+        window_seconds=60,
+        audit_limits={key: (1, "scope=client_username")},
+    )
+    assert first[key][0] == 1
+
+    with connection.transaction():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "DROP TRIGGER IF EXISTS test_fail_login_rate_limit_audit ON audit_events"
+            )
+            cursor.execute("DROP FUNCTION IF EXISTS test_fail_login_rate_limit_audit()")
+            cursor.execute(
+                """
+                CREATE FUNCTION test_fail_login_rate_limit_audit()
+                RETURNS trigger LANGUAGE plpgsql AS $
+                BEGIN
+                    IF NEW.action = 'LOGIN_RATE_LIMITED' THEN
+                        RAISE EXCEPTION 'injected login rate-limit audit failure';
+                    END IF;
+                    RETURN NEW;
+                END;
+                $
+                """
+            )
+            cursor.execute(
+                "CREATE TRIGGER test_fail_login_rate_limit_audit "
+                "BEFORE INSERT ON audit_events FOR EACH ROW "
+                "EXECUTE FUNCTION test_fail_login_rate_limit_audit()"
+            )
+
+    try:
+        with pytest.raises(Exception, match="injected login rate-limit audit failure"):
+            postgres_repository.record_login_attempts(
+                (key,),
+                now=now + timedelta(seconds=1),
+                window_seconds=60,
+                audit_limits={key: (1, "scope=client_username")},
+            )
+
+        with connection.transaction():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT attempts FROM auth_login_rate_limits WHERE bucket_key = %s",
+                    (key,),
+                )
+                assert cursor.fetchone()[0] == 1
+                cursor.execute(
+                    "SELECT COUNT(*) FROM audit_events WHERE action = %s",
+                    ("LOGIN_RATE_LIMITED",),
+                )
+                assert cursor.fetchone()[0] == 0
+    finally:
+        with connection.transaction():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DROP TRIGGER IF EXISTS test_fail_login_rate_limit_audit ON audit_events"
+                )
+                cursor.execute("DROP FUNCTION IF EXISTS test_fail_login_rate_limit_audit()")
+
+    retried = postgres_repository.record_login_attempts(
+        (key,),
+        now=now + timedelta(seconds=1),
+        window_seconds=60,
+        audit_limits={key: (1, "scope=client_username")},
+    )
+    assert retried[key][0] == 2
+    with connection.transaction():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT COUNT(*) FROM audit_events WHERE action = %s",
+                ("LOGIN_RATE_LIMITED",),
+            )
+            assert cursor.fetchone()[0] == 1
+
+
 def test_postgres_logout_session_and_success_audit_are_atomic(postgres_repository):
     auth = AuthenticationService(postgres_repository)
     auth.create_user("logout-atomic", "correct horse battery staple", Role.ANALYST)
