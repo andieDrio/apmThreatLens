@@ -4,6 +4,7 @@ import hashlib
 import pytest
 
 from threatlens.auth import AuthenticationService, Role
+from threatlens.domain.models import AuditEvent
 
 
 def test_auth_tables_are_persisted(postgres_repository):
@@ -113,7 +114,6 @@ def test_postgres_login_threshold_audit_is_atomic(postgres_repository):
             assert cursor.fetchone()[0] == 1
 
 
-
 def test_postgres_failed_login_counter_and_denial_audit_are_atomic(postgres_repository):
     key = "identity:" + "d" * 64
     now = datetime.now(UTC)
@@ -150,8 +150,6 @@ def test_postgres_failed_login_counter_and_denial_audit_are_atomic(postgres_repo
                 postgres_repository.record_login_attempts(
                     (key,), now=now, window_seconds=60
                 )
-                from threatlens.domain.models import AuditEvent
-
                 postgres_repository.save_audit_event(
                     AuditEvent(
                         actor_user_id=None,
@@ -188,8 +186,6 @@ def test_postgres_failed_login_counter_and_denial_audit_are_atomic(postgres_repo
         result = postgres_repository.record_login_attempts(
             (key,), now=now, window_seconds=60
         )
-        from threatlens.domain.models import AuditEvent
-
         postgres_repository.save_audit_event(
             AuditEvent(
                 actor_user_id=None,
