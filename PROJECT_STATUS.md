@@ -5,7 +5,7 @@
 **Highest architecture gate reached:** Gate 73
 **Highest fully validated gate:** Gate 72 (user-confirmed)
 **Current gate:** Gate 73 — Atomic Login Rate-Limit Threshold Audit Persistence
-**Current status:** Gate 73 is IN PROGRESS on `main`. Code now passes threshold metadata into PostgreSQL `record_login_attempts()` so a `LOGIN_RATE_LIMITED` audit event is inserted in the same transaction as the counter increment when a configured threshold is crossed. The API no longer performs a separate audit insert. Regression tests are being added for threshold behavior and audit-failure rollback. Validation is PENDING; do not mark this gate complete until the user confirms focused PostgreSQL tests, the full PostgreSQL-backed suite with no skips, Ruff, `git diff --check`, and package wheel build. All work stays directly on `main`.
+**Current status:** Gate 73 is IN PROGRESS on `main`. Code now passes threshold metadata into PostgreSQL `record_login_attempts()` so a `LOGIN_RATE_LIMITED` audit event is inserted in the same transaction as the counter increment when a configured threshold is crossed. The API no longer performs a separate audit insert. Regression tests have been added for threshold behavior and PostgreSQL audit-failure rollback; local execution is still pending. Validation is PENDING; do not mark this gate complete until the user confirms focused PostgreSQL tests, the full PostgreSQL-backed suite with no skips, Ruff, `git diff --check`, and package wheel build. All work stays directly on `main`.
 
 ## Executive Summary
 
@@ -348,6 +348,14 @@ The API previously incremented durable login-attempt buckets in one repository t
 3. Existing rate-limit and authentication behavior remains unchanged when persistence succeeds.
 4. Focused PostgreSQL and API tests, full PostgreSQL-backed `python -m pytest -q -rs` with no skips, `ruff check .`, `git diff --check`, and `python -m pip wheel . --no-deps --wheel-dir /tmp/apm-threatlens-wheel` pass on the exact `main` revision.
 
+### Changed files and main commits
+
+- `src/threatlens/storage/auth.py` — atomic counter/audit transaction: `930b10ee10f70f86ab81b6509f09b340e9bf2536`
+- `src/threatlens/api/app.py` — pass thresholds to repository; remove separate audit write: `2a0e9a17c4a4ce1452855bbd53a6c1559ee8d8ab`
+- `tests/test_api_app.py` — threshold audit assertion and fake repository transaction behavior: `9188bbd85a8402c1a01fcc68cf7abfe15901f3af`, `b42bf08165d0077602aee749ff03e74e3b8bd47b`
+- `tests/test_auth_storage.py` — PostgreSQL failure-injection regression and trigger quoting correction: `10750ad70ee193c0c951c3d4ddd7eca33f9cd396`, `c2eb06be9d418c3cb3c36c49a482a5a2d2b8348e`, `36276c7a0605cc74e64cb5a7800e533b3a64e077`
+- Governing documentation updated directly on `main`: `3f8b1463a4155a8edb4f7e41e4dffd451b9f7b6e`, `d4f8db5f7dcc002ecc2f2f924e431a59efbea3a7`, `524be433bf4fcd22d0c05dc34a0f3ba3c452f918`, `402434f069ee938b6586dd52e32a378f235e3845`
+
 ### Current validation state
 
-Implementation and regression tests have been committed directly to `main`, but no local validation result has yet been confirmed for Gate 73. Status remains IN PROGRESS pending test review and user-run validation. No branches, branch switching, pull requests, or force pushes.
+Implementation and regression tests are committed directly to `main`, but no local validation result has yet been confirmed for Gate 73. Status remains IN PROGRESS pending focused PostgreSQL/API tests and user-run full validation. No branches, branch switching, pull requests, or force pushes.
