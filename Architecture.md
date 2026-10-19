@@ -812,3 +812,13 @@ Successful login persists the authentication session and its success audit event
 `AuthenticationService.create_user()` delegates to `save_user_with_audit()`, atomically persisting the new user and USER_CREATED success audit event in one PostgreSQL transaction and one SQLite compatibility transaction. Failure-injection regressions verify audit insertion failure rolls back account creation. Password hashing, role validation, duplicate handling, and append-only audit protections remain unchanged. API test repositories implement the atomic user-and-audit contract.
 
 **Validation closure:** On 2026-10-19, the user confirmed 20 focused authentication/storage tests passed, the full PostgreSQL-backed suite passed with 309 passed and 0 skipped (5 non-failing Starlette deprecation warnings), Ruff and `git diff --check` passed, and the package wheel built successfully. Wheel SHA-256: `eb66201f4e2622b35d262e399e12df464b58b014011be7ab54ac167575e98f49`. This is user-confirmed validation; the assistant did not independently run the local commands.
+
+## Architecture Gate 73 — Atomic Login Rate-Limit Threshold Audit Persistence — IN PROGRESS
+
+The login API previously called `record_login_attempts()` and then independently inserted `LOGIN_RATE_LIMITED` audit events when returned counters crossed the configured client or client/username thresholds. This left a persistence gap: an audit insert failure could occur after the counter transaction had already committed.
+
+Gate 73 extends the PostgreSQL repository operation to accept per-bucket threshold metadata and insert the threshold-crossing audit event inside the same transaction as the counter changes. The API passes the existing 30-attempt client and 5-attempt identity limits and no longer performs a separate audit write. Only threshold crossings are audited, preserving bounded audit volume. Regression coverage includes API threshold behavior and PostgreSQL audit-failure rollback of the corresponding counter increment.
+
+**Acceptance criteria:** counter and threshold audit event are atomic; repeated blocked attempts do not produce unbounded audit events; current rate-limit/Retry-After behavior is preserved; focused PostgreSQL and API tests, full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build pass on the exact `main` revision.
+
+**Validation status:** IN PROGRESS. Code and tests are on `main`; local validation has not yet been confirmed. Do not mark Gate 73 complete until the user confirms all required checks.
