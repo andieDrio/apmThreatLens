@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import ipaddress
 import math
@@ -470,7 +471,7 @@ def create_app(
             peer_host = "unknown"
         normalized_username = request.username.strip().casefold()
         client_key = "client:" + hashlib.sha256(peer_host.encode("utf-8")).hexdigest()
-        identity_material = f"{peer_host}\0{normalized_username}".encode()
+        identity_material = f"{peer_host}\\0{normalized_username}".encode()
         identity_key = "identity:" + hashlib.sha256(identity_material).hexdigest()
         rate_limiter = getattr(context.repository, "record_login_attempts", None)
         if not callable(rate_limiter):
@@ -483,17 +484,31 @@ def create_app(
             client_key: (30, "scope=client"),
             identity_key: (5, "scope=client_username"),
         }
-        attempts = rate_limiter(
-            (client_key, identity_key),
-            now=now,
-            window_seconds=60,
-            audit_limits=limits,
-        )
-        exceeded = [
-            (key, limits[key][0], count, window_started_at)
-            for key, (count, window_started_at) in attempts.items()
-            if count > limits[key][0]
-        ]
+        transaction_factory = getattr(context.repository, "login_attempt_transaction", None)
+        transaction = transaction_factory() if callable(transaction_factory) else contextlib.nullcontext()
+        exceeded = []
+        login_denied = False
+        token = None
+        with transaction:
+            attempts = rate_limiter(
+                (client_key, identity_key),
+                now=now,
+                window_seconds=60,
+                audit_limits=limits,
+            )
+            exceeded = [
+                (key, limits[key][0], count, window_started_at)
+                for key, (count, window_started_at) in attempts.items()
+                if count > limits[key][0]
+            ]
+            if not exceeded:
+                try:
+                    _, token = context.auth.authenticate(request.username, request.password)
+                except PermissionError:
+                    # Commit the attempt counter and denial audit together; raise HTTP only
+                    # after the transaction exits successfully.
+                    login_denied = True
+
         if exceeded:
             retry_after = max(
                 1,
@@ -509,12 +524,15 @@ def create_app(
                 detail="too many login attempts; retry later",
                 headers={"Retry-After": str(retry_after)},
             )
-        try:
-            _, token = context.auth.authenticate(request.username, request.password)
-        except PermissionError as exc:
+        if login_denied:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="authentication failed"
-            ) from exc
+            )
+        if token is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="authentication transaction did not produce a session",
+            )
         return LoginResponse(
             access_token=token,
             expires_in=int(context.auth.session_ttl.total_seconds()),
