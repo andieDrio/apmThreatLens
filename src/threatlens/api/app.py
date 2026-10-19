@@ -479,29 +479,22 @@ def create_app(
                 detail="durable login protection unavailable",
             )
         now = datetime.now(UTC)
+        limits = {
+            client_key: (30, "scope=client"),
+            identity_key: (5, "scope=client_username"),
+        }
         attempts = rate_limiter(
-            (client_key, identity_key), now=now, window_seconds=60
+            (client_key, identity_key),
+            now=now,
+            window_seconds=60,
+            audit_limits=limits,
         )
-        limits = {client_key: 30, identity_key: 5}
         exceeded = [
-            (key, limits[key], count, window_started_at)
+            (key, limits[key][0], count, window_started_at)
             for key, (count, window_started_at) in attempts.items()
-            if count > limits[key]
+            if count > limits[key][0]
         ]
         if exceeded:
-            # Audit only the threshold crossing, not every blocked request, to avoid turning
-            # repeated rejected traffic into unbounded audit writes.
-            for key, limit, count, _ in exceeded:
-                if count == limit + 1:
-                    context.repository.save_audit_event(
-                        AuditEvent(
-                            actor_user_id=None,
-                            action="LOGIN_RATE_LIMITED",
-                            resource_type="AUTH",
-                            outcome="DENIED",
-                            detail="scope=client" if key == client_key else "scope=client_username",
-                        )
-                    )
             retry_after = max(
                 1,
                 *(
