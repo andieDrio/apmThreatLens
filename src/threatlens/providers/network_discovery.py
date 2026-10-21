@@ -17,7 +17,11 @@ from threatlens.providers.runtime import ProviderCapability, ProviderMetadata
 class NetworkDiscoveryRepository(Protocol):
     def save_asset(self, asset: Asset) -> None: ...
 
+    def save_asset_for_execution(self, execution_id: UUID, asset: Asset) -> Asset: ...
+
     def save_service(self, service: Service) -> None: ...
+
+    def save_service_for_execution(self, execution_id: UUID, service: Service) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,7 +109,15 @@ class NetworkDiscoveryProvider:
             asset = Asset(
                 canonical_id=f"host:{host}", asset_type=self._asset_type(host), value=host
             )
-            self.repository.save_asset(asset)
+            save_asset_for_execution = getattr(
+                self.repository, "save_asset_for_execution", None
+            )
+            if callable(save_asset_for_execution):
+                asset = save_asset_for_execution(execution_id, asset)
+            else:
+                if getattr(self.repository, "requires_execution_fence", False):
+                    raise RuntimeError("repository requires execution-fenced asset persistence")
+                self.repository.save_asset(asset)
             for port in self.policy.ports:
                 if cancel_event.is_set():
                     return
@@ -117,7 +129,17 @@ class NetworkDiscoveryProvider:
                     port=port,
                     service_name=self._well_known_service(port),
                 )
-                self.repository.save_service(service)
+                save_service_for_execution = getattr(
+                    self.repository, "save_service_for_execution", None
+                )
+                if callable(save_service_for_execution):
+                    save_service_for_execution(execution_id, service)
+                else:
+                    if getattr(self.repository, "requires_execution_fence", False):
+                        raise RuntimeError(
+                            "repository requires execution-fenced service persistence"
+                        )
+                    self.repository.save_service(service)
                 evidence = Evidence(
                     kind="tcp-connect",
                     content=f"tcp://{host}:{port} accepted a TCP connection",

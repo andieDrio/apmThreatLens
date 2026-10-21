@@ -170,7 +170,9 @@ class PostgresFindingCorrelationMixin:
             with self.connection.cursor() as cursor:
                 if execution_id is not None:
                     cursor.execute(
-                        "SELECT state FROM scans WHERE execution_id=%s FOR UPDATE",
+                        """SELECT s.state,c.organization_id FROM scans s
+                           JOIN campaigns c ON c.id=s.campaign_id
+                           WHERE s.execution_id=%s FOR UPDATE OF s,c""",
                         (execution_id,),
                     )
                     execution = cursor.fetchone()
@@ -180,6 +182,20 @@ class PostgresFindingCorrelationMixin:
                         raise RuntimeError(
                             "provider output rejected because execution is not RUNNING"
                         )
+                    cursor.execute(
+                        "SELECT organization_id FROM assets WHERE id=%s FOR UPDATE",
+                        (finding.asset_id,),
+                    )
+                    asset = cursor.fetchone()
+                    if asset is None or asset[0] != execution[1]:
+                        raise KeyError(str(finding.asset_id))
+                    if finding.service_id is not None:
+                        cursor.execute(
+                            "SELECT 1 FROM services WHERE id=%s AND asset_id=%s FOR UPDATE",
+                            (finding.service_id, finding.asset_id),
+                        )
+                        if cursor.fetchone() is None:
+                            raise KeyError(str(finding.service_id))
                 cursor.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (key,))
                 cursor.execute(
                     """SELECT f.id,f.title,f.asset_id,f.state,f.severity,f.vulnerability_id,

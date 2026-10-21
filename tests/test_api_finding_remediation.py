@@ -91,7 +91,8 @@ class FakeRepository:
         self.audit_events.append(event)
 
     def transition_finding_remediation_idempotent(
-        self, finding_id, target_state, actor_user_id, rationale, idempotency_key
+        self, finding_id, target_state, actor_user_id, rationale, idempotency_key,
+        organization_id=None,
     ):
         import hashlib
         import json
@@ -122,7 +123,7 @@ class FakeRepository:
         return (*result, True)
 
     def transition_finding_remediation_with_audit(
-        self, finding_id, target_state, actor_user_id, rationale
+        self, finding_id, target_state, actor_user_id, rationale, organization_id=None
     ):
         if finding_id not in self.finding_states:
             raise KeyError(str(finding_id))

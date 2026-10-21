@@ -3,9 +3,9 @@
 **Last updated:** 2026-10-21
 **Source of truth:** GitHub `main`  
 **Highest architecture gate reached:** Gate 78
-**Highest fully validated gate:** Gate 78B3 (user-confirmed locally; push pending)
-**Current gate:** Gate 78B3 — Organization-Scoped Scan Lifecycle Controls
-**Current status:** Gate 78B1 is complete and pushed as `eb4e89f`; Gate 78B2 is complete and pushed as `c8793a0`. Gate 78B3 is implemented and user-validated locally; commit/push are pending. Other resource paths remain unscoped, so multiple-organization deployment is not enabled.
+**Highest fully validated gate:** Gate 78B4 (user-confirmed on 2026-10-21; local changes not yet committed)
+**Current gate:** Gate 78 — remaining organization-scoped resource access
+**Current status:** Gate 78B1 is complete and pushed as `eb4e89f`; Gate 78B2 is complete and pushed as `c8793a0`; Gate 78B3 is complete and pushed as `ca0978a`. Gate 78B4 is implemented and user-validated locally: asset identity, provider writes, asset/finding reads, finding actions, and dashboard aggregates are organization-scoped. Evidence, audit, general idempotency, relationships, and asynchronous provider paths remain unscoped, so multiple-organization deployment is not enabled. Commit/push of B4 is pending.
 
 ## Executive Summary
 
@@ -428,10 +428,16 @@ Migration version 5 adds a required organization owner and lookup index to campa
 
 The scan activity read model and count are filtered through each scan's campaign organization. On 2026-10-21, the user confirmed focused PostgreSQL/API tests, the full test suite, Ruff, diff check, and Windows wheel build passed. Commit `c8793a0` is on `main` and `origin/main`.
 
-#### Stage 78B3 — Scan lifecycle controls — IMPLEMENTED AND VALIDATED LOCALLY; PUSH PENDING
+#### Stage 78B3 — Scan lifecycle controls — COMPLETE
 
-Cancel and stale-recovery commands now verify campaign organization while locking the scan and campaign rows in the mutation transaction. Idempotency replays repeat the same ownership check before returning a prior result. On 2026-10-21, the user confirmed focused PostgreSQL/API tests, the full test suite at 100%, Ruff, diff check, and Windows wheel build passed locally. A PostgreSQL regression covers cross-organization cancel/recovery, unchanged state/audit/idempotency, and replay after ownership changes. Push is pending.
+Cancel and stale-recovery commands verify campaign organization while locking the scan and campaign rows in the mutation transaction. Idempotency replays repeat the ownership check before returning a prior result. On 2026-10-21, the user confirmed focused PostgreSQL/API tests, the full test suite at 100%, Ruff, diff check, and Windows wheel build passed; commit `ca0978a` is on `main` and `origin/main`.
+
+#### Stage 78B4 — Asset and finding isolation — COMPLETE (local validation)
+
+Canonical asset identity is organization-specific; provider-created assets/services/findings are bound to the organization owning their active scan. Asset/finding reads, finding actions, and dashboard aggregates are scoped. Migration version 6 backfills existing assets into the default organization and makes ownership required. Two-organization PostgreSQL/API regressions cover isolation.
+
+On 2026-10-21, the user confirmed the focused and full PostgreSQL-backed test suites reached 100%, Ruff passed, `git diff --check` passed, and the Windows wheel built successfully. Five Starlette deprecation warnings were non-failing. Changes remain local and await the user's normal commit/push workflow.
 
 #### Remaining work
 
-After Gate 78B3 validation, scope assets, findings, evidence, aggregates, audit, general idempotency records, relationships, and asynchronous provider handoff by the authenticated organization. Make asset identity organization-specific. Keep multi-organization deployment disabled until the complete resource graph has cross-organization PostgreSQL/API coverage.
+Scope evidence, audit, general idempotency records, relationships, and asynchronous provider handoff by the authenticated organization. Keep multi-organization deployment disabled until the complete resource graph has cross-organization PostgreSQL/API coverage.

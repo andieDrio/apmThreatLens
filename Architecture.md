@@ -869,12 +869,16 @@ Add and backfill a required `campaigns.organization_id` foreign key. Campaign li
 
 Filter scan activity rows and counts through each scan's owning campaign. On 2026-10-21, the user confirmed focused PostgreSQL/API tests, full suite, Ruff, diff check, and Windows wheel build passed; commit `c8793a0` is on `main` and `origin/main`.
 
-#### Stage 78B3 — Scan lifecycle controls — IMPLEMENTED AND VALIDATED LOCALLY; PUSH PENDING
+#### Stage 78B3 — Scan lifecycle controls — COMPLETE
 
-Scan cancel and stale-recovery commands lock and verify the scan and owning campaign organization in the same transaction as the state mutation, audit event, and idempotency record. Replays also verify current ownership before returning a prior result. PostgreSQL regression coverage confirms cross-organization commands return not found without changing state, audit, or idempotency data, including replay after ownership changes. On 2026-10-21, the user confirmed focused PostgreSQL/API tests, the full suite at 100%, Ruff, diff check, and Windows wheel build passed locally. Push is pending.
+Scan cancel and stale-recovery commands lock and verify the scan and owning campaign organization in the same transaction as the state mutation, audit event, and idempotency record. Replays also verify current ownership before returning a prior result. PostgreSQL regression coverage confirms cross-organization commands return not found without changing state, audit, or idempotency data, including replay after ownership changes. On 2026-10-21, the user confirmed focused PostgreSQL/API tests, the full suite at 100%, Ruff, diff check, and Windows wheel build passed; commit `ca0978a` is on `main` and `origin/main`.
+
+#### Stage 78B4 — Asset and finding isolation — COMPLETE (local validation)
+
+Canonical asset identity is organization-specific. Provider-created assets, services, and findings bind to the campaign organization of their active scan; authenticated asset/finding read models, finding actions, and dashboard aggregates are scoped. Migration version 6 backfills existing assets to the default organization without data loss. Two-organization PostgreSQL/API regressions cover cross-organization reads and writes. On 2026-10-21, the user confirmed the focused and full PostgreSQL-backed suites, Ruff, `git diff --check`, and Windows wheel build passed. Five Starlette deprecation warnings were non-failing. Changes are local and await commit/push.
 
 #### Remaining Stage 78B work
 
-Scope every read, aggregate, report, write, async provider handoff, evidence/finding relationship, audit event, and idempotency boundary by the authenticated organization. Canonical asset identity must be unique per organization. Cross-organization IDs return not found; missing organization context fails closed. Multiple customer organizations must not be enabled until cross-organization API/PostgreSQL regressions cover the full resource graph.
+Scope remaining reads, aggregates, reports, writes, async provider handoff, evidence/finding relationships, audit events, and idempotency boundaries by the authenticated organization. Cross-organization IDs return not found; missing organization context fails closed. Multiple customer organizations must not be enabled until cross-organization API/PostgreSQL regressions cover the full resource graph.
 
 **Acceptance criteria:** retry-safe, data-preserving migration; membership/role enforcement; two-organization tests for direct IDs, lists, aggregates, reports, evidence provenance, relationships, writes, and async paths; full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and wheel build before closing Gate 78.

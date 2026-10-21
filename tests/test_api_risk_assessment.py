@@ -102,7 +102,7 @@ class FakeRepository:
     def save_audit_event(self, event: AuditEvent):
         self.audit_events.append(event)
 
-    def finding_by_id(self, finding_id):
+    def finding_by_id(self, finding_id, organization_id=None):
         if finding_id != self.finding.id:
             raise KeyError(str(finding_id))
         return self.finding

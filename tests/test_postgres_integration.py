@@ -3,8 +3,10 @@ from threading import Barrier, Thread
 from uuid import UUID, uuid4
 
 import pytest
+import httpx
 from psycopg.errors import ForeignKeyViolation
 
+from threatlens.api.app import create_app
 from threatlens.auth import AuthenticationService, Role
 from threatlens.domain.models import (
     Asset,
@@ -84,6 +86,230 @@ def test_postgres_persists_domain_relationships(postgres_repository):
     assert repo.count("findings") == 1
     assert repo.count("finding_evidence") == 1
     assert repo.asset_id(asset.canonical_id) == asset.id
+
+
+def test_postgres_asset_and_finding_data_isolated_by_campaign_organization(
+    postgres_repository,
+):
+    repo = postgres_repository
+    default_campaign = make_campaign()
+    other_campaign = make_campaign()
+    repo.save_campaign(default_campaign)
+    repo.save_campaign(other_campaign)
+    other_organization_id = uuid4()
+    with repo.connection.transaction():
+        with repo.connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO organizations (id,name,slug,created_at) "
+                "VALUES (%s,'Asset Isolation','asset-' || %s,NOW())",
+                (other_organization_id, str(other_organization_id)),
+            )
+            cursor.execute(
+                "UPDATE campaigns SET organization_id=%s WHERE id=%s",
+                (other_organization_id, other_campaign.id),
+            )
+
+    default_execution = running_execution(repo, default_campaign, "asset-isolation-a")
+    other_execution = running_execution(repo, other_campaign, "asset-isolation-b")
+    canonical_id = "fqdn:shared-customer-host.example"
+    default_asset = repo.save_asset_for_execution(
+        default_execution,
+        Asset(canonical_id=canonical_id, asset_type="fqdn", value="shared-customer-host.example"),
+    )
+    other_asset = repo.save_asset_for_execution(
+        other_execution,
+        Asset(canonical_id=canonical_id, asset_type="fqdn", value="shared-customer-host.example"),
+    )
+    repeated_asset = repo.save_asset_for_execution(
+        default_execution,
+        Asset(canonical_id=canonical_id, asset_type="fqdn", value="shared-customer-host.example"),
+    )
+    assert default_asset.id != other_asset.id
+    assert repeated_asset.id == default_asset.id
+    assert repo.asset_id(canonical_id, DEFAULT_ORGANIZATION_ID) == default_asset.id
+    assert repo.asset_id(canonical_id, other_organization_id) == other_asset.id
+
+    default_service = Service(asset_id=default_asset.id, protocol="tcp", port=443)
+    other_service = Service(asset_id=other_asset.id, protocol="tcp", port=443)
+    repo.save_service_for_execution(default_execution, default_service)
+    repo.save_service_for_execution(other_execution, other_service)
+    with pytest.raises(KeyError):
+        repo.save_service_for_execution(default_execution, other_service)
+
+    default_evidence = ProviderHandoff.seal_evidence(
+        Evidence(kind="asset-isolation", content="default tenant", source="isolation-test")
+    )
+    other_evidence = ProviderHandoff.seal_evidence(
+        Evidence(kind="asset-isolation", content="other tenant", source="isolation-test")
+    )
+    repo.save_evidence_for_execution(default_execution, default_evidence)
+    repo.save_evidence_for_execution(other_execution, other_evidence)
+    default_finding = Finding(
+        title="Default tenant finding",
+        asset_id=default_asset.id,
+        evidence_ids=(default_evidence.id,),
+        service_id=default_service.id,
+        severity=Severity.HIGH,
+        confidence=0.9,
+        source="isolation-test",
+    )
+    other_finding = Finding(
+        title="Other tenant finding",
+        asset_id=other_asset.id,
+        evidence_ids=(other_evidence.id,),
+        service_id=other_service.id,
+        severity=Severity.CRITICAL,
+        confidence=0.95,
+        source="isolation-test",
+    )
+    correlator = DurableFindingCorrelator(repo)
+    correlator.persist_for_execution(default_execution, default_finding)
+    correlator.persist_for_execution(other_execution, other_finding)
+    with pytest.raises(KeyError):
+        repo.save_finding_for_execution(default_execution, other_finding)
+    with pytest.raises(KeyError):
+        correlator.persist_for_execution(default_execution, other_finding)
+
+    assert repo.assets_read_model(organization_id=DEFAULT_ORGANIZATION_ID)["total"] == 1
+    assert repo.assets_read_model(organization_id=other_organization_id)["total"] == 1
+    assert repo.findings_read_model(organization_id=DEFAULT_ORGANIZATION_ID)["total"] == 1
+    assert repo.findings_read_model(organization_id=other_organization_id)["total"] == 1
+    assert repo.dashboard_summary(DEFAULT_ORGANIZATION_ID) == {
+        "campaigns": 1,
+        "assets": 1,
+        "services": 1,
+        "findings": 1,
+        "findings_by_severity": {"HIGH": 1},
+        "scans_by_state": {"RUNNING": 1},
+    }
+    assert repo.dashboard_summary(other_organization_id)["findings_by_severity"] == {
+        "CRITICAL": 1
+    }
+    with pytest.raises(KeyError):
+        repo.finding_by_id(other_finding.id, DEFAULT_ORGANIZATION_ID)
+    with pytest.raises(KeyError):
+        repo.transition_finding_remediation_idempotent(
+            finding_id=other_finding.id,
+            target_state=FindingState.MITIGATED,
+            actor_user_id=uuid4(),
+            rationale="cross-organization attempt",
+            idempotency_key="cross-org-finding-control-0001",
+            organization_id=DEFAULT_ORGANIZATION_ID,
+        )
+
+
+@pytest.mark.anyio
+async def test_postgres_asset_finding_and_dashboard_api_are_organization_scoped(
+    postgres_repository,
+):
+    repo = postgres_repository
+    default_campaign = make_campaign()
+    other_campaign = make_campaign()
+    repo.save_campaign(default_campaign)
+    repo.save_campaign(other_campaign)
+    other_organization_id = uuid4()
+    with repo.connection.transaction():
+        with repo.connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO organizations (id,name,slug,created_at) "
+                "VALUES (%s,'API Isolation','api-' || %s,NOW())",
+                (other_organization_id, str(other_organization_id)),
+            )
+            cursor.execute(
+                "UPDATE campaigns SET organization_id=%s WHERE id=%s",
+                (other_organization_id, other_campaign.id),
+            )
+
+    executions = (
+        running_execution(repo, default_campaign, "asset-api-a"),
+        running_execution(repo, other_campaign, "asset-api-b"),
+    )
+    assets = [
+        repo.save_asset_for_execution(
+            execution_id,
+            Asset(
+                canonical_id="fqdn:api-shared.example",
+                asset_type="fqdn",
+                value="api-shared.example",
+            ),
+        )
+        for execution_id in executions
+    ]
+    findings = []
+    for index, (execution_id, asset) in enumerate(zip(executions, assets, strict=True)):
+        evidence = ProviderHandoff.seal_evidence(
+            Evidence(
+                kind="api-tenant-isolation",
+                content=f"tenant-{index}",
+                source="api-isolation-test",
+            )
+        )
+        repo.save_evidence_for_execution(execution_id, evidence)
+        finding = Finding(
+            title=f"Tenant {index} finding",
+            asset_id=asset.id,
+            evidence_ids=(evidence.id,),
+            severity=Severity.HIGH if index == 0 else Severity.CRITICAL,
+            confidence=0.9,
+            source="api-isolation-test",
+        )
+        repo.save_finding_for_execution(execution_id, finding)
+        findings.append(finding)
+
+    auth = AuthenticationService(repo)
+    password = "correct horse battery staple"
+    auth.create_user("asset-api-default", password, Role.ANALYST)
+    other_user = auth.create_user("asset-api-other", password, Role.ANALYST)
+    with repo.connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE organization_memberships SET organization_id=%s "
+            "WHERE user_id=%s AND organization_id=%s",
+            (other_organization_id, other_user.id, DEFAULT_ORGANIZATION_ID),
+        )
+    repo.connection.commit()
+
+    app = create_app(repository=repo, auth_service=auth)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        tokens = {}
+        for username in ("asset-api-default", "asset-api-other"):
+            login = await client.post(
+                "/api/v1/auth/login", json={"username": username, "password": password}
+            )
+            assert login.status_code == 200
+            tokens[username] = login.json()["access_token"]
+
+        default_headers = {"Authorization": f"Bearer {tokens['asset-api-default']}"}
+        other_headers = {"Authorization": f"Bearer {tokens['asset-api-other']}"}
+        default_assets = await client.get("/api/v1/assets", headers=default_headers)
+        other_assets = await client.get("/api/v1/assets", headers=other_headers)
+        default_findings = await client.get("/api/v1/findings", headers=default_headers)
+        other_findings = await client.get("/api/v1/findings", headers=other_headers)
+        default_summary = await client.get(
+            "/api/v1/dashboard/summary", headers=default_headers
+        )
+        other_summary = await client.get(
+            "/api/v1/dashboard/summary", headers=other_headers
+        )
+        hidden_risk = await client.get(
+            f"/api/v1/findings/{findings[1].id}/risk-assessments",
+            headers=default_headers,
+        )
+        hidden_remediation = await client.post(
+            f"/api/v1/findings/{findings[1].id}/remediation",
+            headers={**default_headers, "Idempotency-Key": "tenant-api-remediation-0001"},
+            json={"state": "MITIGATED", "rationale": "must remain tenant isolated"},
+        )
+
+    assert default_assets.status_code == other_assets.status_code == 200
+    assert default_assets.json()["total"] == other_assets.json()["total"] == 1
+    assert default_assets.json()["items"][0]["id"] != other_assets.json()["items"][0]["id"]
+    assert default_findings.json()["items"][0]["title"] == "Tenant 0 finding"
+    assert other_findings.json()["items"][0]["title"] == "Tenant 1 finding"
+    assert default_summary.json()["findings_by_severity"] == {"HIGH": 1}
+    assert other_summary.json()["findings_by_severity"] == {"CRITICAL": 1}
+    assert hidden_risk.status_code == hidden_remediation.status_code == 404
 
 
 def test_postgres_campaign_report_is_campaign_scoped_and_excludes_raw_evidence(
@@ -238,8 +464,9 @@ def test_postgres_campaign_reads_and_reports_enforce_organization_ownership(
     ]["id"] == str(campaign.id)
 
 
-def test_postgres_enforces_foreign_key_integrity(postgres_repository):
-    with pytest.raises(ForeignKeyViolation):
+def test_postgres_rejects_service_for_unknown_asset(postgres_repository):
+    # Tenant-scoped writes reject an unknown asset before SQL reaches the FK.
+    with pytest.raises(KeyError):
         postgres_repository.save_service(Service(asset_id=uuid4(), protocol="tcp", port=443))
 
 

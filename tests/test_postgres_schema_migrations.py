@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import ThreadPoolExecutor
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import psycopg
 import pytest
 
 from threatlens.storage.postgres import PostgresRepository
 from threatlens.storage.schema_migrations import Migration, run_migrations
+from threatlens.domain.models import Asset
+from threatlens.storage.auth import DEFAULT_ORGANIZATION_ID
 
 
 def _dsn() -> str:
@@ -33,6 +35,7 @@ def test_postgres_baseline_is_recorded_and_repeat_initialize_preserves_data(
             (3, "audit_events_no_truncate"),
             (4, "organization_membership_foundation"),
             (5, "campaign_organization_ownership"),
+            (6, "asset_organization_ownership"),
         ]
 
         campaign_id = uuid4()
@@ -55,7 +58,30 @@ def test_postgres_baseline_is_recorded_and_repeat_initialize_preserves_data(
         cursor.execute("SELECT name FROM campaigns WHERE id=%s", (campaign_id,))
         assert cursor.fetchone() == ("gate54-preservation",)
         cursor.execute("SELECT COUNT(*) FROM threatlens_schema_migrations")
-        assert cursor.fetchone()[0] == 5
+        assert cursor.fetchone()[0] == 6
+
+
+def test_asset_organization_migration_backfills_legacy_rows(postgres_repository):
+    repository = postgres_repository
+    asset = Asset(
+        canonical_id="fqdn:legacy-asset.example",
+        asset_type="fqdn",
+        value="legacy-asset.example",
+    )
+    repository.save_asset(asset)
+    with repository.connection.cursor() as cursor:
+        cursor.execute("ALTER TABLE assets ALTER COLUMN organization_id DROP NOT NULL")
+        cursor.execute("UPDATE assets SET organization_id=NULL WHERE id=%s", (asset.id,))
+        cursor.execute("DELETE FROM threatlens_schema_migrations WHERE version=6")
+    repository.connection.commit()
+
+    run_migrations(repository)
+
+    with repository.connection.cursor() as cursor:
+        cursor.execute("SELECT organization_id FROM assets WHERE id=%s", (asset.id,))
+        assert cursor.fetchone() == (UUID(DEFAULT_ORGANIZATION_ID),)
+        cursor.execute("SELECT COUNT(*) FROM threatlens_schema_migrations WHERE version=6")
+        assert cursor.fetchone()[0] == 1
 
 
 def test_postgres_initialize_leaves_connection_idle_after_audit_verification(
@@ -199,6 +225,7 @@ def test_postgres_concurrent_initialize_serializes_migrations(postgres_repositor
             (3, "audit_events_no_truncate"),
             (4, "organization_membership_foundation"),
             (5, "campaign_organization_ownership"),
+            (6, "asset_organization_ownership"),
         ]
 
 

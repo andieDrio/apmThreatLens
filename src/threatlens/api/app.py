@@ -666,7 +666,7 @@ def create_app(
 
     @app.get("/api/v1/dashboard/summary", response_model=DashboardSummary)
     def dashboard_summary(current=Depends(require(Permission.READ))) -> DashboardSummary:
-        summary = context.repository.dashboard_summary()
+        summary = context.repository.dashboard_summary(current.organization_id)
         return DashboardSummary(**summary)
 
     @app.get("/api/v1/assets", response_model=AssetListResponse)
@@ -675,7 +675,9 @@ def create_app(
         limit: int = Query(default=50, ge=1, le=100),
         offset: int = Query(default=0, ge=0),
     ) -> AssetListResponse:
-        result = context.repository.assets_read_model(limit=limit, offset=offset)
+        result = context.repository.assets_read_model(
+            limit=limit, offset=offset, organization_id=current.organization_id
+        )
         items = []
         for item in result["items"]:
             normalized = dict(item)
@@ -1183,7 +1185,9 @@ def create_app(
         limit: int = Query(default=50, ge=1, le=100),
         offset: int = Query(default=0, ge=0),
     ) -> FindingListResponse:
-        result = context.repository.findings_read_model(limit=limit, offset=offset)
+        result = context.repository.findings_read_model(
+            limit=limit, offset=offset, organization_id=current.organization_id
+        )
         items = []
         for item in result["items"]:
             normalized = dict(item)
@@ -1207,7 +1211,7 @@ def create_app(
         offset: int = Query(default=0, ge=0),
     ) -> RiskAssessmentListResponse:
         try:
-            context.repository.finding_by_id(finding_id)
+            context.repository.finding_by_id(finding_id, current.organization_id)
         except KeyError as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -1254,7 +1258,7 @@ def create_app(
         current=Depends(require(Permission.ASSESS)),
     ) -> RiskAssessmentResponse:
         try:
-            finding = context.repository.finding_by_id(finding_id)
+            finding = context.repository.finding_by_id(finding_id, current.organization_id)
         except KeyError as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -1349,6 +1353,7 @@ def create_app(
                     actor_user_id=current.user_id,
                     rationale=request.rationale,
                     idempotency_key=idempotency_key,
+                    organization_id=current.organization_id,
                 )
             )
             response.headers["Idempotency-Replayed"] = "false" if created else "true"

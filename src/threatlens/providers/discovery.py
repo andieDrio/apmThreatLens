@@ -21,6 +21,8 @@ from threatlens.providers.runtime import ProviderCapability, ProviderMetadata
 class AssetRepository(Protocol):
     def save_asset(self, asset: Asset) -> None: ...
 
+    def save_asset_for_execution(self, execution_id: UUID, asset: Asset) -> Asset: ...
+
 
 class DiscoveryProvider:
     """Scope-controlled discovery of explicitly authorized campaign targets."""
@@ -54,7 +56,13 @@ class DiscoveryProvider:
                 asset_type=target_type,
                 value=value,
             )
-            self.repository.save_asset(asset)
+            fenced_save = getattr(self.repository, "save_asset_for_execution", None)
+            if callable(fenced_save):
+                asset = fenced_save(execution_id, asset)
+            else:
+                if getattr(self.repository, "requires_execution_fence", False):
+                    raise RuntimeError("repository requires execution-fenced asset persistence")
+                self.repository.save_asset(asset)
             evidence = Evidence(
                 kind="discovery-target",
                 content=value,

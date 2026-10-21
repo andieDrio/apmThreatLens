@@ -150,6 +150,53 @@ def _campaign_organization_ownership(repository: object) -> None:
         )
 
 
+def _asset_organization_ownership(repository: object) -> None:
+    """Backfill assets into the default tenant and make canonical identity tenant-local."""
+    from threatlens.storage.auth import DEFAULT_ORGANIZATION_ID
+
+    with repository.connection.cursor() as cursor:
+        cursor.execute("ALTER TABLE assets ADD COLUMN IF NOT EXISTS organization_id UUID")
+        cursor.execute(
+            "UPDATE assets SET organization_id=%s WHERE organization_id IS NULL",
+            (DEFAULT_ORGANIZATION_ID,),
+        )
+        cursor.execute("ALTER TABLE assets ALTER COLUMN organization_id SET NOT NULL")
+        cursor.execute(
+            """DO $$ BEGIN
+                   IF NOT EXISTS (
+                       SELECT 1 FROM pg_constraint
+                       WHERE conname='assets_organization_id_fkey'
+                         AND conrelid='assets'::regclass
+                   ) THEN
+                       ALTER TABLE assets
+                           ADD CONSTRAINT assets_organization_id_fkey
+                           FOREIGN KEY (organization_id) REFERENCES organizations(id)
+                           ON DELETE RESTRICT;
+                   END IF;
+               END $$"""
+        )
+        cursor.execute(
+            """DO $$ DECLARE constraint_name TEXT;
+               BEGIN
+                   FOR constraint_name IN
+                       SELECT conname FROM pg_constraint
+                       WHERE conrelid='assets'::regclass AND contype='u'
+                         AND pg_get_constraintdef(oid)='UNIQUE (canonical_id)'
+                   LOOP
+                       EXECUTE format('ALTER TABLE assets DROP CONSTRAINT %I', constraint_name);
+                   END LOOP;
+               END $$"""
+        )
+        cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS assets_organization_canonical_uq "
+            "ON assets (organization_id, canonical_id)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS assets_organization_last_seen_idx "
+            "ON assets (organization_id, last_seen_at DESC, id)"
+        )
+
+
 MIGRATIONS = (
     Migration(
         version=1,
@@ -181,6 +228,12 @@ MIGRATIONS = (
         name="campaign_organization_ownership",
         revision="campaign-org-backfill-and-index-v1",
         apply=_campaign_organization_ownership,
+    ),
+    Migration(
+        version=6,
+        name="asset_organization_ownership",
+        revision="asset-org-backfill-and-tenant-canonical-identity-v1",
+        apply=_asset_organization_ownership,
     ),
 )
 

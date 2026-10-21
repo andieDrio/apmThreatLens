@@ -136,7 +136,18 @@ REVOKE CREATE ON SCHEMA public FROM threatlens_runtime;
 
 Use the same migration owner for subsequent schema changes so its default privileges apply. Existing installations may need a DBA-led ownership transfer before the migration identity can safely manage pre-existing objects. The runtime role must not be a member of the migration role, table owner, database owner, or superuser. Test the effective grants in the target environment; role membership and inherited grants can otherwise defeat a direct REVOKE.
 
-For local development, configure both DSNs in an untracked `.env`. Run the migration command before starting the API. API startup verifies the migration registry and audit protections but does not apply DDL. The PostgreSQL integration suite continues to use `THREATLENS_TEST_DATABASE_URL` and requires a test database role with permission to initialize and reset its isolated schema.
+For local development, store both DSNs in an untracked `.env` and export them into the shell environment before running commands; the application does not load `.env` automatically. Run the migration command before starting the API. API startup verifies the migration registry and audit protections but does not apply DDL. The PostgreSQL integration suite continues to use `THREATLENS_TEST_DATABASE_URL` and requires a test database role with permission to initialize and reset its isolated schema.
+
+### Open the local dashboard
+
+The authenticated dashboard is served by the API at `http://127.0.0.1:8000/`. Use a dedicated local development database and its runtime/migration credentials; never point the running dashboard at the integration test database because the test fixture truncates its records. In PowerShell, from the repository root, with `THREATLENS_MIGRATION_DATABASE_URL` and `THREATLENS_DATABASE_URL` set in the current session, apply pending migrations and start the API:
+
+```powershell
+& "$env:LOCALAPPDATA\apmThreatLens-venv\Scripts\python.exe" -m threatlens.storage.migrate
+& "$env:LOCALAPPDATA\apmThreatLens-venv\Scripts\python.exe" -m uvicorn threatlens.api.main:app --host 127.0.0.1 --port 8000
+```
+
+Keep the server terminal open, then open `http://127.0.0.1:8000/` in a browser. The interactive API reference is at `http://127.0.0.1:8000/docs`. Runtime startup fails closed unless the database is migrated and the runtime identity passes the configured privilege checks.
 
 ### Architecture Gate 26 — Vulnerability Correlation Context Expansion — COMPLETE
 
@@ -510,4 +521,4 @@ Gate 78 is staged because partial scoping would leave cross-organization paths e
 
 Stage 78A is complete on `main` (`ff3f914`) and user-validated: PostgreSQL organizations/memberships, a retry-safe assignment of existing users to `Default Organization`, atomic membership creation for new accounts, fail-closed authenticated organization context, and a dashboard security-posture view.
 
-Stage 78B1 is complete on `main` (`eb4e89f`) and Stage 78B2 scan activity reads are complete on `main` (`c8793a0`); both were user-validated. Stage 78B3 implements transaction-bound organization checks for scan cancel/recovery and lifecycle idempotency replays. On 2026-10-21, the user confirmed focused PostgreSQL/API tests, the full suite at 100%, Ruff, diff check, and Windows wheel build passed locally; commit/push are pending. Assets, findings, evidence, aggregates, audit views, general idempotency, relationships, and async provider paths still need scoping. Multiple customer organizations remain unsupported until the full resource graph is isolated and tested.
+Stages 78B1, 78B2, and 78B3 are complete on `main` (`eb4e89f`, `c8793a0`, and `ca0978a`). Stage 78B4 is implemented and user-validated locally: canonical asset identity, provider asset/service/finding writes, asset/finding reads, finding actions, and dashboard aggregates are organization-scoped. The user confirmed the focused and full PostgreSQL-backed suites, Ruff, `git diff --check`, and Windows wheel build passed on 2026-10-21; five Starlette deprecation warnings were non-failing. B4 changes await commit/push. Evidence, audit, general idempotency, relationships, and asynchronous provider paths remain unscoped; multiple customer organizations remain unsupported until the full resource graph is isolated and tested.

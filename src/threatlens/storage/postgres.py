@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from hashlib import sha256
 from threading import RLock
@@ -612,11 +613,14 @@ class PostgresRepository(
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.execute(
-                    """INSERT INTO assets (id,canonical_id,asset_type,value,first_seen_at,last_seen_at)
-                       VALUES (%s,%s,%s,%s,%s,%s)
-                       ON CONFLICT (canonical_id) DO UPDATE SET last_seen_at=EXCLUDED.last_seen_at""",
+                    """INSERT INTO assets
+                           (id,organization_id,canonical_id,asset_type,value,first_seen_at,last_seen_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s)
+                       ON CONFLICT (organization_id,canonical_id) DO UPDATE
+                           SET last_seen_at=GREATEST(assets.last_seen_at,EXCLUDED.last_seen_at)""",
                     (
                         asset.id,
+                        DEFAULT_ORGANIZATION_ID,
                         asset.canonical_id,
                         asset.asset_type,
                         asset.value,
@@ -625,9 +629,43 @@ class PostgresRepository(
                     ),
                 )
 
+    def save_asset_for_execution(self, execution_id: UUID, asset: Asset) -> Asset:
+        """Persist a provider asset under the active scan campaign's organization."""
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    organization_id = self._require_running_execution(cursor, execution_id)
+                    cursor.execute(
+                        """INSERT INTO assets
+                               (id,organization_id,canonical_id,asset_type,value,
+                                first_seen_at,last_seen_at)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s)
+                           ON CONFLICT (organization_id,canonical_id) DO UPDATE
+                               SET last_seen_at=GREATEST(assets.last_seen_at,EXCLUDED.last_seen_at)
+                           RETURNING id""",
+                        (
+                            asset.id,
+                            organization_id,
+                            asset.canonical_id,
+                            asset.asset_type,
+                            asset.value,
+                            asset.first_seen_at,
+                            asset.last_seen_at,
+                        ),
+                    )
+                    persisted_id = cursor.fetchone()[0]
+        return replace(asset, id=persisted_id)
+
     def save_service(self, service: Service) -> None:
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT organization_id FROM assets WHERE id=%s FOR UPDATE",
+                    (service.asset_id,),
+                )
+                asset = cursor.fetchone()
+                if asset is None or asset[0] != UUID(DEFAULT_ORGANIZATION_ID):
+                    raise KeyError(str(service.asset_id))
                 cursor.execute(
                     """INSERT INTO services (id,asset_id,protocol,port,service_name,version)
                        VALUES (%s,%s,%s,%s,%s,%s)
@@ -643,11 +681,42 @@ class PostgresRepository(
                     ),
                 )
 
+    def save_service_for_execution(self, execution_id: UUID, service: Service) -> None:
+        """Persist a service observation only under its active scan's organization."""
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    organization_id = self._require_running_execution(cursor, execution_id)
+                    cursor.execute(
+                        "SELECT organization_id FROM assets WHERE id=%s FOR UPDATE",
+                        (service.asset_id,),
+                    )
+                    asset = cursor.fetchone()
+                    if asset is None or asset[0] != organization_id:
+                        raise KeyError(str(service.asset_id))
+                    cursor.execute(
+                        """INSERT INTO services
+                               (id,asset_id,protocol,port,service_name,version)
+                           VALUES (%s,%s,%s,%s,%s,%s)
+                           ON CONFLICT (asset_id,protocol,port) DO UPDATE SET
+                             service_name=EXCLUDED.service_name, version=EXCLUDED.version""",
+                        (
+                            service.id,
+                            service.asset_id,
+                            service.protocol,
+                            service.port,
+                            service.service_name,
+                            service.version,
+                        ),
+                    )
+
     @staticmethod
-    def _require_running_execution(cursor, execution_id: UUID) -> None:
+    def _require_running_execution(cursor, execution_id: UUID) -> UUID:
         """Lock and verify the durable execution state before accepting provider output."""
         cursor.execute(
-            "SELECT state FROM scans WHERE execution_id=%s FOR UPDATE",
+            """SELECT s.state,c.organization_id FROM scans s
+               JOIN campaigns c ON c.id=s.campaign_id
+               WHERE s.execution_id=%s FOR UPDATE OF s,c""",
             (execution_id,),
         )
         row = cursor.fetchone()
@@ -657,6 +726,7 @@ class PostgresRepository(
             raise RuntimeError(
                 "provider output rejected because execution is not RUNNING"
             )
+        return row[1]
 
     def save_evidence_for_execution(
         self, execution_id: UUID, evidence: Evidence
@@ -706,6 +776,20 @@ class PostgresRepository(
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.execute(
+                    "SELECT organization_id FROM assets WHERE id=%s FOR UPDATE",
+                    (finding.asset_id,),
+                )
+                asset = cursor.fetchone()
+                if asset is None or asset[0] != UUID(DEFAULT_ORGANIZATION_ID):
+                    raise KeyError(str(finding.asset_id))
+                if finding.service_id is not None:
+                    cursor.execute(
+                        "SELECT 1 FROM services WHERE id=%s AND asset_id=%s",
+                        (finding.service_id, finding.asset_id),
+                    )
+                    if cursor.fetchone() is None:
+                        raise KeyError(str(finding.service_id))
+                cursor.execute(
                     """INSERT INTO findings
                        (id,title,asset_id,state,severity,vulnerability_id,cwe,cve,cvss,confidence,source,detected_at,service_id,endpoint,parameter,location)
                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
@@ -740,7 +824,21 @@ class PostgresRepository(
         with self._transaction_lock:
             with self.connection.transaction():
                 with self.connection.cursor() as cursor:
-                    self._require_running_execution(cursor, execution_id)
+                    organization_id = self._require_running_execution(cursor, execution_id)
+                    cursor.execute(
+                        "SELECT organization_id FROM assets WHERE id=%s FOR UPDATE",
+                        (finding.asset_id,),
+                    )
+                    asset = cursor.fetchone()
+                    if asset is None or asset[0] != organization_id:
+                        raise KeyError(str(finding.asset_id))
+                    if finding.service_id is not None:
+                        cursor.execute(
+                            "SELECT 1 FROM services WHERE id=%s AND asset_id=%s FOR UPDATE",
+                            (finding.service_id, finding.asset_id),
+                        )
+                        if cursor.fetchone() is None:
+                            raise KeyError(str(finding.service_id))
                     cursor.execute(
                         """INSERT INTO findings
                            (id,title,asset_id,state,severity,vulnerability_id,cwe,cve,cvss,
@@ -776,14 +874,18 @@ class PostgresRepository(
         target_state: FindingState,
         actor_user_id: UUID,
         rationale: str,
+        organization_id: UUID = DEFAULT_ORGANIZATION_ID,
     ) -> tuple[bool, FindingState, bool]:
         """Atomically apply an authorized remediation state transition and audit it."""
         with self._transaction_lock:
             with self.connection.transaction():
                 with self.connection.cursor() as cursor:
                     cursor.execute(
-                        "SELECT state FROM findings WHERE id=%s FOR UPDATE",
-                        (finding_id,),
+                        """SELECT f.state FROM findings f
+                           JOIN assets a ON a.id=f.asset_id
+                           WHERE f.id=%s AND a.organization_id=%s
+                           FOR UPDATE OF f,a""",
+                        (finding_id, organization_id),
                     )
                     row = cursor.fetchone()
                     if row is None:
@@ -879,6 +981,7 @@ class PostgresRepository(
     def transition_finding_remediation_idempotent(
         self, finding_id: UUID, target_state: FindingState, actor_user_id: UUID,
         rationale: str, idempotency_key: str,
+        organization_id: UUID = DEFAULT_ORGANIZATION_ID,
     ) -> tuple[bool, FindingState, bool, bool]:
         """Apply remediation once per actor/key and durably replay its result."""
         payload = json.dumps({
@@ -895,14 +998,27 @@ class PostgresRepository(
                     if existing is not None:
                         if existing[0] != request_hash:
                             raise ValueError("Idempotency-Key was already used for a different remediation request")
+                        cursor.execute(
+                            """SELECT 1 FROM findings f JOIN assets a ON a.id=f.asset_id
+                               WHERE f.id=%s AND a.organization_id=%s
+                               FOR UPDATE OF f,a""",
+                            (finding_id, organization_id),
+                        )
+                        if cursor.fetchone() is None:
+                            raise KeyError(str(finding_id))
                         return existing[1], FindingState(existing[2]), existing[3], False
                     changed, state, allowed = self.transition_finding_remediation_with_audit(
                         finding_id=finding_id, target_state=target_state,
                         actor_user_id=actor_user_id, rationale=rationale,
+                        organization_id=organization_id,
                     )
                     cursor.execute("INSERT INTO finding_remediation_idempotency (actor_user_id, idempotency_key, request_hash, finding_id, changed, state, allowed, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)", (actor_user_id, idempotency_key, request_hash, finding_id, changed, state.value, allowed, datetime.now(UTC)))
                     return changed, state, allowed, True
-    def finding_by_id(self, finding_id: UUID) -> Finding:
+    def finding_by_id(
+        self,
+        finding_id: UUID,
+        organization_id: UUID = DEFAULT_ORGANIZATION_ID,
+    ) -> Finding:
         from threatlens.domain.models import FindingState, Severity
 
         with self.connection.cursor() as cursor:
@@ -911,9 +1027,9 @@ class PostgresRepository(
                           f.vulnerability_id, f.cwe, f.cve, f.cvss, f.confidence,
                           f.source, f.detected_at, f.service_id, f.endpoint,
                           f.parameter, f.location
-                   FROM findings f
-                   WHERE f.id=%s""",
-                (finding_id,),
+                   FROM findings f JOIN assets a ON a.id=f.asset_id
+                   WHERE f.id=%s AND a.organization_id=%s""",
+                (finding_id, organization_id),
             )
             row = cursor.fetchone()
             if row is None:
@@ -1616,25 +1732,47 @@ class PostgresRepository(
                     )
                     return changed
 
-    def dashboard_summary(self) -> dict[str, object]:
+    def dashboard_summary(
+        self, organization_id: UUID = DEFAULT_ORGANIZATION_ID
+    ) -> dict[str, object]:
         """Return bounded read-only aggregate data for the authenticated dashboard."""
         with self.connection.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*) FROM campaigns")
+            cursor.execute(
+                "SELECT COUNT(*) FROM campaigns WHERE organization_id=%s",
+                (organization_id,),
+            )
             campaigns = int(cursor.fetchone()[0])
-            cursor.execute("SELECT COUNT(*) FROM assets")
+            cursor.execute(
+                "SELECT COUNT(*) FROM assets WHERE organization_id=%s",
+                (organization_id,),
+            )
             assets = int(cursor.fetchone()[0])
-            cursor.execute("SELECT COUNT(*) FROM services")
+            cursor.execute(
+                """SELECT COUNT(*) FROM services s JOIN assets a ON a.id=s.asset_id
+                   WHERE a.organization_id=%s""",
+                (organization_id,),
+            )
             services = int(cursor.fetchone()[0])
-            cursor.execute("SELECT COUNT(*) FROM findings")
+            cursor.execute(
+                """SELECT COUNT(*) FROM findings f JOIN assets a ON a.id=f.asset_id
+                   WHERE a.organization_id=%s""",
+                (organization_id,),
+            )
             findings = int(cursor.fetchone()[0])
             cursor.execute(
-                "SELECT severity, COUNT(*) FROM findings GROUP BY severity ORDER BY severity"
+                """SELECT f.severity,COUNT(*) FROM findings f
+                   JOIN assets a ON a.id=f.asset_id WHERE a.organization_id=%s
+                   GROUP BY f.severity ORDER BY f.severity""",
+                (organization_id,),
             )
             findings_by_severity = {
                 str(row[0]): int(row[1]) for row in cursor.fetchall()
             }
             cursor.execute(
-                "SELECT state, COUNT(*) FROM scans GROUP BY state ORDER BY state"
+                """SELECT s.state,COUNT(*) FROM scans s
+                   JOIN campaigns c ON c.id=s.campaign_id
+                   WHERE c.organization_id=%s GROUP BY s.state ORDER BY s.state""",
+                (organization_id,),
             )
             scans_by_state = {str(row[0]): int(row[1]) for row in cursor.fetchall()}
         return {
@@ -2004,14 +2142,23 @@ class PostgresRepository(
             ],
         }
 
-    def findings_read_model(self, limit: int = 50, offset: int = 0) -> dict[str, object]:
+    def findings_read_model(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        organization_id: UUID = DEFAULT_ORGANIZATION_ID,
+    ) -> dict[str, object]:
         """Return a bounded finding list without exposing raw evidence or arbitrary SQL."""
         if not 1 <= limit <= 100:
             raise ValueError("limit must be within 1..100")
         if offset < 0:
             raise ValueError("offset cannot be negative")
         with self.connection.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*) FROM findings")
+            cursor.execute(
+                """SELECT COUNT(*) FROM findings f JOIN assets a ON a.id=f.asset_id
+                   WHERE a.organization_id=%s""",
+                (organization_id,),
+            )
             total = int(cursor.fetchone()[0])
             cursor.execute(
                 """SELECT f.id, f.title, f.asset_id, a.canonical_id, f.state, f.severity,
@@ -2021,9 +2168,10 @@ class PostgresRepository(
                    FROM findings f
                    JOIN assets a ON a.id = f.asset_id
                    LEFT JOIN services s ON s.id = f.service_id
+                   WHERE a.organization_id=%s
                    ORDER BY f.detected_at DESC, f.id DESC
                    LIMIT %s OFFSET %s""",
-                (limit, offset),
+                (organization_id, limit, offset),
             )
             rows = cursor.fetchall()
         items = [
@@ -2054,14 +2202,22 @@ class PostgresRepository(
         ]
         return {"total": total, "limit": limit, "offset": offset, "items": items}
 
-    def assets_read_model(self, limit: int = 50, offset: int = 0) -> dict[str, object]:
+    def assets_read_model(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        organization_id: UUID = DEFAULT_ORGANIZATION_ID,
+    ) -> dict[str, object]:
         """Return bounded asset inventory with its observed services."""
         if not 1 <= limit <= 100:
             raise ValueError("limit must be within 1..100")
         if offset < 0:
             raise ValueError("offset cannot be negative")
         with self.connection.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*) FROM assets")
+            cursor.execute(
+                "SELECT COUNT(*) FROM assets WHERE organization_id=%s",
+                (organization_id,),
+            )
             total = int(cursor.fetchone()[0])
             cursor.execute(
                 """SELECT a.id, a.canonical_id, a.asset_type, a.value,
@@ -2069,13 +2225,13 @@ class PostgresRepository(
                           s.id, s.protocol, s.port, s.service_name, s.version
                    FROM (
                        SELECT id, canonical_id, asset_type, value, first_seen_at, last_seen_at
-                       FROM assets
+                       FROM assets WHERE organization_id=%s
                        ORDER BY last_seen_at DESC, id
                        LIMIT %s OFFSET %s
                    ) a
                    LEFT JOIN services s ON s.asset_id = a.id
                    ORDER BY a.last_seen_at DESC, a.id, s.port NULLS LAST, s.id NULLS LAST""",
-                (limit, offset),
+                (organization_id, limit, offset),
             )
             rows = cursor.fetchall()
         grouped: dict[UUID, dict[str, object]] = {}
@@ -2110,9 +2266,16 @@ class PostgresRepository(
             "items": list(grouped.values()),
         }
 
-    def asset_id(self, canonical_id: str) -> UUID:
+    def asset_id(
+        self,
+        canonical_id: str,
+        organization_id: UUID = DEFAULT_ORGANIZATION_ID,
+    ) -> UUID:
         with self.connection.cursor() as cursor:
-            cursor.execute("SELECT id FROM assets WHERE canonical_id=%s", (canonical_id,))
+            cursor.execute(
+                "SELECT id FROM assets WHERE canonical_id=%s AND organization_id=%s",
+                (canonical_id, organization_id),
+            )
             row = cursor.fetchone()
         if row is None:
             raise KeyError(canonical_id)

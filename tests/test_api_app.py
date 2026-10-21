@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -17,6 +17,9 @@ class FakeRepository:
         self.audit_events = []
         self.login_attempts = {}
         self.fail_campaign_report_audit = False
+        self.asset_read_organizations = []
+        self.finding_read_organizations = []
+        self.dashboard_organizations = []
 
     def record_login_attempts(
         self, bucket_keys, now, window_seconds=60, audit_limits=None
@@ -74,8 +77,11 @@ class FakeRepository:
         user = self.user_by_id(user_id)
         if user is None:
             raise PermissionError("organization context unavailable")
-        return {"organization_id": "00000000-0000-4000-8000-000000000001",
-                "organization_name": "Default Organization", "role": user.role}
+        return {
+            "organization_id": DEFAULT_ORGANIZATION_ID,
+            "organization_name": "Default Organization",
+            "role": user.role,
+        }
 
     def create_session(self, user_id, token_hash, expires_at):
         session_id = uuid4()
@@ -143,7 +149,8 @@ class FakeRepository:
             ],
         }
 
-    def assets_read_model(self, limit=50, offset=0):
+    def assets_read_model(self, limit=50, offset=0, organization_id=None):
+        self.asset_read_organizations.append(organization_id)
         return {
             "total": 1,
             "limit": limit,
@@ -169,7 +176,8 @@ class FakeRepository:
             ],
         }
 
-    def findings_read_model(self, limit=50, offset=0):
+    def findings_read_model(self, limit=50, offset=0, organization_id=None):
+        self.finding_read_organizations.append(organization_id)
         return {
             "total": 2,
             "limit": limit,
@@ -311,7 +319,8 @@ class FakeRepository:
             ],
         }
 
-    def dashboard_summary(self):
+    def dashboard_summary(self, organization_id=None):
+        self.dashboard_organizations.append(organization_id)
         return {
             "campaigns": 2,
             "assets": 4,
@@ -329,6 +338,7 @@ async def client():
     auth.create_user("analyst", "correct-horse-battery-123", Role.ANALYST)
     auth.create_user("admin", "correct-horse-battery-123", Role.ADMIN)
     app = create_app(repository=repository, auth_service=auth)
+    app.state.test_repository = repository
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -455,6 +465,9 @@ async def test_dashboard_summary_is_bounded_read_model(client):
         "findings_by_severity": {"HIGH": 2, "LOW": 1},
         "scans_by_state": {"COMPLETED": 1, "RUNNING": 1},
     }
+    assert client._transport.app.state.test_repository.dashboard_organizations == [
+        UUID(DEFAULT_ORGANIZATION_ID)
+    ]
 
 
 @pytest.mark.anyio
@@ -481,6 +494,9 @@ async def test_findings_read_model_is_bounded_and_contextual(client):
     assert payload["offset"] == 1
     assert payload["items"][0]["asset_canonical_id"] == "fqdn:example.test"
     assert payload["items"][0]["service_port"] == 443
+    assert client._transport.app.state.test_repository.finding_read_organizations == [
+        UUID(DEFAULT_ORGANIZATION_ID)
+    ]
     assert payload["items"][0]["endpoint"] == "https://example.test/"
     assert "evidence" not in payload["items"][0]
 
@@ -676,6 +692,9 @@ async def test_assets_read_model_returns_services(client):
     assert payload["total"] == 1
     assert payload["items"][0]["canonical_id"] == "fqdn:example.test"
     assert payload["items"][0]["services"][0]["port"] == 443
+    assert client._transport.app.state.test_repository.asset_read_organizations == [
+        UUID(DEFAULT_ORGANIZATION_ID)
+    ]
 
 
 @pytest.mark.anyio
