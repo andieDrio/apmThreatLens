@@ -10,6 +10,7 @@ import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
@@ -413,6 +414,71 @@ class APIContext:
     orchestrator: ScanOrchestrator
     evidence_validation: EvidenceValidationService
     provider_registry: ProviderRegistry
+
+
+_SENSITIVE_METADATA_KEY_MARKERS = (
+    "password",
+    "passwd",
+    "passphrase",
+    "secret",
+    "privatekey",
+    "token",
+    "apikey",
+    "accesskey",
+    "clientsecret",
+    "authorization",
+    "authheader",
+    "credential",
+    "signature",
+    "cookie",
+    "session",
+)
+_URL_METADATA_KEYS = {"url", "location", "redirectlocation"}
+
+
+def _redact_url_metadata(value: str) -> str:
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        return "[REDACTED_URL]"
+    if parts.scheme and not parts.netloc:
+        return "[REDACTED_URL]"
+    safe_netloc = parts.netloc
+    if parts.netloc:
+        hostname = parts.hostname
+        if hostname is None:
+            return "[REDACTED_URL]"
+        try:
+            port = parts.port
+        except ValueError:
+            return "[REDACTED_URL]"
+        host = f"[{hostname}]" if ":" in hostname else hostname
+        safe_netloc = f"{host}:{port}" if port is not None else host
+    query = "[REDACTED]" if parts.query else ""
+    return urlunsplit((parts.scheme, safe_netloc, parts.path, query, ""))
+
+
+def _safe_evidence_metadata(metadata: dict[str, str]) -> dict[str, str]:
+    """Redact secret-like fields and query/fragment data from evidence metadata."""
+    safe: dict[str, str] = {}
+    for key, value in metadata.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            continue
+        normalized_key = "".join(character.lower() for character in key if character.isalnum())
+        if any(marker in normalized_key for marker in _SENSITIVE_METADATA_KEY_MARKERS):
+            safe[key] = "[REDACTED]"
+        elif (
+            normalized_key in _URL_METADATA_KEYS
+            or "url" in normalized_key
+            or "location" in normalized_key
+            or "://" in value
+            or "?" in value
+            or "#" in value
+        ):
+            safe[key] = _redact_url_metadata(value)
+        else:
+            safe[key] = value
+    return safe
 
 
 def create_app(
@@ -943,7 +1009,7 @@ def create_app(
                 source=item["source"],
                 captured_at=item["captured_at"].isoformat(),
                 sha256=item["sha256"],
-                metadata=dict(item["metadata"]),
+                metadata=_safe_evidence_metadata(dict(item["metadata"])),
             )
             for item in result["items"]
         ]

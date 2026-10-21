@@ -22,7 +22,16 @@ class FakeRepository:
                 source="unit-test",
                 captured_at=datetime(2026, 1, 2, tzinfo=UTC),
                 sha256="a" * 64,
-                metadata={"execution_id": str(uuid4()), "provider": "test"},
+                metadata={
+                    "execution_id": str(uuid4()),
+                    "provider": "test",
+                    "url": (
+                        "https://user:url-secret@example.test/api/items?api_key=top-secret"
+                        "&region=ap-southeast-1#fragment-secret"
+                    ),
+                    "redirect_location": "/next?access_token=redirect-secret",
+                    "authorization": "Bearer header-secret",
+                },
             )
         ]
 
@@ -166,6 +175,17 @@ async def test_evidence_read_model_exposes_integrity_metadata_not_raw_content():
     assert payload["items"][0]["kind"] == "banner"
     assert payload["items"][0]["sha256"] == "a" * 64
     assert payload["items"][0]["metadata"]["provider"] == "test"
+    assert payload["items"][0]["metadata"]["execution_id"]
+    assert payload["items"][0]["metadata"]["url"] == (
+        "https://example.test/api/items?[REDACTED]"
+    )
+    assert payload["items"][0]["metadata"]["redirect_location"] == "/next?[REDACTED]"
+    assert payload["items"][0]["metadata"]["authorization"] == "[REDACTED]"
+    assert "top-secret" not in response.text
+    assert "redirect-secret" not in response.text
+    assert "header-secret" not in response.text
+    assert "url-secret" not in response.text
+    assert "fragment-secret" not in response.text
     assert "content" not in payload["items"][0]
 
 

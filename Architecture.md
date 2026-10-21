@@ -840,3 +840,11 @@ Gate 75 introduced an authenticated campaign report containing security-sensitiv
 `PostgresRepository.campaign_report_export_with_audit()` now assembles the bounded report and inserts a `CAMPAIGN_REPORT_EXPORTED` audit event in one transaction. The event contains the authenticated actor, campaign identifier, and bounded scan/finding summary metadata. The API returns a generic 503 and no report data if report/audit persistence fails; missing campaigns remain 404 without a success event. Existing READ authorization, campaign scoping, output bounds, raw-evidence exclusion, and response security headers are preserved. No schema migration was needed.
 
 **Validation status:** The user confirmed the report-specific API and PostgreSQL tests and full suite reached 100%; Ruff and `git diff --check` passed; and the Windows package wheel built successfully on 2026-10-21. Five Starlette deprecation warnings were non-failing. Commit `e0dd2d9` (`Audit campaign report exports`) is on `main` and `origin/main`; validation is user-confirmed.
+
+## Architecture Gate 77 — Secret Redaction in Evidence Metadata — IN PROGRESS
+
+The evidence-list API returns persisted provider metadata. HTTP/API provider metadata includes target URLs and redirect locations; those values may contain secrets in query strings or fragments. A generic metadata map can also contain fields named for passwords, tokens, credentials, API keys, authorization, or signatures. Excluding raw evidence content alone does not prevent those values from appearing in the READ-authorized evidence response.
+
+Gate 77 sanitizes metadata at the API response boundary: redact secret-like field names, strip URL userinfo, redact query strings, and remove fragments from URL-like metadata. Preserve safe provider/execution provenance and do not modify persisted evidence or its digest.
+
+**Acceptance criteria:** API tests prove secret-like values, URL query values, fragments, and redirect query values are absent from responses while safe provenance remains; evidence content and persisted digests are unchanged. Run focused evidence API tests, full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build before closure.

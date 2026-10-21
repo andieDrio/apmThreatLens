@@ -499,3 +499,7 @@ Gate 75 adds a READ-authorized JSON report download for one campaign. The report
 ### Architecture Gate 76 — Auditable Campaign Report Export: COMPLETE
 
 The report endpoint records `CAMPAIGN_REPORT_EXPORTED` with the authenticated actor, campaign identifier, and bounded report summary in the same transaction as report assembly. Audit persistence failure returns a generic 503 without report data. API and PostgreSQL regressions cover success attribution, fail-closed behavior, and missing campaigns. No schema migration was needed. On 2026-10-21, the user confirmed the focused API/PostgreSQL tests and full suite reached 100%; Ruff and diff check passed; and the Windows wheel built successfully. Five Starlette deprecation warnings were non-failing.
+
+### Architecture Gate 77 — Secret Redaction in Evidence Metadata: IN PROGRESS
+
+The evidence-list response redacts secret-like metadata fields and sanitizes URL-like values by removing userinfo, query strings, and fragments. Stored evidence and hashes remain unchanged; safe provenance such as provider and execution ID remains available. Focused evidence API coverage is added; local Windows validation remains pending.

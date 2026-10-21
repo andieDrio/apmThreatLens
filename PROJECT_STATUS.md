@@ -2,10 +2,10 @@
 
 **Last updated:** 2026-10-21
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 76
+**Highest architecture gate reached:** Gate 77
 **Highest fully validated gate:** Gate 76 (user-confirmed local validation)
-**Current gate:** Architecture gap review before Gate 77
-**Current status:** Gate 76 — Auditable Campaign Report Export — is complete. The user confirmed the campaign-report API and PostgreSQL focused tests and full suite reached 100%; Ruff and `git diff --check` passed; and the Windows wheel built successfully. Five Starlette deprecation warnings were non-failing. Gate 76 is committed and pushed as `e0dd2d9` (`Audit campaign report exports`). The validation is user-confirmed.
+**Current gate:** Gate 77 — Secret Redaction in Evidence Metadata
+**Current status:** Gate 76 is complete and committed as `e0dd2d9`; its test and wheel results were user-confirmed. Architecture review found that the authenticated evidence read model returns provider metadata without redacting secret-like keys or query/fragment values from URL metadata. Gate 77 sanitizes the API response while preserving stored evidence and safe provenance fields. API regression coverage is added; local validation remains pending.
 
 ## Executive Summary
 
@@ -407,3 +407,11 @@ The Gate 75 campaign report contains security-sensitive findings and evidence me
 **Implementation:** `PostgresRepository.campaign_report_export_with_audit()` assembles the bounded report and inserts `CAMPAIGN_REPORT_EXPORTED` in one transaction. The API supplies the authenticated user ID, returns a generic 503 if report/audit persistence fails, and does not return report bytes on that path. API and PostgreSQL regressions cover attribution, success, failure, and missing campaigns. No migration was needed.
 
 **Validation closure:** On 2026-10-21, the user confirmed the report-specific API and PostgreSQL tests and full suite reached 100%; Ruff and `git diff --check` passed; and the Windows wheel built successfully. Five Starlette deprecation warnings were non-failing. Commit `e0dd2d9` (`Audit campaign report exports`) is present on `main` and `origin/main`.
+
+## Gate 77 — Secret Redaction in Evidence Metadata — IN PROGRESS
+
+The authenticated `GET /api/v1/evidence` response currently returns the full stored metadata map. Built-in HTTP/API providers store scoped target URLs and redirect locations there; query strings and URL fragments can carry API keys, access tokens, or signed values. Evidence raw content is excluded, but these metadata fields can still leak secrets to READ-authorized users.
+
+Gate 77 redacts metadata keys whose names indicate passwords, tokens, secrets, API/access keys, credentials, authorization, or signatures. URL-like metadata has userinfo stripped and query values and fragments removed from the response; stored evidence and SHA-256 digests remain unchanged. Safe provider/execution provenance is preserved.
+
+**Validation pending:** Add/verify API coverage for secret-key, URL query, fragment, relative redirect, and safe provenance fields; run the focused evidence API tests, full PostgreSQL-backed suite, Ruff, `git diff --check`, and wheel build against the exact working tree before closure.
