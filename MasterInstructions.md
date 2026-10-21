@@ -200,6 +200,8 @@ On 2026-10-21, a clean Python 3.15 dependency install and wheel build succeeded;
 ## Gate 75 — Evidence-Backed Campaign Report Export — COMPLETE
 
 
-## Gate 76 — Auditable Campaign Report Export — IN PROGRESS
+## Gate 76 — Auditable Campaign Report Export — COMPLETE
 
-Architecture review found that Gate 75's security-sensitive campaign report download did not create an audit event. Gate 76 now adds `CAMPAIGN_REPORT_EXPORTED` with actor, campaign identifier, and bounded summary metadata in the same transaction as report assembly. The API fails closed with a generic 503 and no report bytes if persistence fails. READ permission, campaign isolation, limits, raw-evidence exclusion, and response headers are preserved. API/PostgreSQL regression coverage is added; the existing schema suffices. Windows local validation remains pending: focused tests, full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build must pass on the exact local tree before closure. Do not commit or push unless the user explicitly asks.
+Architecture review found that Gate 75's security-sensitive campaign report download did not create an audit event. Gate 76 adds `CAMPAIGN_REPORT_EXPORTED` with actor, campaign identifier, and bounded summary metadata in the same transaction as report assembly. The API fails closed with a generic 503 and no report bytes if persistence fails. READ permission, campaign isolation, limits, raw-evidence exclusion, and response headers are preserved. API/PostgreSQL regression coverage was added; the existing schema suffices. On 2026-10-21, the user confirmed focused report API/PostgreSQL tests and the full suite reached 100%, Ruff, `git diff --check`, and the Windows package wheel build passed. Five Starlette deprecation warnings were non-failing. Commit `e0dd2d9` is on `main` and `origin/main`. Do not commit or push unless the user explicitly asks.
+
+Next, inspect the current project and governing docs for the next highest-priority architecture gap before defining Gate 77.

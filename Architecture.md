@@ -833,10 +833,10 @@ The authenticated API now provides a JSON attachment for a selected campaign, ba
 
 **Validation status:** Thirty-three focused API/UI tests passed. On 2026-10-21, the user confirmed the report-specific PostgreSQL integration test and full PostgreSQL-backed suite completed at 100%; Ruff, `git diff --check`, and the Windows package wheel build passed. Five Starlette deprecation warnings were non-failing. Validation was user-run; changes remain local with no commit or push.
 
-## Architecture Gate 76 — Auditable Campaign Report Export — IN PROGRESS
+## Architecture Gate 76 — Auditable Campaign Report Export — COMPLETE
 
 Gate 75 introduced an authenticated campaign report containing security-sensitive findings and evidence metadata. The download route currently returns this data without writing an audit event, so the append-only audit trail cannot attribute a successful export to its authenticated user.
 
 `PostgresRepository.campaign_report_export_with_audit()` now assembles the bounded report and inserts a `CAMPAIGN_REPORT_EXPORTED` audit event in one transaction. The event contains the authenticated actor, campaign identifier, and bounded scan/finding summary metadata. The API returns a generic 503 and no report data if report/audit persistence fails; missing campaigns remain 404 without a success event. Existing READ authorization, campaign scoping, output bounds, raw-evidence exclusion, and response security headers are preserved. No schema migration was needed.
 
-**Validation status:** API and PostgreSQL regression coverage has been added for attributable successful exports, audit failure rollback/fail-closed response, and missing campaign behavior. User-local Windows validation is pending: focused API/PostgreSQL tests, full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build must pass against this exact working tree before closure.
+**Validation status:** The user confirmed the report-specific API and PostgreSQL tests and full suite reached 100%; Ruff and `git diff --check` passed; and the Windows package wheel built successfully on 2026-10-21. Five Starlette deprecation warnings were non-failing. Commit `e0dd2d9` (`Audit campaign report exports`) is on `main` and `origin/main`; validation is user-confirmed.
