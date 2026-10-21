@@ -93,7 +93,7 @@ The API does not expose raw evidence mutation, arbitrary SQL, provider execution
 
 ### Gate 19 PostgreSQL Enforcement — COMPLETE
 
-The active persistence test suite now runs through PostgreSQL only. The shared integration fixture requires `THREATLENS_TEST_DATABASE_URL` or the canonical `THREATLENS_DATABASE_URL`, never falls back to SQLite, initializes the schema, isolates tests with `TRUNCATE ... CASCADE`, and covers domain persistence, foreign-key integrity, authentication, durable correlation, evidence validation, scan lifecycle CAS, concurrency-sensitive orchestration, and PostgreSQL trigger-based failure-atomicity scenarios. The repository contains no active test-suite imports of `SQLiteRepository`. The SQLite adapter is retained only as legacy compatibility code and receives no new production behavior.
+The active persistence integration suite runs through PostgreSQL only. Its shared fixture requires `THREATLENS_TEST_DATABASE_URL` or the canonical `THREATLENS_DATABASE_URL`, never falls back to SQLite, initializes the schema, and isolates records with `TRUNCATE ... CASCADE`. PostgreSQL tests cover domain persistence, foreign-key integrity, authentication, durable correlation, evidence validation, scan lifecycle CAS, concurrency-sensitive orchestration, and trigger-based failure atomicity. SQLite remains a legacy compatibility adapter; shared authentication contract changes are mirrored there, but it is not used by the application or active persistence integration suite.
 
 ### PostgreSQL Deployment Readiness and Database Roles
 
@@ -506,4 +506,8 @@ The evidence-list response redacts secret-like metadata fields and sanitizes URL
 
 ### Architecture Gate 78 — Organization-Level Data Isolation: IN PROGRESS
 
-The architecture requires Organization as a core domain, but the current schema has no organization or membership model and authenticated READ endpoints query global datasets. Gate 78 will define and enforce organization ownership through the full resource graph, migrate legacy data to an explicit default organization, and test cross-organization isolation before supporting multiple customer organizations.
+Gate 78 is staged because partial scoping would leave cross-organization paths exposed.
+
+Stage 78A adds PostgreSQL organizations/memberships, a retry-safe assignment of existing users to `Default Organization`, atomic membership creation for new accounts, fail-closed authenticated organization context, and a dashboard security-posture view. The UI explicitly warns that resource-query isolation is still in progress. Local implementation is pending validation.
+
+Stage 78B will scope all resource reads, writes, aggregates, reports, audit, idempotency, and async provider paths to the authenticated organization; asset identity will be unique within each organization. Do not enable multiple customer organizations until two-organization regressions cover the full resource graph.

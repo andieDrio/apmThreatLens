@@ -57,6 +57,7 @@
           <a class="nav-link" href="#campaigns" data-section-link><span class="nav-icon" aria-hidden="true">◎</span>Campaigns</a>
           <a class="nav-link" href="#evidence" data-section-link><span class="nav-icon" aria-hidden="true">◇</span>Evidence</a>
           <a class="nav-link" href="#attack-paths" data-section-link><span class="nav-icon" aria-hidden="true">⌘</span>Attack paths</a>
+          <a class="nav-link" href="#security-posture" data-section-link><span class="nav-icon" aria-hidden="true">◇</span>Security posture</a>
           <a class="nav-link" href="#audit-log" data-section-link><span class="nav-icon" aria-hidden="true">≡</span>Audit log</a>
         </div>
       </nav>
@@ -81,6 +82,30 @@
       </header>
 
       <p id="status-message" class="status-message" role="status" aria-live="polite" hidden></p>
+
+      <section id="security-posture" class="panel posture-panel" aria-labelledby="posture-title">
+        <div class="panel-head">
+          <div><h2 id="posture-title">Security posture · Organization context</h2><p>Authenticated identity and current data-boundary rollout</p></div>
+          <span class="posture-badge posture-active">Membership active</span>
+        </div>
+        <div class="posture-grid">
+          <article class="posture-card">
+            <span class="posture-label">Current organization</span>
+            <strong id="organization-name">Loading…</strong>
+            <span id="organization-id" class="posture-detail">Resolving membership</span>
+          </article>
+          <article class="posture-card">
+            <span class="posture-label">Session role</span>
+            <strong id="organization-role">—</strong>
+            <span class="posture-detail">Resolved from active organization membership</span>
+          </article>
+          <article class="posture-card posture-warning-card">
+            <span class="posture-label">Tenant query isolation</span>
+            <strong>In progress</strong>
+            <span class="posture-detail">Organization context is established; all resource queries are not yet organization-scoped.</span>
+          </article>
+        </div>
+      </section>
 
       <section class="metric-grid" aria-label="Platform metrics">
         <article class="metric">

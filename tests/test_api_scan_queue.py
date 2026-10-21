@@ -8,6 +8,7 @@ from threatlens.api.app import create_app
 from threatlens.auth.service import AuthenticationService, Role
 from threatlens.domain.models import AuditEvent, Campaign, LifecycleState, Scope, Scan, User
 from threatlens.providers.runtime import ProviderMetadata, ProviderRegistry, ProviderCapability
+from threatlens.storage.auth import DEFAULT_ORGANIZATION_ID, DEFAULT_ORGANIZATION_NAME
 
 
 CAMPAIGN_ID = uuid4()
@@ -88,6 +89,16 @@ class FakeRepository:
 
     def user_by_id(self, user_id):
         return next((user for user in self.users.values() if user.id == user_id), None)
+
+    def organization_for_user(self, user_id):
+        user = self.user_by_id(user_id)
+        if user is None:
+            raise PermissionError("organization context unavailable")
+        return {
+            "organization_id": DEFAULT_ORGANIZATION_ID,
+            "organization_name": DEFAULT_ORGANIZATION_NAME,
+            "role": user.role,
+        }
 
     def create_session(self, user_id, token_hash, expires_at):
         session_id = uuid4()

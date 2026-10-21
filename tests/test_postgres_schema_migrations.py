@@ -31,6 +31,7 @@ def test_postgres_baseline_is_recorded_and_repeat_initialize_preserves_data(
             (1, "legacy_schema_baseline"),
             (2, "audit_events_append_only"),
             (3, "audit_events_no_truncate"),
+            (4, "organization_membership_foundation"),
         ]
 
         campaign_id = uuid4()
@@ -47,7 +48,7 @@ def test_postgres_baseline_is_recorded_and_repeat_initialize_preserves_data(
         cursor.execute("SELECT name FROM campaigns WHERE id=%s", (campaign_id,))
         assert cursor.fetchone() == ("gate54-preservation",)
         cursor.execute("SELECT COUNT(*) FROM threatlens_schema_migrations")
-        assert cursor.fetchone()[0] == 3
+        assert cursor.fetchone()[0] == 4
 
 
 def test_postgres_initialize_leaves_connection_idle_after_audit_verification(
@@ -189,6 +190,7 @@ def test_postgres_concurrent_initialize_serializes_migrations(postgres_repositor
             (1, "legacy_schema_baseline"),
             (2, "audit_events_append_only"),
             (3, "audit_events_no_truncate"),
+            (4, "organization_membership_foundation"),
         ]
 
 

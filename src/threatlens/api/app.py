@@ -200,6 +200,8 @@ class PrincipalResponse(BaseModel):
     username: str
     role: str
     session_id: str
+    organization_id: str
+    organization_name: str
 
 
 class CampaignCreateRequest(BaseModel):
@@ -1465,6 +1467,8 @@ def create_app(
             username=current.username,
             role=current.role.value,
             session_id=str(current.session_id),
+            organization_id=str(current.organization_id),
+            organization_name=current.organization_name,
         )
 
     return app

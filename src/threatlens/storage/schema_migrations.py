@@ -68,6 +68,53 @@ def _audit_events_no_truncate(repository: object) -> None:
         )
 
 
+def _organizations_and_memberships(repository: object) -> None:
+    """Create the initial tenant and attach existing accounts without data loss."""
+    from threatlens.storage.auth import DEFAULT_ORGANIZATION_ID, DEFAULT_ORGANIZATION_NAME
+
+    with repository.connection.cursor() as cursor:
+        # Older installations may already have recorded the baseline migration
+        # before initialize_auth() created these tables. Keep this migration
+        # independently responsible for the schema it introduces.
+        cursor.execute(
+            """CREATE TABLE IF NOT EXISTS organizations (
+                   id UUID PRIMARY KEY,
+                   name TEXT NOT NULL,
+                   slug TEXT NOT NULL UNIQUE,
+                   created_at TIMESTAMPTZ NOT NULL
+               )"""
+        )
+        cursor.execute(
+            """CREATE TABLE IF NOT EXISTS organization_memberships (
+                   organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                   role TEXT NOT NULL CHECK (role IN ('ADMIN','ANALYST','VIEWER')),
+                   active BOOLEAN NOT NULL,
+                   created_at TIMESTAMPTZ NOT NULL,
+                   PRIMARY KEY (organization_id, user_id)
+               )"""
+        )
+        cursor.execute(
+            """INSERT INTO organizations (id,name,slug,created_at)
+               VALUES (%s,%s,'default',NOW())
+               ON CONFLICT (id) DO NOTHING""",
+            (DEFAULT_ORGANIZATION_ID, DEFAULT_ORGANIZATION_NAME),
+        )
+        cursor.execute(
+            "SELECT name,slug FROM organizations WHERE id=%s",
+            (DEFAULT_ORGANIZATION_ID,),
+        )
+        if cursor.fetchone() != (DEFAULT_ORGANIZATION_NAME, "default"):
+            raise RuntimeError("default organization identity is inconsistent")
+        cursor.execute(
+            """INSERT INTO organization_memberships
+                   (organization_id,user_id,role,active,created_at)
+               SELECT %s,id,role,active,created_at FROM users
+               ON CONFLICT (organization_id,user_id) DO NOTHING""",
+            (DEFAULT_ORGANIZATION_ID,),
+        )
+
+
 MIGRATIONS = (
     Migration(
         version=1,
@@ -87,6 +134,12 @@ MIGRATIONS = (
         name="audit_events_no_truncate",
         revision="postgresql-trigger-blocks-truncate-v1",
         apply=_audit_events_no_truncate,
+    ),
+    Migration(
+        version=4,
+        name="organization_membership_foundation",
+        revision="default-organization-membership-backfill-v1",
+        apply=_organizations_and_memberships,
     ),
 )
 

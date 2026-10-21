@@ -69,6 +69,13 @@ class FakeRepository:
     def user_by_id(self, user_id):
         return next((u for u in self.users.values() if u.id == user_id), None)
 
+    def organization_for_user(self, user_id):
+        user = self.user_by_id(user_id)
+        if user is None:
+            raise PermissionError("organization context unavailable")
+        return {"organization_id": "00000000-0000-4000-8000-000000000001",
+                "organization_name": "Default Organization", "role": user.role}
+
     def create_session(self, user_id, token_hash, expires_at):
         session_id = uuid4()
         self.sessions[token_hash] = {

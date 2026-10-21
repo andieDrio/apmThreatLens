@@ -42,6 +42,8 @@ class AuthenticatedPrincipal:
     username: str
     role: Role
     session_id: UUID
+    organization_id: UUID
+    organization_name: str
 
 
 class AuthenticationService:
@@ -132,7 +134,11 @@ class AuthenticationService:
             )
             raise PermissionError("authentication failed")
         try:
-            role = Role(user.role)
+            membership = self.repository.organization_for_user(user.id)
+            role = Role(membership["role"])
+            if Role(user.role) is not role:
+                raise ValueError("user and membership roles disagree")
+            organization_id = UUID(membership["organization_id"])
         except (TypeError, ValueError) as exc:
             self.repository.save_audit_event(
                 AuditEvent(
@@ -142,6 +148,18 @@ class AuthenticationService:
                     resource_id=user.id,
                     outcome="DENIED",
                     detail="invalid stored role",
+                )
+            )
+            raise PermissionError("authentication failed") from exc
+        except PermissionError as exc:
+            self.repository.save_audit_event(
+                AuditEvent(
+                    actor_user_id=user.id,
+                    action="LOGIN",
+                    resource_type="AUTH",
+                    resource_id=user.id,
+                    outcome="DENIED",
+                    detail="organization membership unavailable",
                 )
             )
             raise PermissionError("authentication failed") from exc
@@ -160,7 +178,14 @@ class AuthenticationService:
             datetime.now(UTC) + self.session_ttl,
             event,
         )
-        return AuthenticatedPrincipal(user.id, user.username, role, session_id), raw_token
+        return AuthenticatedPrincipal(
+            user.id,
+            user.username,
+            role,
+            session_id,
+            organization_id,
+            membership["organization_name"],
+        ), raw_token
 
     def authenticate_session(self, raw_token: str) -> AuthenticatedPrincipal:
         if not raw_token:
@@ -175,9 +200,19 @@ class AuthenticationService:
             user = self.repository.user_by_id(UUID(session["user_id"]))
             if user is None or not user.active:
                 raise PermissionError("user is inactive")
-            role = Role(user.role)
+            membership = self.repository.organization_for_user(user.id)
+            role = Role(membership["role"])
+            if Role(user.role) is not role:
+                raise ValueError("user and membership roles disagree")
             session_id = UUID(session["id"])
-            return AuthenticatedPrincipal(user.id, user.username, role, session_id)
+            return AuthenticatedPrincipal(
+                user.id,
+                user.username,
+                role,
+                session_id,
+                UUID(membership["organization_id"]),
+                membership["organization_name"],
+            )
         except PermissionError:
             raise
         except (ValueError, TypeError, KeyError, AttributeError, OverflowError) as exc:

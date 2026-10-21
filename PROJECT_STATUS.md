@@ -5,7 +5,7 @@
 **Highest architecture gate reached:** Gate 78
 **Highest fully validated gate:** Gate 77 (user-confirmed local validation)
 **Current gate:** Gate 78 — Organization-Level Data Isolation
-**Current status:** Gate 77 — Secret Redaction in Evidence Metadata — is complete and pushed as `9abd8a8`. The user confirmed the evidence API tests and full suite reached 100%, Ruff and `git diff --check` passed, and the Windows wheel built successfully. Five Starlette deprecation warnings were non-failing. Architecture review found that the design names Organization as a core domain, but PostgreSQL has no organization or membership model and READ APIs query global datasets. Gate 78 defines the required organization boundary, safe legacy-data migration, and cross-organization authorization tests before broad data-path changes.
+**Current status:** Gate 77 is complete and pushed as `9abd8a8`. Gate 78 is being delivered in stages. Stage 78A adds PostgreSQL organizations and memberships, a retry-safe default-organization backfill, membership-derived session identity, and a visible security-posture panel. Validation is pending. Resource queries are still global; the UI explicitly calls out that tenant query isolation is in progress. Stage 78B must scope all resource reads and writes before multiple organizations can safely share the application.
 
 ## Executive Summary
 
@@ -414,6 +414,10 @@ The evidence read API redacts secret-like metadata keys and strips URL userinfo,
 
 ## Gate 78 — Organization-Level Data Isolation — IN PROGRESS
 
-The architecture requires Organization as a core domain, but the PostgreSQL schema has no organization or membership entities. Authenticated READ endpoints currently query global campaigns, scans, assets, findings, evidence, risk, attack-path, and audit data. This prevents safe multi-organization use.
+### Stage 78A — Organization and Membership Context — IMPLEMENTED LOCALLY; VALIDATION PENDING
 
-Before implementation, define an append-only migration strategy that assigns legacy records to an explicit default organization without guessing or discarding ownership. Add an organization membership contract for users and enforce membership at every read and mutation boundary. Ensure assets shared by canonical identity cannot leak or overwrite data across organizations. Missing organization context and cross-organization identifiers must fail closed. Acceptance requires PostgreSQL migration/backfill tests and API/storage isolation regressions across the resource graph, plus full PostgreSQL-backed suite, Ruff, diff check, and wheel build.
+Added PostgreSQL organization and membership tables, the explicit `Default Organization`, and a transactional migration that attaches existing users without rewriting application records. New users receive a default-org membership atomically with user/audit creation. Authentication resolves exactly one active membership and takes the effective role from that membership; zero or multiple memberships fail closed. `/api/v1/me` exposes the active organization context. The dashboard now displays the organization, membership role, and an explicit warning that resource-query isolation is still in progress.
+
+### Stage 78B — Organization-Scoped Resource Access — NOT STARTED
+
+Every read, aggregate, report, write, async provider handoff, evidence/finding relationship, audit event, and idempotency boundary must enforce the authenticated organization. Assets must be unique within an organization. Cross-organization IDs return not found, and missing organization context fails closed. Do not enable multiple customer organizations until the full resource graph and PostgreSQL/API isolation regressions are covered.

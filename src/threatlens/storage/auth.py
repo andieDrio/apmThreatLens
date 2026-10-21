@@ -9,6 +9,9 @@ from uuid import UUID
 
 from threatlens.domain.models import AuditEvent, User
 
+DEFAULT_ORGANIZATION_ID = "00000000-0000-4000-8000-000000000001"
+DEFAULT_ORGANIZATION_NAME = "Default Organization"
+
 
 class SQLiteAuthMixin:
     @contextmanager
@@ -49,6 +52,28 @@ class SQLiteAuthMixin:
                 action TEXT NOT NULL, resource_type TEXT NOT NULL, resource_id TEXT,
                 outcome TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL
             )""")
+            self.connection.execute("""CREATE TABLE IF NOT EXISTS organizations (
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL
+            )""")
+            self.connection.execute("""CREATE TABLE IF NOT EXISTS organization_memberships (
+                organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                role TEXT NOT NULL CHECK (role IN ('ADMIN','ANALYST','VIEWER')),
+                active INTEGER NOT NULL CHECK (active IN (0,1)), created_at TEXT NOT NULL,
+                PRIMARY KEY (organization_id, user_id)
+            )""")
+            now = datetime.now(UTC).isoformat()
+            self.connection.execute(
+                "INSERT OR IGNORE INTO organizations (id,name,slug,created_at) VALUES (?,?,?,?)",
+                (DEFAULT_ORGANIZATION_ID, DEFAULT_ORGANIZATION_NAME, "default", now),
+            )
+            self.connection.execute(
+                "INSERT OR IGNORE INTO organization_memberships "
+                "(organization_id,user_id,role,active,created_at) "
+                "SELECT ?,id,role,active,created_at FROM users",
+                (DEFAULT_ORGANIZATION_ID,),
+            )
 
     def save_user(self, user: User) -> None:
         with self.connection:
@@ -62,6 +87,11 @@ class SQLiteAuthMixin:
                     int(user.active),
                     user.created_at.isoformat(),
                 ),
+            )
+            self.connection.execute(
+                "INSERT INTO organization_memberships "
+                "(organization_id,user_id,role,active,created_at) VALUES (?,?,?,?,?)",
+                (DEFAULT_ORGANIZATION_ID, str(user.id), user.role, 1, user.created_at.isoformat()),
             )
 
     def save_user_with_audit(self, user: User, event: AuditEvent) -> None:
@@ -95,6 +125,11 @@ class SQLiteAuthMixin:
                         event.detail,
                         event.created_at.isoformat(),
                     ),
+                )
+                self.connection.execute(
+                    "INSERT INTO organization_memberships "
+                    "(organization_id,user_id,role,active,created_at) VALUES (?,?,?,?,?)",
+                    (DEFAULT_ORGANIZATION_ID, str(user.id), user.role, 1, user.created_at.isoformat()),
                 )
 
         if lock is None:
@@ -138,6 +173,21 @@ class SQLiteAuthMixin:
                 created_at=datetime.fromisoformat(row["created_at"]),
             )
         )
+
+    def organization_for_user(self, user_id: UUID) -> dict[str, str]:
+        rows = self.connection.execute(
+            "SELECT o.id,o.name,m.role FROM organization_memberships m "
+            "JOIN organizations o ON o.id=m.organization_id "
+            "WHERE m.user_id=? AND m.active=1 ORDER BY o.id LIMIT 2",
+            (str(user_id),),
+        ).fetchall()
+        if len(rows) != 1:
+            raise PermissionError("organization context unavailable")
+        return {
+            "organization_id": rows[0][0],
+            "organization_name": rows[0][1],
+            "role": rows[0][2],
+        }
 
     def create_session(self, user_id: UUID, token_hash: str, expires_at: datetime) -> UUID:
         session_id = uuid.uuid4()
@@ -296,6 +346,17 @@ class PostgresAuthMixin:
                     action TEXT NOT NULL, resource_type TEXT NOT NULL, resource_id UUID,
                     outcome TEXT NOT NULL, detail TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL
                 )""")
+                cursor.execute("""CREATE TABLE IF NOT EXISTS organizations (
+                    id UUID PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE,
+                    created_at TIMESTAMPTZ NOT NULL
+                )""")
+                cursor.execute("""CREATE TABLE IF NOT EXISTS organization_memberships (
+                    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    role TEXT NOT NULL CHECK (role IN ('ADMIN','ANALYST','VIEWER')),
+                    active BOOLEAN NOT NULL, created_at TIMESTAMPTZ NOT NULL,
+                    PRIMARY KEY (organization_id, user_id)
+                )""")
                 cursor.execute("""CREATE TABLE IF NOT EXISTS scan_command_idempotency (
                     actor_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                     idempotency_key TEXT NOT NULL
@@ -426,6 +487,11 @@ class PostgresAuthMixin:
                         user.created_at,
                     ),
                 )
+                cursor.execute(
+                    "INSERT INTO organization_memberships "
+                    "(organization_id,user_id,role,active,created_at) VALUES (%s,%s,%s,TRUE,%s)",
+                    (DEFAULT_ORGANIZATION_ID, user.id, user.role, user.created_at),
+                )
 
     def save_user_with_audit(self, user: User, event: AuditEvent) -> None:
         """Atomically persist a provisioned user and its success audit event."""
@@ -457,6 +523,12 @@ class PostgresAuthMixin:
                             event.detail,
                             event.created_at,
                         ),
+                    )
+                    cursor.execute(
+                        "INSERT INTO organization_memberships "
+                        "(organization_id,user_id,role,active,created_at) "
+                        "VALUES (%s,%s,%s,TRUE,%s)",
+                        (DEFAULT_ORGANIZATION_ID, user.id, user.role, user.created_at),
                     )
 
     def user_by_username(self, username: str):
@@ -506,6 +578,25 @@ class PostgresAuthMixin:
                 created_at=row[5],
             )
         )
+
+    def organization_for_user(self, user_id: UUID) -> dict[str, str]:
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT o.id,o.name,m.role FROM organization_memberships m "
+                        "JOIN organizations o ON o.id=m.organization_id "
+                        "WHERE m.user_id=%s AND m.active=TRUE ORDER BY o.id LIMIT 2",
+                        (user_id,),
+                    )
+                    rows = cursor.fetchall()
+        if len(rows) != 1:
+            raise PermissionError("organization context unavailable")
+        return {
+            "organization_id": str(rows[0][0]),
+            "organization_name": rows[0][1],
+            "role": rows[0][2],
+        }
 
     def create_session(self, user_id: UUID, token_hash: str, expires_at: datetime) -> UUID:
         session_id = uuid.uuid4()

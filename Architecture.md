@@ -853,6 +853,14 @@ Gate 77 sanitizes metadata at the API response boundary: redact secret-like fiel
 
 The architecture names Organization as a required core domain, but the PostgreSQL schema has no organization or user-membership entities. READ endpoints currently return global datasets to any authenticated READ principal, and assets are globally deduplicated by canonical identity. This is not a safe boundary for multiple customer organizations.
 
-Gate 78 establishes organization ownership and membership, migrates existing records to an explicit default organization without inferring new boundaries, and scopes reads and mutations through the authenticated principal's organization. Resource relationships—including campaigns, scans, assets/services, evidence, findings, risk assessments, attack-path relations, remediation, and audit events—must not cross organization boundaries. Canonical asset identity must be unique within an organization rather than globally shared. Missing tenant context and cross-organization identifiers fail closed.
+Gate 78 is staged because a partial tenant filter would leave cross-organization paths exposed.
 
-**Acceptance criteria:** migration/backfill is retry-safe and data-preserving; user membership and role checks are enforced at API/service and persistence boundaries; PostgreSQL/API regressions prove two organizations cannot read, mutate, or infer each other's resources through direct IDs, lists, aggregates, reports, evidence provenance, or relationships. Full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and wheel build pass before closure. Review the migration and resource graph before coding; this gate may require explicit staged sub-gates if one atomic change is too broad.
+### Stage 78A — Organization and Membership Context — IMPLEMENTED LOCALLY; VALIDATION PENDING
+
+Add PostgreSQL organization and membership tables, an explicit default organization and retry-safe migration that attaches existing users without rewriting application records. New user and membership writes are atomic. Authentication resolves exactly one active membership and derives the role from it; missing or ambiguous membership fails closed. `/api/v1/me` and the dashboard show the resolved organization and role. The dashboard must state clearly that resource-query isolation remains in progress.
+
+### Stage 78B — Organization-Scoped Resource Access — NOT STARTED
+
+Scope every read, aggregate, report, write, async provider handoff, evidence/finding relationship, audit event, and idempotency boundary by the authenticated organization. Canonical asset identity must be unique per organization. Cross-organization IDs return not found; missing organization context fails closed. Multiple customer organizations must not be enabled until cross-organization API/PostgreSQL regressions cover the full resource graph.
+
+**Acceptance criteria:** retry-safe, data-preserving migration; membership/role enforcement; two-organization tests for direct IDs, lists, aggregates, reports, evidence provenance, relationships, writes, and async paths; full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and wheel build before closing Gate 78.

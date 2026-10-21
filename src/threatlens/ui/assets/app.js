@@ -156,6 +156,9 @@
       setText("finding-total", `${findings.total} total findings`);
       setText("scan-total", `${scans.total} recorded executions`);
       setText("user-label", `${principal.username} · ${principal.role}`);
+      setText("organization-name", principal.organization_name);
+      setText("organization-id", `Organization ID · ${principal.organization_id}`);
+      setText("organization-role", principal.role);
       renderBreakdown("severity-breakdown", summary.findings_by_severity, {
         CRITICAL: "bar-critical", HIGH: "bar-high", MEDIUM: "bar-medium",
         LOW: "bar-low", INFO: "bar-info", INFORMATIONAL: "bar-info"

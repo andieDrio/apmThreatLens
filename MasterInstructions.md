@@ -214,4 +214,12 @@ On 2026-10-21, the user confirmed Gate 77's focused evidence API test and full s
 
 ## Gate 78 — Organization-Level Data Isolation — IN PROGRESS
 
-The architecture requires Organization as a core domain, but PostgreSQL has no organization or membership model and authenticated READ APIs currently query global datasets. Before implementation, inspect the complete schema/resource graph and design a retry-safe, data-preserving default-organization backfill. Scope authorization and persistence across campaigns, scans, assets/services, evidence, findings, risk, attack-path relationships, remediation, reports, and audit events. Avoid cross-organization canonical asset sharing. Require cross-organization API/PostgreSQL regressions, full PostgreSQL-backed tests without skips, Ruff, `git diff --check`, and package wheel build. Break the work into explicit sub-gates if necessary; do not leave a partially enforced tenant boundary appearing complete. Keep changes local unless the user asks to commit or push.
+Gate 78 is staged to avoid presenting partial tenant filters as complete isolation.
+
+### Stage 78A — Organization and Membership Context — IMPLEMENTED LOCALLY; VALIDATION PENDING
+
+PostgreSQL now has organization/membership tables and a retry-safe migration that creates `Default Organization` and assigns existing users without rewriting application records. New-user creation persists membership with the user and audit event. Authentication resolves exactly one active membership, derives the role from it, and fails closed for missing or ambiguous membership. `/api/v1/me` exposes organization context; the dashboard displays identity and clearly warns tenant query isolation is not complete.
+
+### Stage 78B — Organization-Scoped Resource Access — NOT STARTED
+
+Scope every resource read/write, aggregate, report, audit event, idempotency record, relationship, and async provider handoff by the authenticated organization. Canonical asset identity must be organization-specific. Require two-organization PostgreSQL/API regressions across the full resource graph before enabling multiple customer organizations. Keep changes local unless the user asks to commit or push.
