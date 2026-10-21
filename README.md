@@ -500,6 +500,10 @@ Gate 75 adds a READ-authorized JSON report download for one campaign. The report
 
 The report endpoint records `CAMPAIGN_REPORT_EXPORTED` with the authenticated actor, campaign identifier, and bounded report summary in the same transaction as report assembly. Audit persistence failure returns a generic 503 without report data. API and PostgreSQL regressions cover success attribution, fail-closed behavior, and missing campaigns. No schema migration was needed. On 2026-10-21, the user confirmed the focused API/PostgreSQL tests and full suite reached 100%; Ruff and diff check passed; and the Windows wheel built successfully. Five Starlette deprecation warnings were non-failing.
 
-### Architecture Gate 77 — Secret Redaction in Evidence Metadata: IN PROGRESS
+### Architecture Gate 77 — Secret Redaction in Evidence Metadata: COMPLETE
 
-The evidence-list response redacts secret-like metadata fields and sanitizes URL-like values by removing userinfo, query strings, and fragments. Stored evidence and hashes remain unchanged; safe provenance such as provider and execution ID remains available. Focused evidence API coverage is added; local Windows validation remains pending.
+The evidence-list response redacts secret-like metadata fields and sanitizes URL-like values by removing userinfo, query strings, and fragments. Stored evidence and hashes remain unchanged; safe provenance such as provider and execution ID remains available. On 2026-10-21, the user confirmed the focused evidence API test and full suite reached 100%, Ruff, diff check, and Windows wheel build passed. Five Starlette deprecation warnings were non-failing.
+
+### Architecture Gate 78 — Organization-Level Data Isolation: IN PROGRESS
+
+The architecture requires Organization as a core domain, but the current schema has no organization or membership model and authenticated READ endpoints query global datasets. Gate 78 will define and enforce organization ownership through the full resource graph, migrate legacy data to an explicit default organization, and test cross-organization isolation before supporting multiple customer organizations.

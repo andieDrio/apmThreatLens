@@ -2,10 +2,10 @@
 
 **Last updated:** 2026-10-21
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 77
-**Highest fully validated gate:** Gate 76 (user-confirmed local validation)
-**Current gate:** Gate 77 — Secret Redaction in Evidence Metadata
-**Current status:** Gate 76 is complete and committed as `e0dd2d9`; its test and wheel results were user-confirmed. Architecture review found that the authenticated evidence read model returns provider metadata without redacting secret-like keys or query/fragment values from URL metadata. Gate 77 sanitizes the API response while preserving stored evidence and safe provenance fields. API regression coverage is added; local validation remains pending.
+**Highest architecture gate reached:** Gate 78
+**Highest fully validated gate:** Gate 77 (user-confirmed local validation)
+**Current gate:** Gate 78 — Organization-Level Data Isolation
+**Current status:** Gate 77 — Secret Redaction in Evidence Metadata — is complete and pushed as `9abd8a8`. The user confirmed the evidence API tests and full suite reached 100%, Ruff and `git diff --check` passed, and the Windows wheel built successfully. Five Starlette deprecation warnings were non-failing. Architecture review found that the design names Organization as a core domain, but PostgreSQL has no organization or membership model and READ APIs query global datasets. Gate 78 defines the required organization boundary, safe legacy-data migration, and cross-organization authorization tests before broad data-path changes.
 
 ## Executive Summary
 
@@ -408,10 +408,12 @@ The Gate 75 campaign report contains security-sensitive findings and evidence me
 
 **Validation closure:** On 2026-10-21, the user confirmed the report-specific API and PostgreSQL tests and full suite reached 100%; Ruff and `git diff --check` passed; and the Windows wheel built successfully. Five Starlette deprecation warnings were non-failing. Commit `e0dd2d9` (`Audit campaign report exports`) is present on `main` and `origin/main`.
 
-## Gate 77 — Secret Redaction in Evidence Metadata — IN PROGRESS
+## Gate 77 — Secret Redaction in Evidence Metadata — COMPLETE
 
-The authenticated `GET /api/v1/evidence` response currently returns the full stored metadata map. Built-in HTTP/API providers store scoped target URLs and redirect locations there; query strings and URL fragments can carry API keys, access tokens, or signed values. Evidence raw content is excluded, but these metadata fields can still leak secrets to READ-authorized users.
+The evidence read API redacts secret-like metadata keys and strips URL userinfo, query values, and fragments without modifying persisted evidence or hashes. Safe provenance remains visible. On 2026-10-21, the user confirmed the focused evidence API test and full suite reached 100%, Ruff and `git diff --check` passed, and the Windows wheel built successfully. Five Starlette deprecation warnings were non-failing. Commit `9abd8a8` (`Redact secrets from evidence metadata`) is on `main` and `origin/main`.
 
-Gate 77 redacts metadata keys whose names indicate passwords, tokens, secrets, API/access keys, credentials, authorization, or signatures. URL-like metadata has userinfo stripped and query values and fragments removed from the response; stored evidence and SHA-256 digests remain unchanged. Safe provider/execution provenance is preserved.
+## Gate 78 — Organization-Level Data Isolation — IN PROGRESS
 
-**Validation pending:** Add/verify API coverage for secret-key, URL query, fragment, relative redirect, and safe provenance fields; run the focused evidence API tests, full PostgreSQL-backed suite, Ruff, `git diff --check`, and wheel build against the exact working tree before closure.
+The architecture requires Organization as a core domain, but the PostgreSQL schema has no organization or membership entities. Authenticated READ endpoints currently query global campaigns, scans, assets, findings, evidence, risk, attack-path, and audit data. This prevents safe multi-organization use.
+
+Before implementation, define an append-only migration strategy that assigns legacy records to an explicit default organization without guessing or discarding ownership. Add an organization membership contract for users and enforce membership at every read and mutation boundary. Ensure assets shared by canonical identity cannot leak or overwrite data across organizations. Missing organization context and cross-organization identifiers must fail closed. Acceptance requires PostgreSQL migration/backfill tests and API/storage isolation regressions across the resource graph, plus full PostgreSQL-backed suite, Ruff, diff check, and wheel build.

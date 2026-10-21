@@ -206,6 +206,12 @@ Architecture review found that Gate 75's security-sensitive campaign report down
 
 Next, inspect the current project and governing docs for the next highest-priority architecture gap before defining Gate 77.
 
-## Gate 77 — Secret Redaction in Evidence Metadata — IN PROGRESS
+## Gate 77 — Secret Redaction in Evidence Metadata — COMPLETE
 
 Architecture review found that the READ-authorized evidence endpoint returns stored metadata maps containing URLs and redirect locations that may have secret-bearing query strings, plus arbitrary secret-like field names. Sanitize the response boundary: redact metadata keys indicating credentials/secrets, remove URL userinfo, redact full query strings, and strip fragments. Preserve safe execution/provider provenance; never mutate stored evidence or its digest. Add API regression tests and validate the exact working tree with focused evidence tests, full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build. Keep changes local unless the user asks to commit or push.
+
+On 2026-10-21, the user confirmed Gate 77's focused evidence API test and full suite reached 100%, Ruff and `git diff --check` passed, and the Windows wheel built successfully. Five Starlette deprecation warnings were non-failing. Commit `9abd8a8` is on `main` and `origin/main`.
+
+## Gate 78 — Organization-Level Data Isolation — IN PROGRESS
+
+The architecture requires Organization as a core domain, but PostgreSQL has no organization or membership model and authenticated READ APIs currently query global datasets. Before implementation, inspect the complete schema/resource graph and design a retry-safe, data-preserving default-organization backfill. Scope authorization and persistence across campaigns, scans, assets/services, evidence, findings, risk, attack-path relationships, remediation, reports, and audit events. Avoid cross-organization canonical asset sharing. Require cross-organization API/PostgreSQL regressions, full PostgreSQL-backed tests without skips, Ruff, `git diff --check`, and package wheel build. Break the work into explicit sub-gates if necessary; do not leave a partially enforced tenant boundary appearing complete. Keep changes local unless the user asks to commit or push.

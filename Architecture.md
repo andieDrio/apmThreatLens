@@ -841,10 +841,18 @@ Gate 75 introduced an authenticated campaign report containing security-sensitiv
 
 **Validation status:** The user confirmed the report-specific API and PostgreSQL tests and full suite reached 100%; Ruff and `git diff --check` passed; and the Windows package wheel built successfully on 2026-10-21. Five Starlette deprecation warnings were non-failing. Commit `e0dd2d9` (`Audit campaign report exports`) is on `main` and `origin/main`; validation is user-confirmed.
 
-## Architecture Gate 77 — Secret Redaction in Evidence Metadata — IN PROGRESS
+## Architecture Gate 77 — Secret Redaction in Evidence Metadata — COMPLETE
 
 The evidence-list API returns persisted provider metadata. HTTP/API provider metadata includes target URLs and redirect locations; those values may contain secrets in query strings or fragments. A generic metadata map can also contain fields named for passwords, tokens, credentials, API keys, authorization, or signatures. Excluding raw evidence content alone does not prevent those values from appearing in the READ-authorized evidence response.
 
 Gate 77 sanitizes metadata at the API response boundary: redact secret-like field names, strip URL userinfo, redact query strings, and remove fragments from URL-like metadata. Preserve safe provider/execution provenance and do not modify persisted evidence or its digest.
 
-**Acceptance criteria:** API tests prove secret-like values, URL query values, fragments, and redirect query values are absent from responses while safe provenance remains; evidence content and persisted digests are unchanged. Run focused evidence API tests, full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build before closure.
+**Validation status:** On 2026-10-21, the user confirmed the focused evidence API test and full suite reached 100%, Ruff and `git diff --check` passed, and the Windows wheel built successfully. Five Starlette deprecation warnings were non-failing. Commit `9abd8a8` is on `main` and `origin/main`; validation was user-confirmed.
+
+## Architecture Gate 78 — Organization-Level Data Isolation — IN PROGRESS
+
+The architecture names Organization as a required core domain, but the PostgreSQL schema has no organization or user-membership entities. READ endpoints currently return global datasets to any authenticated READ principal, and assets are globally deduplicated by canonical identity. This is not a safe boundary for multiple customer organizations.
+
+Gate 78 establishes organization ownership and membership, migrates existing records to an explicit default organization without inferring new boundaries, and scopes reads and mutations through the authenticated principal's organization. Resource relationships—including campaigns, scans, assets/services, evidence, findings, risk assessments, attack-path relations, remediation, and audit events—must not cross organization boundaries. Canonical asset identity must be unique within an organization rather than globally shared. Missing tenant context and cross-organization identifiers fail closed.
+
+**Acceptance criteria:** migration/backfill is retry-safe and data-preserving; user membership and role checks are enforced at API/service and persistence boundaries; PostgreSQL/API regressions prove two organizations cannot read, mutate, or infer each other's resources through direct IDs, lists, aggregates, reports, evidence provenance, or relationships. Full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and wheel build pass before closure. Review the migration and resource graph before coding; this gate may require explicit staged sub-gates if one atomic change is too broad.
