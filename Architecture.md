@@ -861,9 +861,13 @@ PostgreSQL organization and membership tables, explicit default organization, re
 
 ### Stage 78B — Organization-Scoped Resource Access — IN PROGRESS
 
-#### Stage 78B1 — Campaign ownership — IMPLEMENTED LOCALLY; VALIDATION PENDING
+#### Stage 78B1 — Campaign ownership — COMPLETE
 
-Add and backfill a required `campaigns.organization_id` foreign key. Filter campaign list and report reads by the authenticated organization; create campaigns under that organization; and scope the campaign ID lookup used before queueing a scan. Hide cross-organization campaigns as not found. The dashboard must report the partial rollout and identify remaining unscoped resources. This slice does not enable multi-organization deployment.
+Add and backfill a required `campaigns.organization_id` foreign key. Campaign list/report reads, writes, and lookup before scan queueing are scoped by authenticated organization. The user confirmed focused tests, full suite, Ruff, diff check, and wheel build; commit `eb4e89f` is on `main` and `origin/main`.
+
+#### Stage 78B2 — Scan activity reads — IMPLEMENTED AND VALIDATED LOCALLY; PUSH PENDING
+
+Filter scan activity rows and counts through each scan's owning campaign. On 2026-10-21, the user confirmed the focused PostgreSQL/API tests, full suite, Ruff, diff check, and Windows wheel build passed locally. Scan cancel/recovery controls remain pending because ownership verification must share a transaction with the state mutation.
 
 #### Remaining Stage 78B work
 

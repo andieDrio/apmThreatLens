@@ -290,7 +290,7 @@ class FakeRepository:
         )
         return report
 
-    def scans_read_model(self, limit=50, offset=0):
+    def scans_read_model(self, organization_id, limit=50, offset=0):
         return {
             "total": 2,
             "limit": limit,

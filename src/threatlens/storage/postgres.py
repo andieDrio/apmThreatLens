@@ -1909,14 +1909,21 @@ class PostgresRepository(
                     )
         return report
 
-    def scans_read_model(self, limit: int = 50, offset: int = 0) -> dict[str, object]:
+    def scans_read_model(
+        self, organization_id: UUID, limit: int = 50, offset: int = 0
+    ) -> dict[str, object]:
         """Return bounded scan execution state for the authenticated application layer."""
         if not 1 <= limit <= 100:
             raise ValueError("limit must be within 1..100")
         if offset < 0:
             raise ValueError("offset cannot be negative")
         with self.connection.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*) FROM scans")
+            cursor.execute(
+                """SELECT COUNT(*) FROM scans s
+                   JOIN campaigns c ON c.id=s.campaign_id
+                   WHERE c.organization_id=%s""",
+                (organization_id,),
+            )
             total = int(cursor.fetchone()[0])
             cursor.execute(
                 """SELECT s.execution_id, s.campaign_id, c.name, s.provider_name, s.state,
@@ -1924,9 +1931,10 @@ class PostgresRepository(
                           LEFT(s.error, 2048)
                    FROM scans s
                    JOIN campaigns c ON c.id = s.campaign_id
+                   WHERE c.organization_id=%s
                    ORDER BY s.queued_at DESC, s.execution_id DESC
                    LIMIT %s OFFSET %s""",
-                (limit, offset),
+                (organization_id, limit, offset),
             )
             rows = cursor.fetchall()
         return {

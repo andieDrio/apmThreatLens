@@ -1160,7 +1160,9 @@ def create_app(
         limit: int = Query(default=50, ge=1, le=100),
         offset: int = Query(default=0, ge=0),
     ) -> ScanListResponse:
-        result = context.repository.scans_read_model(limit=limit, offset=offset)
+        result = context.repository.scans_read_model(
+            current.organization_id, limit=limit, offset=offset
+        )
         items = []
         for item in result["items"]:
             normalized = dict(item)

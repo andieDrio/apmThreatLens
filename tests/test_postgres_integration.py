@@ -195,6 +195,7 @@ def test_postgres_campaign_reads_and_reports_enforce_organization_ownership(
     campaign = make_campaign()
     repo.save_campaign(campaign)
     other_organization_id = uuid4()
+    execution_id = uuid4()
     with repo.connection.transaction():
         with repo.connection.cursor() as cursor:
             cursor.execute(
@@ -206,6 +207,12 @@ def test_postgres_campaign_reads_and_reports_enforce_organization_ownership(
                 "UPDATE campaigns SET organization_id=%s WHERE id=%s",
                 (other_organization_id, campaign.id),
             )
+            cursor.execute(
+                """INSERT INTO scans
+                       (execution_id,campaign_id,provider_name,state,queued_at)
+                   VALUES (%s,%s,'isolation-test','QUEUED',NOW())""",
+                (execution_id, campaign.id),
+            )
 
     default_campaigns = repo.campaigns_read_model(DEFAULT_ORGANIZATION_ID)
     other_campaigns = repo.campaigns_read_model(other_organization_id)
@@ -213,6 +220,14 @@ def test_postgres_campaign_reads_and_reports_enforce_organization_ownership(
     other_ids = {item["id"] for item in other_campaigns["items"]}
     assert str(campaign.id) not in default_ids
     assert str(campaign.id) in other_ids
+    default_scans = repo.scans_read_model(DEFAULT_ORGANIZATION_ID)
+    other_scans = repo.scans_read_model(other_organization_id)
+    assert str(execution_id) not in {
+        item["execution_id"] for item in default_scans["items"]
+    }
+    assert str(execution_id) in {
+        item["execution_id"] for item in other_scans["items"]
+    }
     with pytest.raises(KeyError):
         repo.campaign_by_id(campaign.id, DEFAULT_ORGANIZATION_ID)
     assert repo.campaign_by_id(campaign.id, other_organization_id).id == campaign.id

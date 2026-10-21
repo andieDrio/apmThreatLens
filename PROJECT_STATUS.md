@@ -3,9 +3,9 @@
 **Last updated:** 2026-10-21
 **Source of truth:** GitHub `main`  
 **Highest architecture gate reached:** Gate 78
-**Highest fully validated gate:** Gate 78A (user-confirmed on `ff3f914`)
-**Current gate:** Gate 78B — Organization-Level Data Isolation
-**Current status:** Gate 78A is complete and pushed as `ff3f914`. Gate 78B1 adds organization ownership and filtering for campaigns, reports, and campaign lookup before scan queueing; implementation and two-organization PostgreSQL regression are local and pending user validation. Assets, findings, evidence, scan controls, aggregates, audit, and async/idempotency paths remain unscoped, so multiple-organization deployment is not enabled.
+**Highest fully validated gate:** Gate 78B1 (user-confirmed on `eb4e89f`)
+**Current gate:** Gate 78B2 — Organization-Scoped Scan Activity Read Model
+**Current status:** Gate 78B1 is complete and pushed as `eb4e89f`. Gate 78B2 scopes scan activity through its campaign organization; implementation and two-organization PostgreSQL regression are local and pending user validation. Scan controls and other resource paths remain unscoped, so multiple-organization deployment is not enabled.
 
 ## Executive Summary
 
@@ -420,9 +420,13 @@ Added PostgreSQL organization and membership tables, a transactional default-org
 
 ### Stage 78B — Organization-Scoped Resource Access — IN PROGRESS
 
-#### Stage 78B1 — Campaign ownership — IMPLEMENTED LOCALLY; VALIDATION PENDING
+#### Stage 78B1 — Campaign ownership — COMPLETE
 
-Migration version 5 adds a required organization owner and lookup index to campaigns, backfilling existing campaigns into `Default Organization`. Campaign list/report queries, report exports, create writes, and campaign lookup before scan queueing use the authenticated organization. Cross-organization campaign IDs are hidden as not found. The dashboard names these scoped paths and lists remaining gaps. Two-organization PostgreSQL regression coverage is added. This does not enable multiple-organization deployment.
+Migration version 5 adds a required organization owner and lookup index to campaigns, backfilling existing campaigns into `Default Organization`. Campaign list/report queries, report exports, create writes, and campaign lookup before scan queueing use the authenticated organization. On 2026-10-21, the user confirmed focused PostgreSQL/API tests, the full test suite, Ruff, diff check, and wheel build passed; commit `eb4e89f` is on `main` and `origin/main`. Multiple-organization deployment remains unsupported until the resource graph is isolated.
+
+#### Stage 78B2 — Scan activity reads — IMPLEMENTED AND VALIDATED LOCALLY; PUSH PENDING
+
+The scan activity read model and count are filtered through each scan's campaign organization. On 2026-10-21, the user confirmed focused PostgreSQL/API tests, the full test suite, Ruff, diff check, and Windows wheel build passed on the local revision. Scan cancel/recovery controls remain pending because their ownership check must share a transaction with the state mutation.
 
 #### Remaining work
 
