@@ -10,6 +10,9 @@
   const userLabel = document.querySelector("#user-label");
   const refreshButton = document.querySelector("#refresh-button");
   const logoutButton = document.querySelector("#logout-button");
+  const reportCampaignSelect = document.querySelector("#report-campaign-select");
+  const downloadReportButton = document.querySelector("#download-campaign-report");
+  const reportStatus = document.querySelector("#report-status");
 
   function token() {
     return sessionStorage.getItem(TOKEN_KEY);
@@ -141,7 +144,7 @@
         request("/api/v1/findings?limit=8&offset=0"),
         request("/api/v1/scans?limit=8&offset=0"),
         request("/api/v1/me"),
-        request("/api/v1/campaigns?limit=8&offset=0"),
+        request("/api/v1/campaigns?limit=100&offset=0"),
         request("/api/v1/evidence?limit=8&offset=0"),
         request("/api/v1/attack-path/relations?limit=8&offset=0")
       ]);
@@ -180,7 +183,19 @@
         { value: item => formatDate(item.queued_at) }
       ], "No scan executions have been queued yet.");
       setText("campaign-total", `${campaigns.total} persisted campaigns`);
-      renderTable("campaigns-body", campaigns.items, [
+      clearChildren(reportCampaignSelect);
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "Select a campaign";
+      reportCampaignSelect.appendChild(placeholder);
+      for (const campaign of campaigns.items) {
+        const option = document.createElement("option");
+        option.value = campaign.id;
+        option.textContent = campaign.name;
+        reportCampaignSelect.appendChild(option);
+      }
+      downloadReportButton.disabled = true;
+      renderTable("campaigns-body", campaigns.items.slice(0, 8), [
         { value: item => item.name },
         { value: item => item.state, className: item => `state-cell state-${String(item.state).toLowerCase()}` },
         { value: item => item.authorized ? "Yes" : "No" },
@@ -252,6 +267,34 @@
   });
 
   refreshButton.addEventListener("click", loadDashboard);
+  reportCampaignSelect.addEventListener("change", () => {
+    downloadReportButton.disabled = !reportCampaignSelect.value;
+  });
+  downloadReportButton.addEventListener("click", async () => {
+    const campaignId = reportCampaignSelect.value;
+    if (!campaignId) return;
+    downloadReportButton.disabled = true;
+    setMessage(reportStatus, "Preparing campaign report…");
+    try {
+      const report = await request(`/api/v1/campaigns/${encodeURIComponent(campaignId)}/report`);
+      const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const slug = String(report.campaign.name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64);
+      link.href = objectUrl;
+      link.download = `threatlens-${slug || "campaign"}-report.json`;
+      link.hidden = true;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      setMessage(reportStatus, "Campaign report downloaded.");
+    } catch (error) {
+      setMessage(reportStatus, error.message || "Unable to download campaign report.", true);
+    } finally {
+      downloadReportButton.disabled = !reportCampaignSelect.value;
+    }
+  });
   logoutButton.addEventListener("click", async () => {
     try {
       await request("/api/v1/auth/logout", { method: "POST" });

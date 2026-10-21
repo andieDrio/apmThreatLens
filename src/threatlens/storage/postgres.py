@@ -1675,6 +1675,185 @@ class PostgresRepository(
             ],
         }
 
+    def campaign_report_read_model(self, campaign_id: UUID) -> dict[str, object]:
+        """Build a bounded report using only scans and evidence from one campaign."""
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT c.id, c.name, c.authorized, c.state, c.created_at,
+                          COALESCE(
+                              array_agg(se.value ORDER BY se.included DESC, se.value)
+                              FILTER (WHERE se.included), ARRAY[]::TEXT[]
+                          ),
+                          COALESCE(
+                              array_agg(se.value ORDER BY se.value)
+                              FILTER (WHERE NOT se.included), ARRAY[]::TEXT[]
+                          )
+                   FROM campaigns c
+                   LEFT JOIN scope_entries se ON se.campaign_id=c.id
+                   WHERE c.id=%s
+                   GROUP BY c.id, c.name, c.authorized, c.state, c.created_at""",
+                (campaign_id,),
+            )
+            campaign_row = cursor.fetchone()
+            if campaign_row is None:
+                raise KeyError(str(campaign_id))
+
+            cursor.execute(
+                """SELECT state, COUNT(*)
+                   FROM scans WHERE campaign_id=%s GROUP BY state ORDER BY state""",
+                (campaign_id,),
+            )
+            scan_counts = {str(state): int(count) for state, count in cursor.fetchall()}
+
+            scoped_findings = """WITH campaign_findings AS (
+                       SELECT DISTINCT fe.finding_id
+                       FROM finding_evidence fe
+                       JOIN evidence e ON e.id=fe.evidence_id
+                       JOIN scans s
+                         ON s.execution_id::TEXT=e.metadata_json->>'execution_id'
+                       WHERE s.campaign_id=%s
+                   )"""
+            cursor.execute(
+                scoped_findings
+                + """ SELECT f.severity, f.state, COUNT(*)
+                      FROM campaign_findings cf
+                      JOIN findings f ON f.id=cf.finding_id
+                      GROUP BY f.severity, f.state""",
+                (campaign_id,),
+            )
+            finding_counts: dict[str, object] = {
+                "total": 0,
+                "by_severity": {},
+                "by_state": {},
+            }
+            for severity, state, count in cursor.fetchall():
+                count = int(count)
+                finding_counts["total"] += count
+                finding_counts["by_severity"][str(severity)] = (
+                    finding_counts["by_severity"].get(str(severity), 0) + count
+                )
+                finding_counts["by_state"][str(state)] = (
+                    finding_counts["by_state"].get(str(state), 0) + count
+                )
+
+            cursor.execute(
+                scoped_findings
+                + """ SELECT f.id, f.title, f.asset_id, a.canonical_id, a.value,
+                             f.state, f.severity, f.vulnerability_id, f.cwe, f.cve,
+                             f.cvss, f.confidence, f.source, f.detected_at,
+                             f.endpoint, f.parameter, f.location,
+                             risk.level, risk.score, risk.context_source, risk.created_at,
+                             refs.items, refs.total
+                      FROM campaign_findings cf
+                      JOIN findings f ON f.id=cf.finding_id
+                      JOIN assets a ON a.id=f.asset_id
+                      LEFT JOIN LATERAL (
+                          SELECT level, score, context_source, created_at
+                          FROM risk_assessments
+                          WHERE finding_id=f.id
+                          ORDER BY created_at DESC, id DESC LIMIT 1
+                      ) risk ON TRUE
+                      LEFT JOIN LATERAL (
+                          SELECT
+                              COALESCE(
+                                  jsonb_agg(
+                                      jsonb_build_object(
+                                          'id', bounded.id::TEXT,
+                                          'kind', bounded.kind,
+                                          'source', bounded.source,
+                                          'captured_at', bounded.captured_at,
+                                          'sha256', bounded.sha256
+                                      ) ORDER BY bounded.captured_at DESC, bounded.id DESC
+                                  ), '[]'::JSONB
+                              ) AS items,
+                              (
+                                  SELECT COUNT(*)
+                                  FROM finding_evidence fe2
+                                  JOIN evidence e2 ON e2.id=fe2.evidence_id
+                                  JOIN scans s2
+                                    ON s2.execution_id::TEXT=e2.metadata_json->>'execution_id'
+                                  WHERE fe2.finding_id=f.id AND s2.campaign_id=%s
+                              ) AS total
+                          FROM (
+                              SELECT e.id, e.kind, e.source, e.captured_at, e.sha256
+                              FROM finding_evidence fe
+                              JOIN evidence e ON e.id=fe.evidence_id
+                              JOIN scans s
+                                ON s.execution_id::TEXT=e.metadata_json->>'execution_id'
+                              WHERE fe.finding_id=f.id AND s.campaign_id=%s
+                              ORDER BY e.captured_at DESC, e.id DESC LIMIT 20
+                          ) bounded
+                      ) refs ON TRUE
+                      ORDER BY f.detected_at DESC, f.id DESC
+                      LIMIT 501""",
+                (campaign_id, campaign_id, campaign_id),
+            )
+            rows = cursor.fetchall()
+
+        findings = []
+        for row in rows[:500]:
+            risk = None
+            if row[17] is not None:
+                risk = {
+                    "level": str(row[17]),
+                    "score": float(row[18]),
+                    "context_source": row[19],
+                    "assessed_at": row[20],
+                }
+            evidence = [
+                {
+                    **dict(item),
+                    "captured_at": str(item["captured_at"]),
+                }
+                for item in (row[21] or [])
+            ]
+            findings.append(
+                {
+                    "id": str(row[0]),
+                    "title": row[1],
+                    "asset_id": str(row[2]),
+                    "asset_canonical_id": row[3],
+                    "asset_value": row[4],
+                    "state": str(row[5]),
+                    "severity": str(row[6]),
+                    "vulnerability_id": row[7],
+                    "cwe": row[8],
+                    "cve": row[9],
+                    "cvss": row[10],
+                    "confidence": row[11],
+                    "source": row[12],
+                    "detected_at": row[13],
+                    "endpoint": row[14],
+                    "parameter": row[15],
+                    "location": row[16],
+                    "latest_risk": risk,
+                    "evidence": evidence,
+                    "evidence_total": int(row[22]),
+                    "evidence_truncated": int(row[22]) > 20,
+                }
+            )
+
+        return {
+            "campaign": {
+                "id": str(campaign_row[0]),
+                "name": campaign_row[1],
+                "authorized": campaign_row[2],
+                "state": str(campaign_row[3]),
+                "created_at": campaign_row[4],
+                "include": list(campaign_row[5] or []),
+                "exclude": list(campaign_row[6] or []),
+            },
+            "scan_summary": {
+                "total": sum(scan_counts.values()),
+                "by_state": scan_counts,
+            },
+            "finding_summary": {
+                **finding_counts,
+                "truncated": int(finding_counts["total"]) > 500,
+            },
+            "findings": findings,
+        }
+
     def scans_read_model(self, limit: int = 50, offset: int = 0) -> dict[str, object]:
         """Return bounded scan execution state for the authenticated application layer."""
         if not 1 <= limit <= 100:

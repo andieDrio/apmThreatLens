@@ -27,6 +27,8 @@ async def test_dashboard_ui_serves_static_assets_with_security_headers():
     assert 'id="login-form"' in page.text
     assert 'id="severity-breakdown"' in page.text
     assert 'id="campaigns"' in page.text
+    assert 'id="report-campaign-select"' in page.text
+    assert 'id="download-campaign-report"' in page.text
     assert 'id="evidence"' in page.text
     assert 'id="attack-paths"' in page.text
     assert 'id="audit-log"' in page.text
@@ -34,7 +36,9 @@ async def test_dashboard_ui_serves_static_assets_with_security_headers():
     assert "/ui/assets/app.js" in page.text
     assert script.status_code == 200
     assert "sessionStorage" in script.text
-    assert "/api/v1/campaigns?limit=8&offset=0" in script.text
+    assert "/api/v1/campaigns?limit=100&offset=0" in script.text
+    assert "/report`" in script.text
+    assert "createObjectURL" in script.text
     assert "/api/v1/evidence?limit=8&offset=0" in script.text
     assert "/api/v1/attack-path/relations?limit=8&offset=0" in script.text
     assert "/api/v1/audit-events?limit=8&offset=0" in script.text

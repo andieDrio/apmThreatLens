@@ -117,6 +117,54 @@ class CampaignListResponse(BaseModel):
     items: list[CampaignReadModel]
 
 
+class CampaignReportEvidence(BaseModel):
+    id: str
+    kind: str
+    source: str
+    captured_at: str
+    sha256: str | None = None
+
+
+class CampaignReportRisk(BaseModel):
+    level: str
+    score: float
+    context_source: str | None = None
+    assessed_at: str
+
+
+class CampaignReportFinding(BaseModel):
+    id: str
+    title: str
+    asset_id: str
+    asset_canonical_id: str
+    asset_value: str
+    state: str
+    severity: str
+    vulnerability_id: str | None = None
+    cwe: str | None = None
+    cve: str | None = None
+    cvss: float | None = None
+    confidence: float
+    source: str
+    detected_at: str
+    endpoint: str | None = None
+    parameter: str | None = None
+    location: str | None = None
+    latest_risk: CampaignReportRisk | None = None
+    evidence: list[CampaignReportEvidence]
+    evidence_total: int
+    evidence_truncated: bool
+
+
+class CampaignReportResponse(BaseModel):
+    schema_version: str = "1"
+    generated_at: str
+    campaign: CampaignReadModel
+    scan_summary: dict[str, object]
+    finding_summary: dict[str, object]
+    findings: list[CampaignReportFinding]
+
+
 class ScanReadModel(BaseModel):
     execution_id: str
     campaign_id: str
@@ -591,6 +639,53 @@ def create_app(
             limit=result["limit"],
             offset=result["offset"],
             items=items,
+        )
+
+    @app.get(
+        "/api/v1/campaigns/{campaign_id}/report",
+        response_model=CampaignReportResponse,
+        responses={404: {"description": "Campaign not found"}},
+    )
+    def download_campaign_report(
+        campaign_id: UUID,
+        current=Depends(require(Permission.READ)),
+    ) -> Response:
+        try:
+            result = context.repository.campaign_report_read_model(campaign_id)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="campaign not found",
+            ) from exc
+
+        campaign = dict(result["campaign"])
+        campaign["created_at"] = campaign["created_at"].isoformat()
+        findings = []
+        for item in result["findings"]:
+            finding = dict(item)
+            finding["detected_at"] = finding["detected_at"].isoformat()
+            if finding["latest_risk"] is not None:
+                risk = dict(finding["latest_risk"])
+                risk["assessed_at"] = risk["assessed_at"].isoformat()
+                finding["latest_risk"] = risk
+            findings.append(CampaignReportFinding(**finding))
+        report = CampaignReportResponse(
+            generated_at=datetime.now(UTC).isoformat(),
+            campaign=CampaignReadModel(**campaign),
+            scan_summary=result["scan_summary"],
+            finding_summary=result["finding_summary"],
+            findings=findings,
+        )
+        return Response(
+            content=report.model_dump_json(indent=2),
+            media_type="application/json",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="threatlens-campaign-{campaign_id}-report.json"'
+                ),
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
         )
 
     @app.post(

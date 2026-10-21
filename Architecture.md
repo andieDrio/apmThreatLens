@@ -813,7 +813,7 @@ Successful login persists the authentication session and its success audit event
 
 **Validation closure:** On 2026-10-19, the user confirmed 20 focused authentication/storage tests passed, the full PostgreSQL-backed suite passed with 309 passed and 0 skipped (5 non-failing Starlette deprecation warnings), Ruff and `git diff --check` passed, and the package wheel built successfully. Wheel SHA-256: `eb66201f4e2622b35d262e399e12df464b58b014011be7ab54ac167575e98f49`. This is user-confirmed validation; the assistant did not independently run the local commands.
 
-## Architecture Gate 73 — Atomic Login Rate-Limit Threshold Audit Persistence — IN PROGRESS
+## Architecture Gate 73 — Atomic Login Rate-Limit Threshold Audit Persistence — COMPLETE
 
 The login API previously called `record_login_attempts()` and then independently inserted `LOGIN_RATE_LIMITED` audit events when returned counters crossed the configured client or client/username thresholds. This left a persistence gap: an audit insert failure could occur after the counter transaction had already committed.
 
@@ -821,4 +821,22 @@ Gate 73 extends the PostgreSQL repository operation to accept per-bucket thresho
 
 **Acceptance criteria:** counter and threshold audit event are atomic; repeated blocked attempts do not produce unbounded audit events; current rate-limit/Retry-After behavior is preserved; focused PostgreSQL and API tests, full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build pass on the exact `main` revision.
 
-**Validation status:** IN PROGRESS. Code and tests are on `main`; local validation has not yet been confirmed. Do not mark Gate 73 complete until the user confirms all required checks.
+**Validation status:** COMPLETE. On 2026-10-21, the user confirmed focused PostgreSQL/API tests and the full PostgreSQL-backed suite passed in Windows Python 3.15; Ruff and `git diff --check` passed; and the package wheel built successfully. Five Starlette deprecation warnings were non-failing. Wheel SHA-256: `ae82526e8bffef66a9e426f99ff20a2c5199091579aa32b644273a7bc234a565`. Validation was user-run and user-confirmed.
+
+## Architecture Gate 74 — Python 3.15 Windows Dependency-Install Compatibility — COMPLETE
+
+A clean Python 3.15 Windows install attempted to build PyYAML from source through the `uvicorn[standard]` dependency chain and failed without Microsoft C++ Build Tools. Gate 74 changes the dependency to Uvicorn core; code inspection found no use of optional YAML configuration, reload, or alternative HTTP/WebSocket implementations. A clean Python 3.15 dependency install and project wheel build succeeded; app imports passed in an isolated environment with PyYAML absent; Ruff and `git diff --check` passed. The user confirmed the full PostgreSQL-backed test suite passed with no skip summary; five Starlette deprecation warnings were non-failing.
+
+## Architecture Gate 75 — Evidence-Backed Campaign Report Export — COMPLETE
+
+The authenticated API now provides a JSON attachment for a selected campaign, backed by a dedicated PostgreSQL read model. Campaign findings are associated through finding evidence whose persisted execution provenance points to a scan in that campaign; evidence from other campaigns is excluded. The report contains campaign scope, scan-state counts, finding severity/state counts, bounded finding details, each finding's latest persisted risk assessment, and up to 20 campaign-scoped evidence references per finding. Raw evidence payloads are never returned. The report caps findings at 500 and marks finding/evidence truncation. The SOC dashboard provides a campaign selector and report download action.
+
+**Validation status:** Thirty-three focused API/UI tests passed. On 2026-10-21, the user confirmed the report-specific PostgreSQL integration test and full PostgreSQL-backed suite completed at 100%; Ruff, `git diff --check`, and the Windows package wheel build passed. Five Starlette deprecation warnings were non-failing. Validation was user-run; changes remain local with no commit or push.
+
+## Architecture Gate 76 — Auditable Campaign Report Export — IN PROGRESS
+
+Gate 75 introduced an authenticated campaign report containing security-sensitive findings and evidence metadata. The download route currently returns this data without writing an audit event, so the append-only audit trail cannot attribute a successful export to its authenticated user.
+
+Gate 76 will add a `CAMPAIGN_REPORT_EXPORTED` audit event containing the actor, campaign identifier, and bounded report summary metadata. Report assembly and event persistence must share a transaction, and export must fail closed if the audit insert fails. Preserve current READ authorization, campaign scoping, bounded output, raw-evidence exclusion, and response security headers. Do not emit a success event for missing campaigns or unsuccessful requests.
+
+**Acceptance criteria:** API and PostgreSQL regression coverage proves one attributable event per successful export, atomic report/audit behavior, rollback and no response when audit persistence fails, and no misleading success event for a missing campaign. Run the full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and package wheel build on the exact working tree before closure. Schema inspection should determine whether an existing audit schema suffices; avoid an unnecessary migration.

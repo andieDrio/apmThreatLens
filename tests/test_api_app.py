@@ -210,6 +210,53 @@ class FakeRepository:
             ],
         }
 
+    def campaign_report_read_model(self, campaign_id):
+        if str(campaign_id) != "88888888-8888-8888-8888-888888888888":
+            raise KeyError(str(campaign_id))
+        return {
+            "campaign": self.campaigns_read_model()["items"][0],
+            "scan_summary": {"total": 1, "by_state": {"COMPLETED": 1}},
+            "finding_summary": {
+                "total": 1,
+                "by_severity": {"HIGH": 1},
+                "by_state": {"SUSPECTED": 1},
+                "truncated": False,
+            },
+            "findings": [
+                {
+                    "id": "11111111-1111-1111-1111-111111111111",
+                    "title": "Missing HSTS",
+                    "asset_id": "22222222-2222-2222-2222-222222222222",
+                    "asset_canonical_id": "fqdn:example.test",
+                    "asset_value": "example.test",
+                    "state": "SUSPECTED",
+                    "severity": "HIGH",
+                    "vulnerability_id": None,
+                    "cwe": None,
+                    "cve": None,
+                    "cvss": None,
+                    "confidence": 0.9,
+                    "source": "web-assessment",
+                    "detected_at": datetime(2026, 10, 7, 7, 0, tzinfo=UTC),
+                    "endpoint": "https://example.test/",
+                    "parameter": None,
+                    "location": "response-header",
+                    "latest_risk": None,
+                    "evidence": [
+                        {
+                            "id": "33333333-3333-3333-3333-333333333333",
+                            "kind": "http-response",
+                            "source": "web-assessment",
+                            "captured_at": datetime(2026, 10, 7, 7, 0, tzinfo=UTC).isoformat(),
+                            "sha256": "a" * 64,
+                        }
+                    ],
+                    "evidence_total": 1,
+                    "evidence_truncated": False,
+                }
+            ],
+        }
+
     def scans_read_model(self, limit=50, offset=0):
         return {
             "total": 2,
@@ -456,6 +503,51 @@ async def test_campaigns_read_model_rejects_unbounded_limit(client):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_campaign_report_requires_authentication(client):
+    response = await client.get(
+        "/api/v1/campaigns/88888888-8888-8888-8888-888888888888/report"
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_campaign_report_download_contains_persisted_summary_and_evidence_refs(client):
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "analyst", "password": "correct-horse-battery-123"},
+    )
+    token = login.json()["access_token"]
+    response = await client.get(
+        "/api/v1/campaigns/88888888-8888-8888-8888-888888888888/report",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert "attachment;" in response.headers["content-disposition"]
+    report = response.json()
+    assert report["schema_version"] == "1"
+    assert report["campaign"]["include"] == ["fqdn:example.test", "10.10.10.0/24"]
+    assert report["scan_summary"]["by_state"] == {"COMPLETED": 1}
+    assert report["finding_summary"]["by_severity"] == {"HIGH": 1}
+    assert report["findings"][0]["evidence"][0]["sha256"] == "a" * 64
+    assert "content" not in str(report["findings"][0]["evidence"])
+
+
+@pytest.mark.anyio
+async def test_campaign_report_returns_not_found_for_unknown_campaign(client):
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "analyst", "password": "correct-horse-battery-123"},
+    )
+    token = login.json()["access_token"]
+    response = await client.get(
+        "/api/v1/campaigns/99999999-9999-9999-9999-999999999999/report",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 404
 
 
 @pytest.mark.anyio

@@ -157,7 +157,17 @@
       </section>
 
       <section id="campaigns" class="panel">
-        <div class="panel-head"><div><h2>Campaigns</h2><p id="campaign-total">Authorized assessment campaigns</p></div></div>
+        <div class="panel-head">
+          <div><h2>Campaigns</h2><p id="campaign-total">Authorized assessment campaigns</p></div>
+          <div class="report-controls">
+            <label class="sr-only" for="report-campaign-select">Campaign for report</label>
+            <select id="report-campaign-select" aria-label="Campaign for report">
+              <option value="">Select a campaign</option>
+            </select>
+            <button id="download-campaign-report" class="button" type="button" disabled>Download report</button>
+          </div>
+        </div>
+        <p id="report-status" class="status-message" role="status" aria-live="polite" hidden></p>
         <div class="table-wrap"><table>
           <thead><tr><th>Campaign</th><th>State</th><th>Authorized</th><th>Created</th></tr></thead>
           <tbody id="campaigns-body"><tr><td colspan="4" class="empty-cell">Loading campaigns…</td></tr></tbody>

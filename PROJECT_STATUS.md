@@ -1,11 +1,11 @@
 # APM ThreatLens — Project Status
 
-**Last updated:** 2026-10-19  
+**Last updated:** 2026-10-21
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 73
-**Highest fully validated gate:** Gate 72 (user-confirmed)
-**Current gate:** Gate 73 — Atomic Login Rate-Limit Threshold Audit Persistence
-**Current status:** Gate 73 is IN PROGRESS on `main`. Code now passes threshold metadata into PostgreSQL `record_login_attempts()` so a `LOGIN_RATE_LIMITED` audit event is inserted in the same transaction as the counter increment when a configured threshold is crossed. The API no longer performs a separate audit insert. Regression tests have been added for threshold behavior and PostgreSQL audit-failure rollback; local execution is still pending. Validation is PENDING; do not mark this gate complete until the user confirms focused PostgreSQL tests, the full PostgreSQL-backed suite with no skips, Ruff, `git diff --check`, and package wheel build. All work stays directly on `main`.
+**Highest architecture gate reached:** Gate 76
+**Highest fully validated gate:** Gate 75 (user-confirmed local validation)
+**Current gate:** Gate 76 — Auditable Campaign Report Export
+**Current status:** Gate 75 — Evidence-Backed Campaign Report Export — is complete. The user confirmed the report-specific PostgreSQL integration test and full test suite passed on Windows; Ruff, `git diff --check`, and the package wheel build passed. Five Starlette deprecation warnings were non-failing. Architecture review found that successful downloads of the new security-sensitive campaign report are not recorded in the append-only audit trail. Gate 76 will record the authenticated actor and campaign/report metadata atomically with report generation; report delivery must fail closed if audit persistence fails. Changes remain local; no commit or push was made.
 
 ## Executive Summary
 
@@ -356,6 +356,52 @@ The API previously incremented durable login-attempt buckets in one repository t
 - `tests/test_auth_storage.py` — PostgreSQL failure-injection regression and trigger quoting correction: `10750ad70ee193c0c951c3d4ddd7eca33f9cd396`, `c2eb06be9d418c3cb3c36c49a482a5a2d2b8348e`, `36276c7a0605cc74e64cb5a7800e533b3a64e077`
 - Governing documentation updated directly on `main`: `3f8b1463a4155a8edb4f7e41e4dffd451b9f7b6e`, `d4f8db5f7dcc002ecc2f2f924e431a59efbea3a7`, `524be433bf4fcd22d0c05dc34a0f3ba3c452f918`, `402434f069ee938b6586dd52e32a378f235e3845`
 
-### Current validation state
+### Validation closure — COMPLETE
 
-Implementation and regression tests are committed directly to `main`, but no local validation result has yet been confirmed for Gate 73. Status remains IN PROGRESS pending focused PostgreSQL/API tests and user-run full validation. No branches, branch switching, pull requests, or force pushes.
+On 2026-10-21, the user confirmed focused PostgreSQL/API tests and the full PostgreSQL-backed `pytest -q -rs` suite passed in the Windows Python 3.15 environment. Ruff and `git diff --check` passed. `pip wheel` successfully built `apm_threatlens-0.1.0-py3-none-any.whl` (SHA-256 `ae82526e8bffef66a9e426f99ff20a2c5199091579aa32b644273a7bc234a565`). Five Starlette deprecation warnings were non-failing. Validation was user-run and user-confirmed. The unused-import cleanup and status documentation are local changes awaiting the user's normal VS Code/GitHub sync; no push was performed.
+
+## Gate 74 — Python 3.15 Windows Dependency-Install Compatibility — COMPLETE
+
+A clean Python 3.15 Windows install of the previous `uvicorn[standard]` dependency chain attempted to build PyYAML from source and failed when Microsoft C++ Build Tools were unavailable. The dependency now uses Uvicorn core; repository inspection found no use of the optional extras' YAML config, reload, or alternative HTTP/WebSocket implementations.
+
+### Validation closure — COMPLETE
+
+On 2026-10-21, a clean Python 3.15 dependency install built and installed the project successfully. Imports passed in an isolated environment with PyYAML absent. Ruff and `git diff --check` passed. The user confirmed the full PostgreSQL-backed `pytest -q -rs` suite passed with no skip summary; five Starlette deprecation warnings were non-failing. Validation is user-confirmed. No commit or push was made.
+
+## Gate 75 — Evidence-Backed Campaign Report Export — COMPLETE
+
+### Root cause
+
+The project had authenticated global read models for campaigns, findings, scans, risk, and evidence, but no campaign-scoped report contract or export. A report assembled only from global paginated read models could mix campaign data or omit records.
+
+### Bounded implementation
+
+- Add a PostgreSQL report read model that associates findings only through evidence provenance whose execution IDs belong to the requested campaign.
+- Return campaign scope, scan counts, finding counts/details, latest persisted risk, and campaign-scoped evidence references. Never return raw evidence payloads.
+- Bound output to 500 findings and 20 evidence references per finding and mark truncation explicitly.
+- Add an authenticated JSON attachment endpoint and a dashboard campaign selector/download action.
+
+### Validation state
+
+### Changed files
+
+- `src/threatlens/storage/postgres.py` — campaign-filtered report query, bounded findings/evidence, persisted risk and counters.
+- `src/threatlens/api/app.py` — READ-authorized JSON attachment response and report schema.
+- `src/threatlens/ui/index.html`, `src/threatlens/ui/assets/app.js`, `src/threatlens/ui/assets/styles.css` — campaign selector and authenticated JSON download.
+- `tests/test_api_app.py`, `tests/test_dashboard_ui.py`, `tests/test_postgres_integration.py` — auth, response, UI, campaign isolation, and raw-evidence exclusion regressions.
+- Governing docs: README.md, Architecture.md, MasterInstructions.md, and PROJECT_STATUS.md.
+
+### Validation and security review
+
+- `python -m pytest -q tests/test_api_app.py tests/test_dashboard_ui.py` — 33 passed.
+- `ruff check .` — passed; `git diff --check` — passed.
+- `python -m pip wheel . --no-deps --wheel-dir work/gate75-wheel` — passed; wheel SHA-256 `fe20dfeae79f3145fa574c7eaa115fb2ab6c7d82411873aa4c8a7c57d6692cf1`.
+- User-confirmed on 2026-10-21: `pytest -q -rs tests/test_postgres_integration.py -k campaign_report` completed at 100%; the full `pytest -q -rs` suite completed at 100%; `ruff check .` reported “All checks passed!”; `git diff --check` passed; and the Windows package wheel build succeeded. Five Starlette deprecation warnings were non-failing.
+- Security: endpoint requires READ permission, uses a fixed UUID-derived filename, sets no-store/nosniff, selects only evidence linked through the requested campaign's scan execution provenance, never returns raw evidence, and marks bounded output truncation. No new dependencies or writes were introduced.
+- No commit or push was made; the user syncs changes through VS Code.
+
+## Gate 76 — Auditable Campaign Report Export — IN PROGRESS
+
+The Gate 75 campaign report contains security-sensitive findings and evidence metadata, but successful report downloads currently leave no audit event. Add an append-only `CAMPAIGN_REPORT_EXPORTED` event with the authenticated actor, campaign identifier, and bounded report summary metadata. Persist the event transactionally with assembling the report; if audit persistence fails, do not return the report. Preserve READ authorization, campaign scoping, output bounds, raw-evidence exclusion, and response headers.
+
+**Acceptance criteria:** successful authorized exports create exactly one attributable event; the audit event and report read use a single transaction; audit persistence failure prevents export; unknown campaign and unauthorized requests do not produce misleading success events; PostgreSQL and API regressions cover these outcomes; full PostgreSQL-backed suite, Ruff, `git diff --check`, and wheel build pass against the exact working tree. No migration is expected unless schema inspection identifies a real need.

@@ -84,6 +84,58 @@ def test_postgres_persists_domain_relationships(postgres_repository):
     assert repo.asset_id(asset.canonical_id) == asset.id
 
 
+def test_postgres_campaign_report_is_campaign_scoped_and_excludes_raw_evidence(
+    postgres_repository,
+):
+    repo = postgres_repository
+    campaign = make_campaign()
+    repo.save_campaign(campaign)
+    execution_id = running_execution(repo, campaign, "report-provider")
+    asset = Asset(canonical_id="ip:198.51.100.88", asset_type="ipv4", value="198.51.100.88")
+    repo.save_asset(asset)
+    evidence = ProviderHandoff.seal_evidence(
+        Evidence(
+            kind="http-response",
+            content="private raw payload must stay out of a report",
+            source="report-provider",
+            metadata={"execution_id": str(execution_id)},
+        )
+    )
+    repo.save_evidence_for_execution(execution_id, evidence)
+    finding = Finding(
+        title="Missing transport header",
+        asset_id=asset.id,
+        evidence_ids=(evidence.id,),
+        severity=Severity.HIGH,
+        confidence=0.95,
+        source="report-provider",
+    )
+    repo.save_finding_for_execution(execution_id, finding)
+
+    other_campaign = make_campaign()
+    repo.save_campaign(other_campaign)
+    other_execution_id = running_execution(repo, other_campaign, "other-report-provider")
+    other_evidence = ProviderHandoff.seal_evidence(
+        Evidence(
+            kind="http-response",
+            content="evidence from another campaign",
+            source="other-report-provider",
+            metadata={"execution_id": str(other_execution_id)},
+        )
+    )
+    repo.save_evidence_for_execution(other_execution_id, other_evidence)
+    repo.add_finding_evidence(finding.id, (other_evidence.id,))
+
+    report = repo.campaign_report_read_model(campaign.id)
+    assert report["campaign"]["id"] == str(campaign.id)
+    assert report["scan_summary"] == {"total": 1, "by_state": {"RUNNING": 1}}
+    assert report["finding_summary"]["by_severity"] == {"HIGH": 1}
+    assert len(report["findings"]) == 1
+    assert report["findings"][0]["evidence_total"] == 1
+    assert report["findings"][0]["evidence"][0]["id"] == str(evidence.id)
+    assert "content" not in str(report)
+
+
 def test_postgres_enforces_foreign_key_integrity(postgres_repository):
     with pytest.raises(ForeignKeyViolation):
         postgres_repository.save_service(Service(asset_id=uuid4(), protocol="tcp", port=443))

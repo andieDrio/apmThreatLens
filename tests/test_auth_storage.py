@@ -4,7 +4,6 @@ import hashlib
 import pytest
 
 from threatlens.auth import AuthenticationService, Role
-from threatlens.domain.models import AuditEvent
 
 
 def test_auth_tables_are_persisted(postgres_repository):
