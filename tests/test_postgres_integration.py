@@ -25,6 +25,7 @@ from threatlens.orchestration.engine import ScanOrchestrator
 from threatlens.providers.handoff import ProviderHandoff
 from threatlens.safety.policy import ExecutionPolicy
 from threatlens.providers.runtime import ProviderCapability, ProviderMetadata
+from threatlens.storage.auth import DEFAULT_ORGANIZATION_ID
 from threatlens.storage.postgres import PostgresRepository
 from threatlens.storage.finding_correlation import DurableFindingCorrelator
 
@@ -127,7 +128,7 @@ def test_postgres_campaign_report_is_campaign_scoped_and_excludes_raw_evidence(
     repo.save_evidence_for_execution(other_execution_id, other_evidence)
     repo.add_finding_evidence(finding.id, (other_evidence.id,))
 
-    report = repo.campaign_report_read_model(campaign.id)
+    report = repo.campaign_report_read_model(campaign.id, DEFAULT_ORGANIZATION_ID)
     assert report["campaign"]["id"] == str(campaign.id)
     assert report["scan_summary"] == {"total": 1, "by_state": {"RUNNING": 1}}
     assert report["finding_summary"]["by_severity"] == {"HIGH": 1}
@@ -149,7 +150,9 @@ def test_postgres_campaign_report_export_audit_is_atomic(postgres_repository):
     repo.save_user(actor)
     before = repo.count("audit_events")
 
-    report = repo.campaign_report_export_with_audit(campaign.id, actor.id)
+    report = repo.campaign_report_export_with_audit(
+        campaign.id, actor.id, DEFAULT_ORGANIZATION_ID
+    )
 
     assert report["campaign"]["id"] == str(campaign.id)
     assert repo.count("audit_events") == before + 1
@@ -171,14 +174,53 @@ def test_postgres_campaign_report_export_audit_is_atomic(postgres_repository):
 
     before_failed_export = repo.count("audit_events")
     with pytest.raises(ForeignKeyViolation):
-        repo.campaign_report_export_with_audit(campaign.id, uuid4())
+        repo.campaign_report_export_with_audit(
+            campaign.id, uuid4(), DEFAULT_ORGANIZATION_ID
+        )
     assert repo.count("audit_events") == before_failed_export
 
 
 def test_postgres_campaign_report_export_missing_campaign_is_not_audited(postgres_repository):
     with pytest.raises(KeyError):
-        postgres_repository.campaign_report_export_with_audit(uuid4(), uuid4())
+        postgres_repository.campaign_report_export_with_audit(
+            uuid4(), uuid4(), DEFAULT_ORGANIZATION_ID
+        )
     assert postgres_repository.count("audit_events") == 0
+
+
+def test_postgres_campaign_reads_and_reports_enforce_organization_ownership(
+    postgres_repository,
+):
+    repo = postgres_repository
+    campaign = make_campaign()
+    repo.save_campaign(campaign)
+    other_organization_id = uuid4()
+    with repo.connection.transaction():
+        with repo.connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO organizations (id,name,slug,created_at) "
+                "VALUES (%s,'Isolation Test','isolation-' || %s,NOW())",
+                (other_organization_id, str(other_organization_id)),
+            )
+            cursor.execute(
+                "UPDATE campaigns SET organization_id=%s WHERE id=%s",
+                (other_organization_id, campaign.id),
+            )
+
+    default_campaigns = repo.campaigns_read_model(DEFAULT_ORGANIZATION_ID)
+    other_campaigns = repo.campaigns_read_model(other_organization_id)
+    default_ids = {item["id"] for item in default_campaigns["items"]}
+    other_ids = {item["id"] for item in other_campaigns["items"]}
+    assert str(campaign.id) not in default_ids
+    assert str(campaign.id) in other_ids
+    with pytest.raises(KeyError):
+        repo.campaign_by_id(campaign.id, DEFAULT_ORGANIZATION_ID)
+    assert repo.campaign_by_id(campaign.id, other_organization_id).id == campaign.id
+    with pytest.raises(KeyError):
+        repo.campaign_report_read_model(campaign.id, DEFAULT_ORGANIZATION_ID)
+    assert repo.campaign_report_read_model(campaign.id, other_organization_id)[
+        "campaign"
+    ]["id"] == str(campaign.id)
 
 
 def test_postgres_enforces_foreign_key_integrity(postgres_repository):

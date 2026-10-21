@@ -855,11 +855,17 @@ The architecture names Organization as a required core domain, but the PostgreSQ
 
 Gate 78 is staged because a partial tenant filter would leave cross-organization paths exposed.
 
-### Stage 78A — Organization and Membership Context — IMPLEMENTED LOCALLY; VALIDATION PENDING
+### Stage 78A — Organization and Membership Context — COMPLETE
 
-Add PostgreSQL organization and membership tables, an explicit default organization and retry-safe migration that attaches existing users without rewriting application records. New user and membership writes are atomic. Authentication resolves exactly one active membership and derives the role from it; missing or ambiguous membership fails closed. `/api/v1/me` and the dashboard show the resolved organization and role. The dashboard must state clearly that resource-query isolation remains in progress.
+PostgreSQL organization and membership tables, explicit default organization, retry-safe migration, atomic new-user membership, fail-closed organization context, `/api/v1/me`, and dashboard identity were implemented and user-validated on `main` commit `ff3f914`.
 
-### Stage 78B — Organization-Scoped Resource Access — NOT STARTED
+### Stage 78B — Organization-Scoped Resource Access — IN PROGRESS
+
+#### Stage 78B1 — Campaign ownership — IMPLEMENTED LOCALLY; VALIDATION PENDING
+
+Add and backfill a required `campaigns.organization_id` foreign key. Filter campaign list and report reads by the authenticated organization; create campaigns under that organization; and scope the campaign ID lookup used before queueing a scan. Hide cross-organization campaigns as not found. The dashboard must report the partial rollout and identify remaining unscoped resources. This slice does not enable multi-organization deployment.
+
+#### Remaining Stage 78B work
 
 Scope every read, aggregate, report, write, async provider handoff, evidence/finding relationship, audit event, and idempotency boundary by the authenticated organization. Canonical asset identity must be unique per organization. Cross-organization IDs return not found; missing organization context fails closed. Multiple customer organizations must not be enabled until cross-organization API/PostgreSQL regressions cover the full resource graph.
 

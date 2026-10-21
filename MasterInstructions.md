@@ -216,10 +216,10 @@ On 2026-10-21, the user confirmed Gate 77's focused evidence API test and full s
 
 Gate 78 is staged to avoid presenting partial tenant filters as complete isolation.
 
-### Stage 78A — Organization and Membership Context — IMPLEMENTED LOCALLY; VALIDATION PENDING
+### Stage 78A — Organization and Membership Context — COMPLETE
 
-PostgreSQL now has organization/membership tables and a retry-safe migration that creates `Default Organization` and assigns existing users without rewriting application records. New-user creation persists membership with the user and audit event. Authentication resolves exactly one active membership, derives the role from it, and fails closed for missing or ambiguous membership. `/api/v1/me` exposes organization context; the dashboard displays identity and clearly warns tenant query isolation is not complete.
+PostgreSQL organization/membership tables, retry-safe default organization assignment, atomic new-user membership, fail-closed organization context, `/api/v1/me`, and the dashboard identity were user-validated on `main` commit `ff3f914`.
 
-### Stage 78B — Organization-Scoped Resource Access — NOT STARTED
+### Stage 78B — Organization-Scoped Resource Access — IN PROGRESS
 
-Scope every resource read/write, aggregate, report, audit event, idempotency record, relationship, and async provider handoff by the authenticated organization. Canonical asset identity must be organization-specific. Require two-organization PostgreSQL/API regressions across the full resource graph before enabling multiple customer organizations. Keep changes local unless the user asks to commit or push.
+Stage 78B1 adds campaign ownership and scopes campaign lists, reports, campaign lookup before scan queueing, and campaign creation to the authenticated organization. Its implementation is local and pending user validation. The dashboard must identify the remaining unscoped resources. Continue with assets, findings, evidence, scan-control IDs, aggregates, audit, idempotency, relationships, and async provider handoff. Canonical asset identity must be organization-specific. Require two-organization PostgreSQL/API regressions across the full graph before enabling multiple customer organizations. Keep changes local unless the user asks to commit or push.

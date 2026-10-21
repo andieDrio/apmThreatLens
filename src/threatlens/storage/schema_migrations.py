@@ -115,6 +115,41 @@ def _organizations_and_memberships(repository: object) -> None:
         )
 
 
+def _campaign_organization_ownership(repository: object) -> None:
+    """Assign every campaign to an organization and enforce ownership on writes."""
+    from threatlens.storage.auth import DEFAULT_ORGANIZATION_ID
+
+    with repository.connection.cursor() as cursor:
+        cursor.execute(
+            "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS organization_id UUID"
+        )
+        cursor.execute(
+            "UPDATE campaigns SET organization_id=%s WHERE organization_id IS NULL",
+            (DEFAULT_ORGANIZATION_ID,),
+        )
+        cursor.execute(
+            "ALTER TABLE campaigns ALTER COLUMN organization_id SET NOT NULL"
+        )
+        cursor.execute(
+            """DO $$ BEGIN
+                   IF NOT EXISTS (
+                       SELECT 1 FROM pg_constraint
+                       WHERE conname='campaigns_organization_id_fkey'
+                         AND conrelid='campaigns'::regclass
+                   ) THEN
+                       ALTER TABLE campaigns
+                           ADD CONSTRAINT campaigns_organization_id_fkey
+                           FOREIGN KEY (organization_id) REFERENCES organizations(id)
+                           ON DELETE RESTRICT;
+                   END IF;
+               END $$"""
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS campaigns_organization_created_idx "
+            "ON campaigns (organization_id, created_at DESC, id DESC)"
+        )
+
+
 MIGRATIONS = (
     Migration(
         version=1,
@@ -140,6 +175,12 @@ MIGRATIONS = (
         name="organization_membership_foundation",
         revision="default-organization-membership-backfill-v1",
         apply=_organizations_and_memberships,
+    ),
+    Migration(
+        version=5,
+        name="campaign_organization_ownership",
+        revision="campaign-org-backfill-and-index-v1",
+        apply=_campaign_organization_ownership,
     ),
 )
 

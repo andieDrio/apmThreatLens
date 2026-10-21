@@ -1,4 +1,4 @@
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -6,6 +6,7 @@ import pytest
 from threatlens.api.app import create_app
 from threatlens.auth.service import AuthenticationService, Role
 from threatlens.domain.models import AuditEvent, User
+from threatlens.storage.auth import DEFAULT_ORGANIZATION_ID
 
 
 class FakeRepository:
@@ -15,6 +16,7 @@ class FakeRepository:
         self.audit_events = []
         self.login_attempts = {}
         self.campaigns = []
+        self.campaign_organizations = []
 
     def record_login_attempts(
         self, bucket_keys, now, window_seconds=60, audit_limits=None
@@ -89,8 +91,9 @@ class FakeRepository:
     def save_audit_event(self, event: AuditEvent):
         self.audit_events.append(event)
 
-    def save_campaign_with_audit(self, campaign, actor_user_id):
+    def save_campaign_with_audit(self, campaign, actor_user_id, organization_id):
         self.campaigns.append(campaign)
+        self.campaign_organizations.append(organization_id)
         self.audit_events.append(
             AuditEvent(
                 actor_user_id=actor_user_id,
@@ -187,6 +190,7 @@ async def test_campaign_creation_persists_scope_and_audit_actor():
     assert body["include"] == ["10.0.0.10", "https://example.test"]
     assert body["exclude"] == ["10.0.0.11"]
     assert len(repository.campaigns) == 1
+    assert repository.campaign_organizations == [UUID(DEFAULT_ORGANIZATION_ID)]
     assert repository.audit_events[-1].action == "CAMPAIGN_CREATED"
     assert repository.audit_events[-1].actor_user_id == repository.users["operator"].id
 

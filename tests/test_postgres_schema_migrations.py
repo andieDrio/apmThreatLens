@@ -32,13 +32,20 @@ def test_postgres_baseline_is_recorded_and_repeat_initialize_preserves_data(
             (2, "audit_events_append_only"),
             (3, "audit_events_no_truncate"),
             (4, "organization_membership_foundation"),
+            (5, "campaign_organization_ownership"),
         ]
 
         campaign_id = uuid4()
         cursor.execute(
-            """INSERT INTO campaigns (id, name, authorized, state, created_at)
-               VALUES (%s, %s, TRUE, %s, NOW())""",
-            (campaign_id, "gate54-preservation", "ACTIVE"),
+            """INSERT INTO campaigns
+                   (id, name, authorized, state, created_at, organization_id)
+               VALUES (%s, %s, TRUE, %s, NOW(), %s)""",
+            (
+                campaign_id,
+                "gate54-preservation",
+                "ACTIVE",
+                "00000000-0000-4000-8000-000000000001",
+            ),
         )
     repository.connection.commit()
 
@@ -48,7 +55,7 @@ def test_postgres_baseline_is_recorded_and_repeat_initialize_preserves_data(
         cursor.execute("SELECT name FROM campaigns WHERE id=%s", (campaign_id,))
         assert cursor.fetchone() == ("gate54-preservation",)
         cursor.execute("SELECT COUNT(*) FROM threatlens_schema_migrations")
-        assert cursor.fetchone()[0] == 4
+        assert cursor.fetchone()[0] == 5
 
 
 def test_postgres_initialize_leaves_connection_idle_after_audit_verification(
@@ -191,6 +198,7 @@ def test_postgres_concurrent_initialize_serializes_migrations(postgres_repositor
             (2, "audit_events_append_only"),
             (3, "audit_events_no_truncate"),
             (4, "organization_membership_foundation"),
+            (5, "campaign_organization_ownership"),
         ]
 
 

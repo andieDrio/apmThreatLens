@@ -136,7 +136,7 @@ class FakeRepository:
     def save_audit_event(self, event: AuditEvent):
         self.audit_events.append(event)
 
-    def campaign_by_id(self, campaign_id):
+    def campaign_by_id(self, campaign_id, organization_id):
         if campaign_id not in self.campaigns:
             raise KeyError(str(campaign_id))
         return self.campaigns[campaign_id]

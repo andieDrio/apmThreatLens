@@ -696,7 +696,9 @@ def create_app(
         limit: int = Query(default=50, ge=1, le=100),
         offset: int = Query(default=0, ge=0),
     ) -> CampaignListResponse:
-        result = context.repository.campaigns_read_model(limit=limit, offset=offset)
+        result = context.repository.campaigns_read_model(
+            current.organization_id, limit=limit, offset=offset
+        )
         items = []
         for item in result["items"]:
             normalized = dict(item)
@@ -720,7 +722,7 @@ def create_app(
     ) -> Response:
         try:
             result = context.repository.campaign_report_export_with_audit(
-                campaign_id, current.user_id
+                campaign_id, current.user_id, current.organization_id
             )
         except KeyError as exc:
             raise HTTPException(
@@ -786,7 +788,9 @@ def create_app(
                 ),
                 authorized=True,
             )
-            context.repository.save_campaign_with_audit(campaign, current.user_id)
+            context.repository.save_campaign_with_audit(
+                campaign, current.user_id, current.organization_id
+            )
         except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1389,7 +1393,9 @@ def create_app(
         current=Depends(require(Permission.ASSESS)),
     ) -> ScanQueueResponse:
         try:
-            campaign = context.repository.campaign_by_id(campaign_id)
+            campaign = context.repository.campaign_by_id(
+                campaign_id, current.organization_id
+            )
             _, provider = context.provider_registry.get(request.provider_name)
             scan, created = context.orchestrator.queue_idempotent(
                 campaign, provider, idempotency_key=idempotency_key, principal=current

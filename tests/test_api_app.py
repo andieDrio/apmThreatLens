@@ -7,6 +7,7 @@ import pytest
 from threatlens.api.app import create_app
 from threatlens.auth.service import AuthenticationService, Role
 from threatlens.domain.models import AuditEvent, User
+from threatlens.storage.auth import DEFAULT_ORGANIZATION_ID
 
 
 class FakeRepository:
@@ -200,7 +201,7 @@ class FakeRepository:
             ],
         }
 
-    def campaigns_read_model(self, limit=50, offset=0):
+    def campaigns_read_model(self, organization_id, limit=50, offset=0):
         return {
             "total": 1,
             "limit": limit,
@@ -218,11 +219,13 @@ class FakeRepository:
             ],
         }
 
-    def campaign_report_read_model(self, campaign_id):
+    def campaign_report_read_model(self, campaign_id, organization_id=None):
         if str(campaign_id) != "88888888-8888-8888-8888-888888888888":
             raise KeyError(str(campaign_id))
         return {
-            "campaign": self.campaigns_read_model()["items"][0],
+            "campaign": self.campaigns_read_model(
+                organization_id or DEFAULT_ORGANIZATION_ID
+            )["items"][0],
             "scan_summary": {"total": 1, "by_state": {"COMPLETED": 1}},
             "finding_summary": {
                 "total": 1,
@@ -265,8 +268,8 @@ class FakeRepository:
             ],
         }
 
-    def campaign_report_export_with_audit(self, campaign_id, actor_user_id):
-        report = self.campaign_report_read_model(campaign_id)
+    def campaign_report_export_with_audit(self, campaign_id, actor_user_id, organization_id):
+        report = self.campaign_report_read_model(campaign_id, organization_id)
         if self.fail_campaign_report_audit:
             raise RuntimeError("audit persistence failed")
         finding_summary = report["finding_summary"]

@@ -3,9 +3,9 @@
 **Last updated:** 2026-10-21
 **Source of truth:** GitHub `main`  
 **Highest architecture gate reached:** Gate 78
-**Highest fully validated gate:** Gate 77 (user-confirmed local validation)
-**Current gate:** Gate 78 — Organization-Level Data Isolation
-**Current status:** Gate 77 is complete and pushed as `9abd8a8`. Gate 78 is being delivered in stages. Stage 78A adds PostgreSQL organizations and memberships, a retry-safe default-organization backfill, membership-derived session identity, and a visible security-posture panel. Validation is pending. Resource queries are still global; the UI explicitly calls out that tenant query isolation is in progress. Stage 78B must scope all resource reads and writes before multiple organizations can safely share the application.
+**Highest fully validated gate:** Gate 78A (user-confirmed on `ff3f914`)
+**Current gate:** Gate 78B — Organization-Level Data Isolation
+**Current status:** Gate 78A is complete and pushed as `ff3f914`. Gate 78B1 adds organization ownership and filtering for campaigns, reports, and campaign lookup before scan queueing; implementation and two-organization PostgreSQL regression are local and pending user validation. Assets, findings, evidence, scan controls, aggregates, audit, and async/idempotency paths remain unscoped, so multiple-organization deployment is not enabled.
 
 ## Executive Summary
 
@@ -414,10 +414,16 @@ The evidence read API redacts secret-like metadata keys and strips URL userinfo,
 
 ## Gate 78 — Organization-Level Data Isolation — IN PROGRESS
 
-### Stage 78A — Organization and Membership Context — IMPLEMENTED LOCALLY; VALIDATION PENDING
+### Stage 78A — Organization and Membership Context — COMPLETE
 
-Added PostgreSQL organization and membership tables, the explicit `Default Organization`, and a transactional migration that attaches existing users without rewriting application records. New users receive a default-org membership atomically with user/audit creation. Authentication resolves exactly one active membership and takes the effective role from that membership; zero or multiple memberships fail closed. `/api/v1/me` exposes the active organization context. The dashboard now displays the organization, membership role, and an explicit warning that resource-query isolation is still in progress.
+Added PostgreSQL organization and membership tables, a transactional default-organization backfill, atomic new-user membership, fail-closed organization context, `/api/v1/me`, and the dashboard security-posture view. On 2026-10-21, the user confirmed the full PostgreSQL-backed suite, Ruff, diff check, and Windows wheel build passed; commit `ff3f914` is on `main` and `origin/main`.
 
-### Stage 78B — Organization-Scoped Resource Access — NOT STARTED
+### Stage 78B — Organization-Scoped Resource Access — IN PROGRESS
 
-Every read, aggregate, report, write, async provider handoff, evidence/finding relationship, audit event, and idempotency boundary must enforce the authenticated organization. Assets must be unique within an organization. Cross-organization IDs return not found, and missing organization context fails closed. Do not enable multiple customer organizations until the full resource graph and PostgreSQL/API isolation regressions are covered.
+#### Stage 78B1 — Campaign ownership — IMPLEMENTED LOCALLY; VALIDATION PENDING
+
+Migration version 5 adds a required organization owner and lookup index to campaigns, backfilling existing campaigns into `Default Organization`. Campaign list/report queries, report exports, create writes, and campaign lookup before scan queueing use the authenticated organization. Cross-organization campaign IDs are hidden as not found. The dashboard names these scoped paths and lists remaining gaps. Two-organization PostgreSQL regression coverage is added. This does not enable multiple-organization deployment.
+
+#### Remaining work
+
+Scope assets, findings, evidence, scans and their controls, aggregates, audit, idempotency records, relationships, and asynchronous provider handoff by the authenticated organization. Make asset identity organization-specific. Keep multi-organization deployment disabled until the complete resource graph has cross-organization PostgreSQL/API coverage.

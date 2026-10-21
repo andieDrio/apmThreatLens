@@ -22,14 +22,14 @@ from threatlens.domain.models import (
     Severity,
     validate_finding_remediation_transition,
 )
-from threatlens.storage.auth import PostgresAuthMixin
+from threatlens.storage.auth import DEFAULT_ORGANIZATION_ID, PostgresAuthMixin
 from threatlens.storage.evidence_validation import PostgresEvidenceValidationMixin
 from threatlens.storage.finding_correlation import PostgresFindingCorrelationMixin
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS campaigns (
     id UUID PRIMARY KEY, name TEXT NOT NULL, authorized BOOLEAN NOT NULL,
-    state TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL
+    state TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL, organization_id UUID
 );
 CREATE TABLE IF NOT EXISTS scopes (
     campaign_id UUID PRIMARY KEY REFERENCES campaigns(id) ON DELETE CASCADE
@@ -505,13 +505,14 @@ class PostgresRepository(
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.execute(
-                    "INSERT INTO campaigns (id,name,authorized,state,created_at) VALUES (%s,%s,%s,%s,%s)",
+                    "INSERT INTO campaigns (id,name,authorized,state,created_at,organization_id) VALUES (%s,%s,%s,%s,%s,%s)",
                     (
                         campaign.id,
                         campaign.name,
                         campaign.authorized,
                         campaign.state.value,
                         campaign.created_at,
+                        DEFAULT_ORGANIZATION_ID,
                     ),
                 )
                 cursor.execute("INSERT INTO scopes (campaign_id) VALUES (%s)", (campaign.id,))
@@ -521,7 +522,9 @@ class PostgresRepository(
                     + [(campaign.id, value, False) for value in campaign.scope.exclude],
                 )
 
-    def campaign_by_id(self, campaign_id: UUID) -> Campaign:
+    def campaign_by_id(
+        self, campaign_id: UUID, organization_id: UUID
+    ) -> Campaign:
         from threatlens.domain.models import LifecycleState, Scope
 
         with self.connection.cursor() as cursor:
@@ -539,9 +542,9 @@ class PostgresRepository(
                           )
                    FROM campaigns c
                    LEFT JOIN scope_entries se ON se.campaign_id = c.id
-                   WHERE c.id=%s
+                   WHERE c.id=%s AND c.organization_id=%s
                    GROUP BY c.id, c.name, c.authorized, c.state, c.created_at""",
-                (campaign_id,),
+                (campaign_id, organization_id),
             )
             row = cursor.fetchone()
         if row is None:
@@ -558,20 +561,23 @@ class PostgresRepository(
             ),
         )
 
-    def save_campaign_with_audit(self, campaign: Campaign, actor_user_id: UUID) -> None:
+    def save_campaign_with_audit(
+        self, campaign: Campaign, actor_user_id: UUID, organization_id: UUID
+    ) -> None:
         from threatlens.domain.models import AuditEvent
 
         with self._transaction_lock:
             with self.connection.transaction():
                 with self.connection.cursor() as cursor:
                     cursor.execute(
-                        "INSERT INTO campaigns (id,name,authorized,state,created_at) VALUES (%s,%s,%s,%s,%s)",
+                        "INSERT INTO campaigns (id,name,authorized,state,created_at,organization_id) VALUES (%s,%s,%s,%s,%s,%s)",
                         (
                             campaign.id,
                             campaign.name,
                             campaign.authorized,
                             campaign.state.value,
                             campaign.created_at,
+                            organization_id,
                         ),
                     )
                     cursor.execute("INSERT INTO scopes (campaign_id) VALUES (%s)", (campaign.id,))
@@ -1628,14 +1634,19 @@ class PostgresRepository(
             "scans_by_state": scans_by_state,
         }
 
-    def campaigns_read_model(self, limit: int = 50, offset: int = 0) -> dict[str, object]:
+    def campaigns_read_model(
+        self, organization_id: UUID, limit: int = 50, offset: int = 0
+    ) -> dict[str, object]:
         """Return bounded authorized campaign metadata and explicit scope entries."""
         if not 1 <= limit <= 100:
             raise ValueError("limit must be within 1..100")
         if offset < 0:
             raise ValueError("offset cannot be negative")
         with self.connection.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*) FROM campaigns")
+            cursor.execute(
+                "SELECT COUNT(*) FROM campaigns WHERE organization_id=%s",
+                (organization_id,),
+            )
             total = int(cursor.fetchone()[0])
             cursor.execute(
                 """SELECT c.id, c.name, c.authorized, c.state, c.created_at,
@@ -1651,10 +1662,11 @@ class PostgresRepository(
                           )
                    FROM campaigns c
                    LEFT JOIN scope_entries se ON se.campaign_id = c.id
+                   WHERE c.organization_id=%s
                    GROUP BY c.id, c.name, c.authorized, c.state, c.created_at
                    ORDER BY c.created_at DESC, c.id DESC
                    LIMIT %s OFFSET %s""",
-                (limit, offset),
+                (organization_id, limit, offset),
             )
             rows = cursor.fetchall()
         return {
@@ -1675,7 +1687,9 @@ class PostgresRepository(
             ],
         }
 
-    def campaign_report_read_model(self, campaign_id: UUID) -> dict[str, object]:
+    def campaign_report_read_model(
+        self, campaign_id: UUID, organization_id: UUID
+    ) -> dict[str, object]:
         """Build a bounded report using only scans and evidence from one campaign."""
         with self.connection.cursor() as cursor:
             cursor.execute(
@@ -1690,9 +1704,9 @@ class PostgresRepository(
                           )
                    FROM campaigns c
                    LEFT JOIN scope_entries se ON se.campaign_id=c.id
-                   WHERE c.id=%s
+                   WHERE c.id=%s AND c.organization_id=%s
                    GROUP BY c.id, c.name, c.authorized, c.state, c.created_at""",
-                (campaign_id,),
+                (campaign_id, organization_id),
             )
             campaign_row = cursor.fetchone()
             if campaign_row is None:
@@ -1855,12 +1869,12 @@ class PostgresRepository(
         }
 
     def campaign_report_export_with_audit(
-        self, campaign_id: UUID, actor_user_id: UUID
+        self, campaign_id: UUID, actor_user_id: UUID, organization_id: UUID
     ) -> dict[str, object]:
         """Read a campaign report and record its export in one transaction."""
         with self._transaction_lock:
             with self.connection.transaction():
-                report = self.campaign_report_read_model(campaign_id)
+                report = self.campaign_report_read_model(campaign_id, organization_id)
                 finding_summary = report["finding_summary"]
                 scan_summary = report["scan_summary"]
                 event = AuditEvent(

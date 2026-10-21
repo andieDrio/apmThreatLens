@@ -508,6 +508,6 @@ The evidence-list response redacts secret-like metadata fields and sanitizes URL
 
 Gate 78 is staged because partial scoping would leave cross-organization paths exposed.
 
-Stage 78A adds PostgreSQL organizations/memberships, a retry-safe assignment of existing users to `Default Organization`, atomic membership creation for new accounts, fail-closed authenticated organization context, and a dashboard security-posture view. The UI explicitly warns that resource-query isolation is still in progress. Local implementation is pending validation.
+Stage 78A is complete on `main` (`ff3f914`) and user-validated: PostgreSQL organizations/memberships, a retry-safe assignment of existing users to `Default Organization`, atomic membership creation for new accounts, fail-closed authenticated organization context, and a dashboard security-posture view.
 
-Stage 78B will scope all resource reads, writes, aggregates, reports, audit, idempotency, and async provider paths to the authenticated organization; asset identity will be unique within each organization. Do not enable multiple customer organizations until two-organization regressions cover the full resource graph.
+Stage 78B1 is implemented locally and pending validation. Campaign rows now have an organization owner; campaign lists, reports, campaign-by-ID lookup used for scan queueing, and campaign creation use the authenticated organization. The dashboard reports this partial rollout precisely. Assets, findings, evidence, scan controls, aggregates, audit views, idempotency, and async provider paths still need organization scoping. Multiple customer organizations remain unsupported until the full resource graph is isolated and tested.
