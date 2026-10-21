@@ -72,9 +72,16 @@ class ScanRepository(Protocol):
     ) -> bool: ...
 
     def execute_scan_lifecycle_command(
-        self, execution_id: UUID, action: str, actor_user_id: UUID,
-        idempotency_key: str, request_hash: str, stale_after_seconds: float,
-        success_event: AuditEvent, noop_event: AuditEvent,
+        self,
+        execution_id: UUID,
+        organization_id: UUID,
+        action: str,
+        actor_user_id: UUID,
+        idempotency_key: str,
+        request_hash: str,
+        stale_after_seconds: float,
+        success_event: AuditEvent,
+        noop_event: AuditEvent,
     ) -> tuple[bool, bool]: ...
 
 
@@ -198,14 +205,29 @@ class ScanOrchestrator:
             f"RECOVER_STALE\n{execution_id}\n{self.policy.stale_after_seconds}".encode()
         ).hexdigest()
         return self.repository.execute_scan_lifecycle_command(
-            execution_id, "RECOVER_STALE", principal.user_id, idempotency_key,
-            request_hash, self.policy.stale_after_seconds,
-            AuditEvent(actor_user_id=principal.user_id, action="SCAN_RECOVERED_STALE",
-                resource_type="SCAN", resource_id=execution_id, outcome="SUCCESS",
-                detail="execution heartbeat lease expired"),
-            AuditEvent(actor_user_id=principal.user_id, action="SCAN_RECOVERED_STALE",
-                resource_type="SCAN", resource_id=execution_id, outcome="NOOP",
-                detail="execution heartbeat lease has not expired"),
+            execution_id=execution_id,
+            organization_id=principal.organization_id,
+            action="RECOVER_STALE",
+            actor_user_id=principal.user_id,
+            idempotency_key=idempotency_key,
+            request_hash=request_hash,
+            stale_after_seconds=self.policy.stale_after_seconds,
+            success_event=AuditEvent(
+                actor_user_id=principal.user_id,
+                action="SCAN_RECOVERED_STALE",
+                resource_type="SCAN",
+                resource_id=execution_id,
+                outcome="SUCCESS",
+                detail="execution heartbeat lease expired",
+            ),
+            noop_event=AuditEvent(
+                actor_user_id=principal.user_id,
+                action="SCAN_RECOVERED_STALE",
+                resource_type="SCAN",
+                resource_id=execution_id,
+                outcome="NOOP",
+                detail="execution heartbeat lease has not expired",
+            ),
         )
 
     def cancel_idempotent(
@@ -218,14 +240,29 @@ class ScanOrchestrator:
             raise ValueError("idempotency key must be 16..128 safe ASCII characters")
         request_hash = sha256(f"CANCEL\n{execution_id}".encode()).hexdigest()
         return self.repository.execute_scan_lifecycle_command(
-            execution_id, "CANCEL", principal.user_id, idempotency_key,
-            request_hash, self.policy.stale_after_seconds,
-            AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED",
-                resource_type="SCAN", resource_id=execution_id, outcome="SUCCESS",
-                detail="scan cancellation requested"),
-            AuditEvent(actor_user_id=principal.user_id, action="SCAN_CANCELLED",
-                resource_type="SCAN", resource_id=execution_id, outcome="NOOP",
-                detail="scan already terminal"),
+            execution_id=execution_id,
+            organization_id=principal.organization_id,
+            action="CANCEL",
+            actor_user_id=principal.user_id,
+            idempotency_key=idempotency_key,
+            request_hash=request_hash,
+            stale_after_seconds=self.policy.stale_after_seconds,
+            success_event=AuditEvent(
+                actor_user_id=principal.user_id,
+                action="SCAN_CANCELLED",
+                resource_type="SCAN",
+                resource_id=execution_id,
+                outcome="SUCCESS",
+                detail="scan cancellation requested",
+            ),
+            noop_event=AuditEvent(
+                actor_user_id=principal.user_id,
+                action="SCAN_CANCELLED",
+                resource_type="SCAN",
+                resource_id=execution_id,
+                outcome="NOOP",
+                detail="scan already terminal",
+            ),
         )
 
     def run_registered(

@@ -704,6 +704,92 @@ def test_postgres_lifecycle_idempotency_and_audit_are_atomic_on_audit_failure(
     ).fetchone()[0] == 1
 
 
+def test_postgres_lifecycle_commands_hide_and_preserve_cross_organization_scans(
+    postgres_repository,
+):
+    repo = postgres_repository
+    campaign = make_campaign()
+    repo.save_campaign(campaign)
+    other_organization_id = uuid4()
+    execution_id = uuid4()
+    with repo.connection.transaction():
+        with repo.connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO organizations (id,name,slug,created_at) "
+                "VALUES (%s,'Lifecycle Isolation','lifecycle-' || %s,NOW())",
+                (other_organization_id, str(other_organization_id)),
+            )
+            cursor.execute(
+                "UPDATE campaigns SET organization_id=%s WHERE id=%s",
+                (other_organization_id, campaign.id),
+            )
+            cursor.execute(
+                """INSERT INTO scans
+                       (execution_id,campaign_id,provider_name,state,queued_at,
+                        started_at,heartbeat_at)
+                   VALUES (%s,%s,'isolation-test','RUNNING',NOW(),
+                           NOW()-INTERVAL '10 minutes',NOW()-INTERVAL '10 minutes')""",
+                (execution_id, campaign.id),
+            )
+
+    auth = AuthenticationService(repo)
+    auth.create_user("scan-isolation-operator", "correct horse battery staple", Role.ANALYST)
+    principal, _ = auth.authenticate(
+        "scan-isolation-operator", "correct horse battery staple"
+    )
+    orchestrator = ScanOrchestrator(repo, ExecutionPolicy(), auth)
+    lifecycle_records_before = repo.count("scan_lifecycle_command_idempotency")
+    with pytest.raises(KeyError):
+        orchestrator.cancel_idempotent(
+            execution_id, "cross-org-cancel-command-0001", principal=principal
+        )
+    with pytest.raises(KeyError):
+        orchestrator.recover_stale_idempotent(
+            execution_id, "cross-org-recover-command-01", principal=principal
+        )
+
+    assert repo.scan_state(execution_id) is LifecycleState.RUNNING
+    assert repo.count("scan_lifecycle_command_idempotency") == lifecycle_records_before
+    with repo.connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE resource_id=%s "
+            "AND action IN ('SCAN_CANCELLED','SCAN_RECOVERED_STALE')",
+            (execution_id,),
+        )
+        assert cursor.fetchone()[0] == 0
+
+    replay_campaign = make_campaign()
+    repo.save_campaign(replay_campaign)
+    replay_execution_id = uuid4()
+    repo.save_scan_with_audit(
+        Scan(campaign_id=replay_campaign.id, provider_name="replay-isolation-test",
+             execution_id=replay_execution_id),
+        AuditEvent(
+            action="SCAN_QUEUED",
+            resource_type="SCAN",
+            resource_id=replay_execution_id,
+            outcome="SUCCESS",
+            detail="idempotency isolation regression",
+        ),
+    )
+    replay_key = "cross-org-replay-command-0001"
+    changed, created = orchestrator.cancel_idempotent(
+        replay_execution_id, replay_key, principal=principal
+    )
+    assert changed is True and created is True
+    with repo.connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE campaigns SET organization_id=%s WHERE id=%s",
+            (other_organization_id, replay_campaign.id),
+        )
+    repo.connection.commit()
+    with pytest.raises(KeyError):
+        orchestrator.cancel_idempotent(
+            replay_execution_id, replay_key, principal=principal
+        )
+    assert repo.scan_state(replay_execution_id) is LifecycleState.CANCELLED
+
+
 def test_postgres_login_session_and_success_audit_are_atomic_on_audit_failure(
     postgres_repository,
 ):

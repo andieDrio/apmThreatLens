@@ -865,9 +865,13 @@ PostgreSQL organization and membership tables, explicit default organization, re
 
 Add and backfill a required `campaigns.organization_id` foreign key. Campaign list/report reads, writes, and lookup before scan queueing are scoped by authenticated organization. The user confirmed focused tests, full suite, Ruff, diff check, and wheel build; commit `eb4e89f` is on `main` and `origin/main`.
 
-#### Stage 78B2 — Scan activity reads — IMPLEMENTED AND VALIDATED LOCALLY; PUSH PENDING
+#### Stage 78B2 — Scan activity reads — COMPLETE
 
-Filter scan activity rows and counts through each scan's owning campaign. On 2026-10-21, the user confirmed the focused PostgreSQL/API tests, full suite, Ruff, diff check, and Windows wheel build passed locally. Scan cancel/recovery controls remain pending because ownership verification must share a transaction with the state mutation.
+Filter scan activity rows and counts through each scan's owning campaign. On 2026-10-21, the user confirmed focused PostgreSQL/API tests, full suite, Ruff, diff check, and Windows wheel build passed; commit `c8793a0` is on `main` and `origin/main`.
+
+#### Stage 78B3 — Scan lifecycle controls — IMPLEMENTED AND VALIDATED LOCALLY; PUSH PENDING
+
+Scan cancel and stale-recovery commands lock and verify the scan and owning campaign organization in the same transaction as the state mutation, audit event, and idempotency record. Replays also verify current ownership before returning a prior result. PostgreSQL regression coverage confirms cross-organization commands return not found without changing state, audit, or idempotency data, including replay after ownership changes. On 2026-10-21, the user confirmed focused PostgreSQL/API tests, the full suite at 100%, Ruff, diff check, and Windows wheel build passed locally. Push is pending.
 
 #### Remaining Stage 78B work
 

@@ -3,9 +3,9 @@
 **Last updated:** 2026-10-21
 **Source of truth:** GitHub `main`  
 **Highest architecture gate reached:** Gate 78
-**Highest fully validated gate:** Gate 78B1 (user-confirmed on `eb4e89f`)
-**Current gate:** Gate 78B2 — Organization-Scoped Scan Activity Read Model
-**Current status:** Gate 78B1 is complete and pushed as `eb4e89f`. Gate 78B2 scopes scan activity through its campaign organization; implementation and two-organization PostgreSQL regression are local and pending user validation. Scan controls and other resource paths remain unscoped, so multiple-organization deployment is not enabled.
+**Highest fully validated gate:** Gate 78B3 (user-confirmed locally; push pending)
+**Current gate:** Gate 78B3 — Organization-Scoped Scan Lifecycle Controls
+**Current status:** Gate 78B1 is complete and pushed as `eb4e89f`; Gate 78B2 is complete and pushed as `c8793a0`. Gate 78B3 is implemented and user-validated locally; commit/push are pending. Other resource paths remain unscoped, so multiple-organization deployment is not enabled.
 
 ## Executive Summary
 
@@ -424,10 +424,14 @@ Added PostgreSQL organization and membership tables, a transactional default-org
 
 Migration version 5 adds a required organization owner and lookup index to campaigns, backfilling existing campaigns into `Default Organization`. Campaign list/report queries, report exports, create writes, and campaign lookup before scan queueing use the authenticated organization. On 2026-10-21, the user confirmed focused PostgreSQL/API tests, the full test suite, Ruff, diff check, and wheel build passed; commit `eb4e89f` is on `main` and `origin/main`. Multiple-organization deployment remains unsupported until the resource graph is isolated.
 
-#### Stage 78B2 — Scan activity reads — IMPLEMENTED AND VALIDATED LOCALLY; PUSH PENDING
+#### Stage 78B2 — Scan activity reads — COMPLETE
 
-The scan activity read model and count are filtered through each scan's campaign organization. On 2026-10-21, the user confirmed focused PostgreSQL/API tests, the full test suite, Ruff, diff check, and Windows wheel build passed on the local revision. Scan cancel/recovery controls remain pending because their ownership check must share a transaction with the state mutation.
+The scan activity read model and count are filtered through each scan's campaign organization. On 2026-10-21, the user confirmed focused PostgreSQL/API tests, the full test suite, Ruff, diff check, and Windows wheel build passed. Commit `c8793a0` is on `main` and `origin/main`.
+
+#### Stage 78B3 — Scan lifecycle controls — IMPLEMENTED AND VALIDATED LOCALLY; PUSH PENDING
+
+Cancel and stale-recovery commands now verify campaign organization while locking the scan and campaign rows in the mutation transaction. Idempotency replays repeat the same ownership check before returning a prior result. On 2026-10-21, the user confirmed focused PostgreSQL/API tests, the full test suite at 100%, Ruff, diff check, and Windows wheel build passed locally. A PostgreSQL regression covers cross-organization cancel/recovery, unchanged state/audit/idempotency, and replay after ownership changes. Push is pending.
 
 #### Remaining work
 
-Scope assets, findings, evidence, scans and their controls, aggregates, audit, idempotency records, relationships, and asynchronous provider handoff by the authenticated organization. Make asset identity organization-specific. Keep multi-organization deployment disabled until the complete resource graph has cross-organization PostgreSQL/API coverage.
+After Gate 78B3 validation, scope assets, findings, evidence, aggregates, audit, general idempotency records, relationships, and asynchronous provider handoff by the authenticated organization. Make asset identity organization-specific. Keep multi-organization deployment disabled until the complete resource graph has cross-organization PostgreSQL/API coverage.

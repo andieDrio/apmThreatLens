@@ -1156,6 +1156,7 @@ class PostgresRepository(
     def execute_scan_lifecycle_command(
         self,
         execution_id: UUID,
+        organization_id: UUID,
         action: str,
         actor_user_id: UUID,
         idempotency_key: str,
@@ -1218,12 +1219,23 @@ class PostgresRepository(
                             raise ValueError(
                                 "Idempotency-Key was already used for a different lifecycle command"
                             )
+                        cursor.execute(
+                            """SELECT 1 FROM scans s
+                               JOIN campaigns c ON c.id=s.campaign_id
+                               WHERE s.execution_id=%s AND c.organization_id=%s
+                               FOR UPDATE OF s, c""",
+                            (execution_id, organization_id),
+                        )
+                        if cursor.fetchone() is None:
+                            raise KeyError(str(execution_id))
                         return bool(existing[3]), False
 
                     cursor.execute(
-                        """SELECT state, COALESCE(heartbeat_at, started_at)
-                           FROM scans WHERE execution_id=%s FOR UPDATE""",
-                        (execution_id,),
+                        """SELECT s.state, COALESCE(s.heartbeat_at, s.started_at)
+                           FROM scans s JOIN campaigns c ON c.id=s.campaign_id
+                           WHERE s.execution_id=%s AND c.organization_id=%s
+                           FOR UPDATE OF s, c""",
+                        (execution_id, organization_id),
                     )
                     row = cursor.fetchone()
                     if row is None:

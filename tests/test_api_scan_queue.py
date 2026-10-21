@@ -154,6 +154,7 @@ class FakeRepository:
     def execute_scan_lifecycle_command(
         self,
         execution_id,
+        organization_id,
         action,
         actor_user_id,
         idempotency_key,
@@ -238,6 +239,7 @@ class FakeOrchestrator:
         request_hash = sha256(f"CANCEL\n{execution_id}".encode()).hexdigest()
         return self.repository.execute_scan_lifecycle_command(
             execution_id,
+            principal.organization_id,
             "CANCEL",
             principal.user_id,
             idempotency_key,
@@ -265,6 +267,7 @@ class FakeOrchestrator:
         request_hash = sha256(f"RECOVER_STALE\n{execution_id}\n300.0".encode()).hexdigest()
         return self.repository.execute_scan_lifecycle_command(
             execution_id,
+            principal.organization_id,
             "RECOVER_STALE",
             principal.user_id,
             idempotency_key,

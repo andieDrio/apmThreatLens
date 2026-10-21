@@ -31,10 +31,15 @@ async def test_dashboard_ui_serves_static_assets_with_security_headers():
     assert 'id="download-campaign-report"' in page.text
     assert "Campaigns scoped · rollout in progress" in page.text
     assert (
-        "Campaign lists, reports, scan activity, and scan queue lookup use this organization."
+        "Campaign lists, reports, scan activity, scan queue lookup, and scan "
+        "cancel/recovery controls use this organization."
         in page.text
     )
-    assert "scan controls, aggregates, and audit views still need organization scoping" in page.text
+    assert (
+        "Assets, findings, evidence, aggregates, and audit views still need "
+        "organization scoping."
+        in page.text
+    )
     assert 'id="evidence"' in page.text
     assert 'id="attack-paths"' in page.text
     assert 'id="audit-log"' in page.text
