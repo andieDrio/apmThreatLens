@@ -18,6 +18,7 @@ from threatlens.domain.models import (
     Scan,
     Service,
     Severity,
+    User,
 )
 from threatlens.evidence.validation import EvidenceValidation, EvidenceValidationState
 from threatlens.orchestration.engine import ScanOrchestrator
@@ -134,6 +135,50 @@ def test_postgres_campaign_report_is_campaign_scoped_and_excludes_raw_evidence(
     assert report["findings"][0]["evidence_total"] == 1
     assert report["findings"][0]["evidence"][0]["id"] == str(evidence.id)
     assert "content" not in str(report)
+
+
+def test_postgres_campaign_report_export_audit_is_atomic(postgres_repository):
+    repo = postgres_repository
+    campaign = make_campaign()
+    repo.save_campaign(campaign)
+    actor = User(
+        username="campaign-report-exporter",
+        password_hash="test-hash",
+        role=Role.ANALYST.value,
+    )
+    repo.save_user(actor)
+    before = repo.count("audit_events")
+
+    report = repo.campaign_report_export_with_audit(campaign.id, actor.id)
+
+    assert report["campaign"]["id"] == str(campaign.id)
+    assert repo.count("audit_events") == before + 1
+    with repo.connection.cursor() as cursor:
+        cursor.execute(
+            """SELECT actor_user_id, action, resource_type, resource_id, outcome, detail
+               FROM audit_events WHERE action='CAMPAIGN_REPORT_EXPORTED'
+               ORDER BY created_at DESC, id DESC LIMIT 1"""
+        )
+        event = cursor.fetchone()
+    assert event[:5] == (
+        actor.id,
+        "CAMPAIGN_REPORT_EXPORTED",
+        "CAMPAIGN_REPORT",
+        campaign.id,
+        "SUCCESS",
+    )
+    assert event[5] == "scan_count=0;finding_count=0;findings_returned=0;findings_truncated=false"
+
+    before_failed_export = repo.count("audit_events")
+    with pytest.raises(ForeignKeyViolation):
+        repo.campaign_report_export_with_audit(campaign.id, uuid4())
+    assert repo.count("audit_events") == before_failed_export
+
+
+def test_postgres_campaign_report_export_missing_campaign_is_not_audited(postgres_repository):
+    with pytest.raises(KeyError):
+        postgres_repository.campaign_report_export_with_audit(uuid4(), uuid4())
+    assert postgres_repository.count("audit_events") == 0
 
 
 def test_postgres_enforces_foreign_key_integrity(postgres_repository):

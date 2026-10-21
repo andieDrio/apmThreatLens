@@ -5,7 +5,7 @@
 **Highest architecture gate reached:** Gate 76
 **Highest fully validated gate:** Gate 75 (user-confirmed local validation)
 **Current gate:** Gate 76 — Auditable Campaign Report Export
-**Current status:** Gate 75 — Evidence-Backed Campaign Report Export — is complete. The user confirmed the report-specific PostgreSQL integration test and full test suite passed on Windows; Ruff, `git diff --check`, and the package wheel build passed. Five Starlette deprecation warnings were non-failing. Architecture review found that successful downloads of the new security-sensitive campaign report are not recorded in the append-only audit trail. Gate 76 will record the authenticated actor and campaign/report metadata atomically with report generation; report delivery must fail closed if audit persistence fails. Changes remain local; no commit or push was made.
+**Current status:** Gate 75 — Evidence-Backed Campaign Report Export — is complete. Gate 76 implementation now records the authenticated actor and bounded report summary in the append-only audit trail within the same PostgreSQL transaction as report assembly. Audit persistence failure returns a generic 503 without report data; unknown campaigns remain 404 and are not audited as successful exports. API/PostgreSQL regression tests were added. Windows local validation is pending because this execution environment cannot access the user's `%LOCALAPPDATA%` virtual environment. Changes remain local; no commit or push was made.
 
 ## Executive Summary
 
@@ -404,4 +404,6 @@ The project had authenticated global read models for campaigns, findings, scans,
 
 The Gate 75 campaign report contains security-sensitive findings and evidence metadata, but successful report downloads currently leave no audit event. Add an append-only `CAMPAIGN_REPORT_EXPORTED` event with the authenticated actor, campaign identifier, and bounded report summary metadata. Persist the event transactionally with assembling the report; if audit persistence fails, do not return the report. Preserve READ authorization, campaign scoping, output bounds, raw-evidence exclusion, and response headers.
 
-**Acceptance criteria:** successful authorized exports create exactly one attributable event; the audit event and report read use a single transaction; audit persistence failure prevents export; unknown campaign and unauthorized requests do not produce misleading success events; PostgreSQL and API regressions cover these outcomes; full PostgreSQL-backed suite, Ruff, `git diff --check`, and wheel build pass against the exact working tree. No migration is expected unless schema inspection identifies a real need.
+**Implementation:** `PostgresRepository.campaign_report_export_with_audit()` assembles the bounded report and inserts `CAMPAIGN_REPORT_EXPORTED` in one transaction. The API supplies the authenticated user ID, returns a generic 503 if report/audit persistence fails, and does not return report bytes on that path. API and PostgreSQL regressions cover attribution, success, failure, and missing campaigns. No migration was needed.
+
+**Validation pending:** Run the focused API and PostgreSQL report-export tests, full PostgreSQL-backed suite, Ruff, `git diff --check`, and package wheel build on the user's Windows environment. Do not close Gate 76 until those exact-working-tree results are confirmed.

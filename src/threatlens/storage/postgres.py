@@ -1854,6 +1854,47 @@ class PostgresRepository(
             "findings": findings,
         }
 
+    def campaign_report_export_with_audit(
+        self, campaign_id: UUID, actor_user_id: UUID
+    ) -> dict[str, object]:
+        """Read a campaign report and record its export in one transaction."""
+        with self._transaction_lock:
+            with self.connection.transaction():
+                report = self.campaign_report_read_model(campaign_id)
+                finding_summary = report["finding_summary"]
+                scan_summary = report["scan_summary"]
+                event = AuditEvent(
+                    actor_user_id=actor_user_id,
+                    action="CAMPAIGN_REPORT_EXPORTED",
+                    resource_type="CAMPAIGN_REPORT",
+                    resource_id=campaign_id,
+                    outcome="SUCCESS",
+                    detail=(
+                        f"scan_count={scan_summary['total']};"
+                        f"finding_count={finding_summary['total']};"
+                        f"findings_returned={len(report['findings'])};"
+                        f"findings_truncated={str(finding_summary['truncated']).lower()}"
+                    ),
+                )
+                with self.connection.cursor() as cursor:
+                    cursor.execute(
+                        """INSERT INTO audit_events
+                           (id,actor_user_id,action,resource_type,resource_id,
+                            outcome,detail,created_at)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        (
+                            event.id,
+                            event.actor_user_id,
+                            event.action,
+                            event.resource_type,
+                            event.resource_id,
+                            event.outcome,
+                            event.detail,
+                            event.created_at,
+                        ),
+                    )
+        return report
+
     def scans_read_model(self, limit: int = 50, offset: int = 0) -> dict[str, object]:
         """Return bounded scan execution state for the authenticated application layer."""
         if not 1 <= limit <= 100:

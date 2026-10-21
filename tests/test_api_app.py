@@ -15,6 +15,7 @@ class FakeRepository:
         self.sessions = {}
         self.audit_events = []
         self.login_attempts = {}
+        self.fail_campaign_report_audit = False
 
     def record_login_attempts(
         self, bucket_keys, now, window_seconds=60, audit_limits=None
@@ -256,6 +257,28 @@ class FakeRepository:
                 }
             ],
         }
+
+    def campaign_report_export_with_audit(self, campaign_id, actor_user_id):
+        report = self.campaign_report_read_model(campaign_id)
+        if self.fail_campaign_report_audit:
+            raise RuntimeError("audit persistence failed")
+        finding_summary = report["finding_summary"]
+        self.save_audit_event(
+            AuditEvent(
+                actor_user_id=actor_user_id,
+                action="CAMPAIGN_REPORT_EXPORTED",
+                resource_type="CAMPAIGN_REPORT",
+                resource_id=campaign_id,
+                outcome="SUCCESS",
+                detail=(
+                    f"scan_count={report['scan_summary']['total']};"
+                    f"finding_count={finding_summary['total']};"
+                    f"findings_returned={len(report['findings'])};"
+                    f"findings_truncated={str(finding_summary['truncated']).lower()}"
+                ),
+            )
+        )
+        return report
 
     def scans_read_model(self, limit=50, offset=0):
         return {
@@ -534,6 +557,33 @@ async def test_campaign_report_download_contains_persisted_summary_and_evidence_
     assert report["finding_summary"]["by_severity"] == {"HIGH": 1}
     assert report["findings"][0]["evidence"][0]["sha256"] == "a" * 64
     assert "content" not in str(report["findings"][0]["evidence"])
+    repository = client._transport.app.state.context.repository
+    audit_event = repository.audit_events[-1]
+    assert audit_event.action == "CAMPAIGN_REPORT_EXPORTED"
+    assert audit_event.resource_type == "CAMPAIGN_REPORT"
+    assert str(audit_event.resource_id) == "88888888-8888-8888-8888-888888888888"
+    assert audit_event.actor_user_id == repository.user_by_username("analyst").id
+
+
+@pytest.mark.anyio
+async def test_campaign_report_fails_closed_when_export_audit_fails(client):
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "analyst", "password": "correct-horse-battery-123"},
+    )
+    token = login.json()["access_token"]
+    repository = client._transport.app.state.context.repository
+    repository.fail_campaign_report_audit = True
+    audit_count = len(repository.audit_events)
+
+    response = await client.get(
+        "/api/v1/campaigns/88888888-8888-8888-8888-888888888888/report",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "campaign report export is unavailable"}
+    assert len(repository.audit_events) == audit_count
 
 
 @pytest.mark.anyio
@@ -548,6 +598,10 @@ async def test_campaign_report_returns_not_found_for_unknown_campaign(client):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 404
+    repository = client._transport.app.state.context.repository
+    assert not any(
+        event.action == "CAMPAIGN_REPORT_EXPORTED" for event in repository.audit_events
+    )
 
 
 @pytest.mark.anyio

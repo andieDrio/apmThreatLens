@@ -651,11 +651,18 @@ def create_app(
         current=Depends(require(Permission.READ)),
     ) -> Response:
         try:
-            result = context.repository.campaign_report_read_model(campaign_id)
+            result = context.repository.campaign_report_export_with_audit(
+                campaign_id, current.user_id
+            )
         except KeyError as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="campaign not found",
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="campaign report export is unavailable",
             ) from exc
 
         campaign = dict(result["campaign"])
