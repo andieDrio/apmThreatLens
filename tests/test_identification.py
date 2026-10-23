@@ -20,8 +20,8 @@ def test_normalizes_ssh_banner() -> None:
     observation = normalize_observation(port=22, banner="SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13")
 
     assert observation.protocol is Protocol.SSH
-    assert observation.product == "OpenSSH_9.6p1"
-    assert observation.version == "Ubuntu-3ubuntu13"
+    assert observation.product == "OpenSSH"
+    assert observation.version == "9.6p1"
 
 
 def test_explicit_protocol_is_authoritative() -> None:

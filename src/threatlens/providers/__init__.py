@@ -10,6 +10,8 @@ from threatlens.providers.vulnerability_enrichment import (
     enrich_finding_from_intelligence,
     intelligence_evidence,
 )
+from threatlens.providers.nvd_feed import parse_nvd_cve_response
+from threatlens.providers.nvd_client import NvdCveFeedClient, NvdFeedError
 from threatlens.providers.api import (
     APIAssessmentPolicy,
     APIAssessmentProvider,
@@ -30,6 +32,9 @@ __all__ = [
     "VulnerabilityMatch",
     "normalize_vulnerability_record",
     "match_vulnerability",
+    "parse_nvd_cve_response",
+    "NvdCveFeedClient",
+    "NvdFeedError",
     "APIObservation",
     "APIAssessmentPolicy",
     "APIAssessmentProvider",

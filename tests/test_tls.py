@@ -1,9 +1,16 @@
 from threading import Event
 from uuid import uuid4
 
+import pytest
+
 from threatlens.domain.models import Asset, Campaign, Scope
 from threatlens.providers.handoff import ProviderHandoff
-from threatlens.providers.tls import TLSAssessmentProvider, TLSObservation, TLSPolicy
+from threatlens.providers.tls import (
+    SocketTLSProbe,
+    TLSAssessmentProvider,
+    TLSObservation,
+    TLSPolicy,
+)
 from threatlens.providers.tls_policy import TLSPolicy as FindingPolicy
 
 
@@ -24,8 +31,8 @@ class FakeProbe:
         self.observation = observation
         self.calls = []
 
-    def inspect(self, host, port, timeout):
-        self.calls.append((host, port, timeout))
+    def inspect(self, host, port, timeout, *, connect_address=None):
+        self.calls.append((host, port, timeout, connect_address))
         return self.observation
 
 
@@ -53,6 +60,7 @@ def test_tls_probe_observation_is_persisted_as_evidence() -> None:
         ProviderHandoff(repo),
         policy=TLSPolicy(ports=(443,), timeout_seconds=1.0, max_targets=1),
         probe=FakeProbe(_observation()),
+        destination_resolver=lambda hostname: ("93.184.216.34",),
     )
     campaign = Campaign("tls", Scope(("example.test",)), authorized=True)
 
@@ -66,6 +74,8 @@ def test_tls_probe_observation_is_persisted_as_evidence() -> None:
     assert evidence.metadata["execution_id"] == str(execution_id)
     assert evidence.metadata["tls_version"] == "TLSv1.3"
     assert evidence.metadata["hostname_match"] == "True"
+    assert evidence.metadata["resolved_address"] == "93.184.216.34"
+    assert provider.probe.calls[0][3] == "93.184.216.34"
 
 
 def test_tls_policy_finding_is_persisted_only_after_evidence() -> None:
@@ -75,6 +85,7 @@ def test_tls_policy_finding_is_persisted_only_after_evidence() -> None:
         ProviderHandoff(repo),
         policy=TLSPolicy(ports=(443,), max_targets=1),
         probe=FakeProbe(_observation(tls_version="TLSv1.1")),
+        destination_resolver=lambda hostname: ("93.184.216.34",),
         asset_resolver=lambda host: asset if host == asset.value else None,
         finding_policy=FindingPolicy(),
     )
@@ -97,6 +108,7 @@ def test_tls_policy_does_not_create_finding_without_asset_resolution() -> None:
         ProviderHandoff(repo),
         policy=TLSPolicy(ports=(443,), max_targets=1),
         probe=FakeProbe(_observation(tls_version="TLSv1.1")),
+        destination_resolver=lambda hostname: ("93.184.216.34",),
     )
     campaign = Campaign("tls", Scope(("example.test",)), authorized=True)
 
@@ -113,13 +125,108 @@ def test_tls_exclusion_is_enforced() -> None:
         ProviderHandoff(repo),
         policy=TLSPolicy(ports=(443,), max_targets=2),
         probe=probe,
+        destination_resolver=lambda hostname: ("93.184.216.34",),
     )
     campaign = Campaign("tls", Scope(("example.test",), ("example.test",)), authorized=True)
 
     provider.execute(campaign, uuid4(), Event())
 
     assert probe.calls == []
+
+
+def test_tls_rejects_private_dns_answers_before_probe():
+    probe = FakeProbe(_observation())
+    provider = TLSAssessmentProvider(
+        ProviderHandoff(MemoryRepository()),
+        probe=probe,
+        destination_resolver=lambda hostname: ("127.0.0.1",),
+    )
+    campaign = Campaign("tls-private-dns", Scope(("example.test",)), authorized=True)
+    with pytest.raises(PermissionError, match="non-public"):
+        provider.execute(campaign, uuid4(), Event())
+    assert probe.calls == []
+
+
+def test_tls_rejects_empty_dns_answers_before_probe():
+    probe = FakeProbe(_observation())
+    provider = TLSAssessmentProvider(
+        ProviderHandoff(MemoryRepository()),
+        probe=probe,
+        destination_resolver=lambda hostname: (),
+    )
+    with pytest.raises(ConnectionError, match="no addresses"):
+        provider.execute(
+            Campaign("tls-empty-dns", Scope(("example.test",)), authorized=True),
+            uuid4(),
+            Event(),
+        )
+    assert probe.calls == []
+
+
+def test_tls_explicit_private_ip_remains_scannable():
+    repo = MemoryRepository()
+    probe = FakeProbe(None)
+    provider = TLSAssessmentProvider(
+        ProviderHandoff(repo),
+        policy=TLSPolicy(ports=(443,), max_targets=1),
+        probe=probe,
+    )
+    provider.execute(
+        Campaign("tls-private-ip", Scope(("192.168.1.10",)), authorized=True),
+        uuid4(),
+        Event(),
+    )
+    assert probe.calls[0][3] == "192.168.1.10"
     assert repo.evidence == []
+
+
+def test_socket_tls_probe_pins_connection_and_keeps_hostname_for_tls(monkeypatch):
+    calls = []
+
+    class FakeTLS:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+        @staticmethod
+        def getpeercert():
+            return {}
+
+        @staticmethod
+        def version():
+            return "TLSv1.3"
+
+        @staticmethod
+        def cipher():
+            return ("TLS_AES_256_GCM_SHA384", "TLSv1.3", 256)
+
+    class FakeContext:
+        def wrap_socket(self, raw, *, server_hostname):
+            calls.append(("sni", server_hostname))
+            return FakeTLS()
+
+    class FakeRawSocket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+    monkeypatch.setattr(
+        "threatlens.providers.tls.socket.create_connection",
+        lambda address, timeout: calls.append(("connect", address, timeout)) or FakeRawSocket(),
+    )
+    monkeypatch.setattr(
+        "threatlens.providers.tls.ssl.create_default_context", lambda: FakeContext()
+    )
+    result = SocketTLSProbe().inspect(
+        "example.test", 443, 2.0, connect_address="93.184.216.34"
+    )
+    assert result is not None and result.hostname_match is True
+    assert ("connect", ("93.184.216.34", 443), 2.0) in calls
+    assert ("sni", "example.test") in calls
 
 
 def test_tls_cancellation_stops_before_probe() -> None:

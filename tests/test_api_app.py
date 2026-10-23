@@ -1,13 +1,18 @@
 from datetime import UTC, datetime
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import httpx
 import pytest
 
 from threatlens.api.app import create_app
-from threatlens.auth.service import AuthenticationService, Role
+from threatlens.auth.service import (
+    AuthenticatedPrincipal,
+    AuthenticationService,
+    Role,
+)
 from threatlens.domain.models import AuditEvent, User
-from threatlens.storage.auth import DEFAULT_ORGANIZATION_ID
+from threatlens.providers.nvd_client import NvdCveFeedClient
+from threatlens.providers.vulnerability_intelligence import normalize_vulnerability_record
 
 
 class FakeRepository:
@@ -17,9 +22,8 @@ class FakeRepository:
         self.audit_events = []
         self.login_attempts = {}
         self.fail_campaign_report_audit = False
-        self.asset_read_organizations = []
-        self.finding_read_organizations = []
-        self.dashboard_organizations = []
+        self.vulnerability_records = []
+        self.ioc_records = []
 
     def record_login_attempts(
         self, bucket_keys, now, window_seconds=60, audit_limits=None
@@ -72,16 +76,6 @@ class FakeRepository:
 
     def user_by_id(self, user_id):
         return next((u for u in self.users.values() if u.id == user_id), None)
-
-    def organization_for_user(self, user_id):
-        user = self.user_by_id(user_id)
-        if user is None:
-            raise PermissionError("organization context unavailable")
-        return {
-            "organization_id": DEFAULT_ORGANIZATION_ID,
-            "organization_name": "Default Organization",
-            "role": user.role,
-        }
 
     def create_session(self, user_id, token_hash, expires_at):
         session_id = uuid4()
@@ -149,8 +143,7 @@ class FakeRepository:
             ],
         }
 
-    def assets_read_model(self, limit=50, offset=0, organization_id=None):
-        self.asset_read_organizations.append(organization_id)
+    def assets_read_model(self, limit=50, offset=0):
         return {
             "total": 1,
             "limit": limit,
@@ -176,8 +169,7 @@ class FakeRepository:
             ],
         }
 
-    def findings_read_model(self, limit=50, offset=0, organization_id=None):
-        self.finding_read_organizations.append(organization_id)
+    def findings_read_model(self, limit=50, offset=0):
         return {
             "total": 2,
             "limit": limit,
@@ -209,7 +201,7 @@ class FakeRepository:
             ],
         }
 
-    def campaigns_read_model(self, organization_id, limit=50, offset=0):
+    def campaigns_read_model(self, limit=50, offset=0):
         return {
             "total": 1,
             "limit": limit,
@@ -227,13 +219,11 @@ class FakeRepository:
             ],
         }
 
-    def campaign_report_read_model(self, campaign_id, organization_id=None):
+    def campaign_report_read_model(self, campaign_id):
         if str(campaign_id) != "88888888-8888-8888-8888-888888888888":
             raise KeyError(str(campaign_id))
         return {
-            "campaign": self.campaigns_read_model(
-                organization_id or DEFAULT_ORGANIZATION_ID
-            )["items"][0],
+            "campaign": self.campaigns_read_model()["items"][0],
             "scan_summary": {"total": 1, "by_state": {"COMPLETED": 1}},
             "finding_summary": {
                 "total": 1,
@@ -276,8 +266,8 @@ class FakeRepository:
             ],
         }
 
-    def campaign_report_export_with_audit(self, campaign_id, actor_user_id, organization_id):
-        report = self.campaign_report_read_model(campaign_id, organization_id)
+    def campaign_report_export_with_audit(self, campaign_id, actor_user_id):
+        report = self.campaign_report_read_model(campaign_id)
         if self.fail_campaign_report_audit:
             raise RuntimeError("audit persistence failed")
         finding_summary = report["finding_summary"]
@@ -298,7 +288,7 @@ class FakeRepository:
         )
         return report
 
-    def scans_read_model(self, organization_id, limit=50, offset=0):
+    def scans_read_model(self, limit=50, offset=0):
         return {
             "total": 2,
             "limit": limit,
@@ -319,8 +309,7 @@ class FakeRepository:
             ],
         }
 
-    def dashboard_summary(self, organization_id=None):
-        self.dashboard_organizations.append(organization_id)
+    def dashboard_summary(self):
         return {
             "campaigns": 2,
             "assets": 4,
@@ -328,6 +317,50 @@ class FakeRepository:
             "findings": 3,
             "findings_by_severity": {"HIGH": 2, "LOW": 1},
             "scans_by_state": {"COMPLETED": 1, "RUNNING": 1},
+        }
+
+    def save_vulnerability_intelligence(self, records, audit_event):
+        self.vulnerability_records.extend(records)
+        self.save_audit_event(audit_event)
+        return len(records)
+
+    def vulnerability_intelligence_read_model(self, limit=50, offset=0):
+        records = self.vulnerability_records[offset : offset + limit]
+        return {
+            "total": len(self.vulnerability_records),
+            "limit": limit,
+            "offset": offset,
+            "items": records,
+        }
+
+    def save_ioc_indicators(self, indicators, audit_event):
+        known = {(item.indicator_type, item.value): item for item in self.ioc_records}
+        for indicator in indicators:
+            known[(indicator.indicator_type, indicator.value)] = indicator
+        self.ioc_records = list(known.values())
+        self.audit_events.append(audit_event)
+        return len(indicators)
+
+    def ioc_indicators_read_model(self, limit=50, offset=0):
+        items = [
+            {
+                "id": str(item.id),
+                "indicator_type": item.indicator_type,
+                "value": item.value,
+                "source": item.source,
+                "confidence": item.confidence,
+                "tags": list(item.tags),
+                "description": item.description,
+                "first_seen_at": "2026-10-23T00:00:00+00:00",
+                "last_seen_at": "2026-10-23T00:00:00+00:00",
+            }
+            for item in self.ioc_records
+        ]
+        return {
+            "total": len(items),
+            "limit": limit,
+            "offset": offset,
+            "items": items[offset : offset + limit],
         }
 
 
@@ -338,7 +371,6 @@ async def client():
     auth.create_user("analyst", "correct-horse-battery-123", Role.ANALYST)
     auth.create_user("admin", "correct-horse-battery-123", Role.ADMIN)
     app = create_app(repository=repository, auth_service=auth)
-    app.state.test_repository = repository
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -350,6 +382,143 @@ async def test_health_is_public(client):
     response = await client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+@pytest.mark.anyio
+async def test_nvd_import_is_admin_only_and_persists_audited_records(monkeypatch):
+    repository = FakeRepository()
+    auth = AuthenticationService(repository)
+    principals = {
+        role.value.lower(): AuthenticatedPrincipal(
+            user_id=uuid4(),
+            username=role.value.lower(),
+            role=role,
+            session_id=uuid4(),
+        )
+        for role in (Role.ANALYST, Role.ADMIN)
+    }
+    auth.authenticate_session = lambda token: principals[token]
+    record = normalize_vulnerability_record(
+        vulnerability_id="CVE-2026-3456",
+        title="Sample issue",
+        severity="HIGH",
+        cve="CVE-2026-3456",
+        product="sample_app",
+        affected_versions=("1.2.3",),
+        source="NVD CVE API 2.0",
+    )
+
+    class FakeNvdClient:
+        def fetch_cve(self, cve_id):
+            assert cve_id == "CVE-2026-3456"
+            return (record,)
+
+    monkeypatch.setattr(
+        NvdCveFeedClient,
+        "from_environment",
+        classmethod(lambda _cls: FakeNvdClient()),
+    )
+    app = create_app(repository=repository, auth_service=auth)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        analyst_headers = {"Authorization": "Bearer analyst"}
+        admin_headers = {"Authorization": "Bearer admin"}
+
+        denied = await client.post(
+            "/api/v1/cve/ingest",
+            headers=analyst_headers,
+            json={"cve_ids": ["CVE-2026-3456"]},
+        )
+        assert denied.status_code == 403
+
+        imported = await client.post(
+            "/api/v1/cve/ingest",
+            headers=admin_headers,
+            json={"cve_ids": ["CVE-2026-3456"]},
+        )
+        assert imported.status_code == 200
+        assert imported.json() == {"requested": 1, "records_saved": 1}
+
+        listed = await client.get("/api/v1/cve", headers=analyst_headers)
+        assert listed.status_code == 200
+        assert listed.json()["items"][0]["cve"] == "CVE-2026-3456"
+        assert repository.audit_events[-1].action == "VULNERABILITY_INTELLIGENCE_IMPORTED"
+
+
+@pytest.mark.anyio
+async def test_ioc_import_is_admin_only_validated_and_readable():
+    repository = FakeRepository()
+    auth = AuthenticationService(repository)
+    principals = {
+        role.value.lower(): AuthenticatedPrincipal(
+            user_id=uuid4(),
+            username=role.value.lower(),
+            role=role,
+            session_id=uuid4(),
+        )
+        for role in (Role.ANALYST, Role.ADMIN)
+    }
+    auth.authenticate_session = lambda token: principals[token]
+    app = create_app(repository=repository, auth_service=auth)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        analyst_headers = {"Authorization": "Bearer analyst"}
+        admin_headers = {"Authorization": "Bearer admin"}
+        payload = {
+            "indicators": [
+                {
+                    "indicator_type": "domain",
+                    "value": "Bad.Example.",
+                    "source": "my-collection",
+                    "confidence": 0.8,
+                    "tags": ["phishing"],
+                }
+            ]
+        }
+        denied = await client.post(
+            "/api/v1/ioc/import", headers=analyst_headers, json=payload
+        )
+        assert denied.status_code == 403
+
+        imported = await client.post(
+            "/api/v1/ioc/import", headers=admin_headers, json=payload
+        )
+        assert imported.status_code == 200
+        assert imported.json() == {"requested": 1, "indicators_saved": 1}
+
+        listed = await client.get("/api/v1/ioc", headers=analyst_headers)
+        assert listed.status_code == 200
+        assert listed.json()["items"][0]["value"] == "bad.example"
+        assert repository.audit_events[-1].action == "IOC_INDICATORS_IMPORTED"
+
+        invalid = await client.post(
+            "/api/v1/ioc/import",
+            headers=admin_headers,
+            json={
+                "indicators": [
+                    {"indicator_type": "domain", "value": "https://bad.example", "source": "x"}
+                ]
+            },
+        )
+        assert invalid.status_code == 422
+
+        invalid_confidence = await client.post(
+            "/api/v1/ioc/import",
+            headers=admin_headers,
+            json={
+                "indicators": [
+                    {
+                        "indicator_type": "ipv4",
+                        "value": "192.0.2.1",
+                        "source": "x",
+                        "confidence": True,
+                    }
+                ]
+            },
+        )
+        assert invalid_confidence.status_code == 422
 
 
 @pytest.mark.anyio
@@ -465,9 +634,6 @@ async def test_dashboard_summary_is_bounded_read_model(client):
         "findings_by_severity": {"HIGH": 2, "LOW": 1},
         "scans_by_state": {"COMPLETED": 1, "RUNNING": 1},
     }
-    assert client._transport.app.state.test_repository.dashboard_organizations == [
-        UUID(DEFAULT_ORGANIZATION_ID)
-    ]
 
 
 @pytest.mark.anyio
@@ -494,9 +660,6 @@ async def test_findings_read_model_is_bounded_and_contextual(client):
     assert payload["offset"] == 1
     assert payload["items"][0]["asset_canonical_id"] == "fqdn:example.test"
     assert payload["items"][0]["service_port"] == 443
-    assert client._transport.app.state.test_repository.finding_read_organizations == [
-        UUID(DEFAULT_ORGANIZATION_ID)
-    ]
     assert payload["items"][0]["endpoint"] == "https://example.test/"
     assert "evidence" not in payload["items"][0]
 
@@ -692,9 +855,6 @@ async def test_assets_read_model_returns_services(client):
     assert payload["total"] == 1
     assert payload["items"][0]["canonical_id"] == "fqdn:example.test"
     assert payload["items"][0]["services"][0]["port"] == 443
-    assert client._transport.app.state.test_repository.asset_read_organizations == [
-        UUID(DEFAULT_ORGANIZATION_ID)
-    ]
 
 
 @pytest.mark.anyio

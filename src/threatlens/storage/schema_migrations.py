@@ -14,6 +14,8 @@ from hashlib import sha256
 
 MIGRATION_LOCK_ID = 1414286419
 REGISTRY_TABLE = "threatlens_schema_migrations"
+_LEGACY_DEFAULT_ORGANIZATION_ID = "00000000-0000-4000-8000-000000000001"
+_LEGACY_DEFAULT_ORGANIZATION_NAME = "Default Organization"
 
 
 @dataclass(frozen=True)
@@ -70,8 +72,6 @@ def _audit_events_no_truncate(repository: object) -> None:
 
 def _organizations_and_memberships(repository: object) -> None:
     """Create the initial tenant and attach existing accounts without data loss."""
-    from threatlens.storage.auth import DEFAULT_ORGANIZATION_ID, DEFAULT_ORGANIZATION_NAME
-
     with repository.connection.cursor() as cursor:
         # Older installations may already have recorded the baseline migration
         # before initialize_auth() created these tables. Keep this migration
@@ -98,34 +98,32 @@ def _organizations_and_memberships(repository: object) -> None:
             """INSERT INTO organizations (id,name,slug,created_at)
                VALUES (%s,%s,'default',NOW())
                ON CONFLICT (id) DO NOTHING""",
-            (DEFAULT_ORGANIZATION_ID, DEFAULT_ORGANIZATION_NAME),
+            (_LEGACY_DEFAULT_ORGANIZATION_ID, _LEGACY_DEFAULT_ORGANIZATION_NAME),
         )
         cursor.execute(
             "SELECT name,slug FROM organizations WHERE id=%s",
-            (DEFAULT_ORGANIZATION_ID,),
+            (_LEGACY_DEFAULT_ORGANIZATION_ID,),
         )
-        if cursor.fetchone() != (DEFAULT_ORGANIZATION_NAME, "default"):
+        if cursor.fetchone() != (_LEGACY_DEFAULT_ORGANIZATION_NAME, "default"):
             raise RuntimeError("default organization identity is inconsistent")
         cursor.execute(
             """INSERT INTO organization_memberships
                    (organization_id,user_id,role,active,created_at)
                SELECT %s,id,role,active,created_at FROM users
                ON CONFLICT (organization_id,user_id) DO NOTHING""",
-            (DEFAULT_ORGANIZATION_ID,),
+            (_LEGACY_DEFAULT_ORGANIZATION_ID,),
         )
 
 
 def _campaign_organization_ownership(repository: object) -> None:
     """Assign every campaign to an organization and enforce ownership on writes."""
-    from threatlens.storage.auth import DEFAULT_ORGANIZATION_ID
-
     with repository.connection.cursor() as cursor:
         cursor.execute(
             "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS organization_id UUID"
         )
         cursor.execute(
             "UPDATE campaigns SET organization_id=%s WHERE organization_id IS NULL",
-            (DEFAULT_ORGANIZATION_ID,),
+            (_LEGACY_DEFAULT_ORGANIZATION_ID,),
         )
         cursor.execute(
             "ALTER TABLE campaigns ALTER COLUMN organization_id SET NOT NULL"
@@ -152,13 +150,11 @@ def _campaign_organization_ownership(repository: object) -> None:
 
 def _asset_organization_ownership(repository: object) -> None:
     """Backfill assets into the default tenant and make canonical identity tenant-local."""
-    from threatlens.storage.auth import DEFAULT_ORGANIZATION_ID
-
     with repository.connection.cursor() as cursor:
         cursor.execute("ALTER TABLE assets ADD COLUMN IF NOT EXISTS organization_id UUID")
         cursor.execute(
             "UPDATE assets SET organization_id=%s WHERE organization_id IS NULL",
-            (DEFAULT_ORGANIZATION_ID,),
+            (_LEGACY_DEFAULT_ORGANIZATION_ID,),
         )
         cursor.execute("ALTER TABLE assets ALTER COLUMN organization_id SET NOT NULL")
         cursor.execute(
@@ -194,6 +190,265 @@ def _asset_organization_ownership(repository: object) -> None:
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS assets_organization_last_seen_idx "
             "ON assets (organization_id, last_seen_at DESC, id)"
+        )
+
+
+def _evidence_organization_ownership(repository: object) -> None:
+    """Resolve evidence ownership from its scan, then safely backfill legacy leftovers."""
+    with repository.connection.cursor() as cursor:
+        cursor.execute("ALTER TABLE evidence ADD COLUMN IF NOT EXISTS organization_id UUID")
+        cursor.execute(
+            """UPDATE evidence AS e
+               SET organization_id=c.organization_id
+               FROM scans AS s
+               JOIN campaigns AS c ON c.id=s.campaign_id
+               WHERE e.organization_id IS NULL
+                 AND e.metadata_json->>'execution_id'=s.execution_id::TEXT"""
+        )
+        cursor.execute(
+            "UPDATE evidence SET organization_id=%s WHERE organization_id IS NULL",
+            (_LEGACY_DEFAULT_ORGANIZATION_ID,),
+        )
+        cursor.execute("ALTER TABLE evidence ALTER COLUMN organization_id SET NOT NULL")
+        cursor.execute(
+            """DO $$ BEGIN
+                   IF NOT EXISTS (
+                       SELECT 1 FROM pg_constraint
+                       WHERE conname='evidence_organization_id_fkey'
+                         AND conrelid='evidence'::regclass
+                   ) THEN
+                       ALTER TABLE evidence
+                           ADD CONSTRAINT evidence_organization_id_fkey
+                           FOREIGN KEY (organization_id) REFERENCES organizations(id)
+                           ON DELETE RESTRICT;
+                   END IF;
+               END $$"""
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS evidence_organization_captured_idx "
+            "ON evidence (organization_id, captured_at DESC, id DESC)"
+        )
+
+
+def _audit_event_organization_ownership(repository: object) -> None:
+    """Assign durable audit records to their owning organization."""
+    with repository.connection.cursor() as cursor:
+        cursor.execute("ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS organization_id UUID")
+        cursor.execute(
+            f"""CREATE OR REPLACE FUNCTION threatlens_resolve_audit_organization(
+                   event_resource_type TEXT, event_resource_id UUID, event_actor_id UUID
+               ) RETURNS UUID
+               LANGUAGE plpgsql STABLE AS $$
+               DECLARE resolved UUID;
+                       membership_count INTEGER;
+               BEGIN
+                   CASE event_resource_type
+                     WHEN 'CAMPAIGN' THEN
+                       SELECT organization_id INTO resolved FROM campaigns
+                        WHERE id=event_resource_id;
+                     WHEN 'CAMPAIGN_REPORT' THEN
+                       SELECT organization_id INTO resolved FROM campaigns
+                        WHERE id=event_resource_id;
+                     WHEN 'SCAN' THEN
+                       SELECT c.organization_id INTO resolved FROM scans s
+                         JOIN campaigns c ON c.id=s.campaign_id
+                        WHERE s.execution_id=event_resource_id;
+                     WHEN 'FINDING' THEN
+                       SELECT a.organization_id INTO resolved FROM findings f
+                         JOIN assets a ON a.id=f.asset_id
+                        WHERE f.id=event_resource_id;
+                     WHEN 'EVIDENCE_VALIDATION' THEN
+                       SELECT e.organization_id INTO resolved FROM evidence_validations v
+                         JOIN evidence e ON e.id=v.evidence_id
+                        WHERE v.id=event_resource_id;
+                     WHEN 'ATTACK_PATH_RELATION' THEN
+                       SELECT a.organization_id INTO resolved
+                         FROM attack_path_relations r JOIN assets a ON a.id=r.source_asset_id
+                        WHERE r.id=event_resource_id;
+                     ELSE
+                       resolved := NULL;
+                   END CASE;
+                   IF resolved IS NULL AND event_actor_id IS NOT NULL THEN
+                       SELECT count(*) INTO membership_count
+                         FROM organization_memberships
+                        WHERE user_id=event_actor_id AND active=TRUE;
+                       IF membership_count = 1 THEN
+                           SELECT organization_id INTO resolved
+                             FROM organization_memberships
+                            WHERE user_id=event_actor_id AND active=TRUE;
+                       END IF;
+                   END IF;
+                   RETURN COALESCE(resolved, '{_LEGACY_DEFAULT_ORGANIZATION_ID}'::UUID);
+               END;
+               $$"""
+        )
+        # The append-only trigger blocks ordinary UPDATE statements. Temporarily
+        # remove it inside this transactional migration while legacy rows are tagged.
+        cursor.execute("DROP TRIGGER IF EXISTS audit_events_append_only ON audit_events")
+        cursor.execute(
+            """UPDATE audit_events AS audit_row
+               SET organization_id=threatlens_resolve_audit_organization(
+                   audit_row.resource_type, audit_row.resource_id, audit_row.actor_user_id
+               )
+               WHERE organization_id IS NULL"""
+        )
+        cursor.execute(
+            """CREATE TRIGGER audit_events_append_only
+               BEFORE UPDATE OR DELETE ON audit_events
+               FOR EACH ROW EXECUTE FUNCTION threatlens_reject_audit_mutation()"""
+        )
+        cursor.execute("ALTER TABLE audit_events ALTER COLUMN organization_id SET NOT NULL")
+        cursor.execute(
+            """DO $$ BEGIN
+                   IF NOT EXISTS (
+                       SELECT 1 FROM pg_constraint
+                       WHERE conname='audit_events_organization_id_fkey'
+                         AND conrelid='audit_events'::regclass
+                   ) THEN
+                       ALTER TABLE audit_events
+                           ADD CONSTRAINT audit_events_organization_id_fkey
+                           FOREIGN KEY (organization_id) REFERENCES organizations(id)
+                           ON DELETE RESTRICT;
+                   END IF;
+               END $$"""
+        )
+        cursor.execute(
+            """CREATE OR REPLACE FUNCTION threatlens_assign_audit_organization()
+               RETURNS trigger LANGUAGE plpgsql AS $$
+               BEGIN
+                   NEW.organization_id := threatlens_resolve_audit_organization(
+                       NEW.resource_type, NEW.resource_id, NEW.actor_user_id
+                   );
+                   RETURN NEW;
+               END;
+               $$"""
+        )
+        cursor.execute("DROP TRIGGER IF EXISTS audit_events_organization_insert ON audit_events")
+        cursor.execute(
+            """CREATE TRIGGER audit_events_organization_insert
+               BEFORE INSERT ON audit_events
+               FOR EACH ROW EXECUTE FUNCTION threatlens_assign_audit_organization()"""
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS audit_events_organization_created_idx "
+            "ON audit_events (organization_id, created_at DESC, id DESC)"
+        )
+
+
+def _single_user_workspace(repository: object) -> None:
+    """Remove organization isolation while preserving all personal assessment records."""
+    with repository.connection.cursor() as cursor:
+        cursor.execute("DROP TRIGGER IF EXISTS audit_events_organization_insert ON audit_events")
+        cursor.execute("DROP FUNCTION IF EXISTS threatlens_assign_audit_organization()")
+        cursor.execute("DROP FUNCTION IF EXISTS threatlens_resolve_audit_organization(TEXT, UUID, UUID)")
+
+        # The per-organization unique index replaced canonical_id's original global
+        # uniqueness. Restore that invariant before dropping the tenant index/column.
+        cursor.execute(
+            """DO $$ BEGIN
+                   IF EXISTS (
+                       SELECT 1 FROM assets GROUP BY canonical_id HAVING count(*) > 1
+                   ) THEN
+                       RAISE EXCEPTION 'duplicate asset canonical IDs prevent single-user migration';
+                   END IF;
+               END $$"""
+        )
+        cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS assets_canonical_id_single_user_uq "
+            "ON assets (canonical_id)"
+        )
+        cursor.execute("DROP INDEX IF EXISTS assets_organization_canonical_uq")
+
+        for table in ("campaigns", "assets", "evidence", "audit_events"):
+            cursor.execute(f"ALTER TABLE {table} DROP COLUMN IF EXISTS organization_id CASCADE")
+
+        cursor.execute("DROP TABLE IF EXISTS organization_memberships")
+        cursor.execute("DROP TABLE IF EXISTS organizations")
+
+
+def _service_product_fingerprint(repository: object) -> None:
+    """Persist detected software products separately from network service names."""
+    with repository.connection.cursor() as cursor:
+        cursor.execute("ALTER TABLE services ADD COLUMN IF NOT EXISTS product TEXT")
+
+
+def _vulnerability_intelligence(repository: object) -> None:
+    """Create a single-user store for normalized trusted CVE feed records."""
+    with repository.connection.cursor() as cursor:
+        cursor.execute(
+            """CREATE TABLE IF NOT EXISTS vulnerability_intelligence (
+                vulnerability_id TEXT NOT NULL,
+                product TEXT NOT NULL,
+                title TEXT NOT NULL,
+                severity TEXT NOT NULL CHECK (
+                    severity IN ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFORMATIONAL')
+                ),
+                cve TEXT,
+                cwe TEXT,
+                affected_versions JSONB NOT NULL,
+                fixed_version TEXT,
+                cvss DOUBLE PRECISION CHECK (cvss IS NULL OR (cvss >= 0 AND cvss <= 10)),
+                confidence DOUBLE PRECISION NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+                references_json JSONB NOT NULL,
+                source TEXT NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL,
+                PRIMARY KEY (vulnerability_id, product)
+            )"""
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS vulnerability_intelligence_cve_idx "
+            "ON vulnerability_intelligence (cve)"
+        )
+
+
+def _vendor_aware_intelligence(repository: object) -> None:
+    """Persist CPE vendors and permit distinct vendors for one CVE/product."""
+    with repository.connection.cursor() as cursor:
+        cursor.execute("ALTER TABLE services ADD COLUMN IF NOT EXISTS vendor TEXT")
+        cursor.execute(
+            "ALTER TABLE vulnerability_intelligence "
+            "ADD COLUMN IF NOT EXISTS vendor TEXT NOT NULL DEFAULT ''"
+        )
+
+
+def _ioc_indicators(repository: object) -> None:
+    """Create a personal store for passive, normalized IOC values."""
+    with repository.connection.cursor() as cursor:
+        cursor.execute(
+            """CREATE TABLE IF NOT EXISTS ioc_indicators (
+                id UUID PRIMARY KEY,
+                indicator_type TEXT NOT NULL CHECK (
+                    indicator_type IN ('ipv4','ipv6','domain','md5','sha1','sha256')
+                ),
+                value TEXT NOT NULL CHECK (length(value) <= 512),
+                source TEXT NOT NULL CHECK (length(source) BETWEEN 1 AND 128),
+                confidence DOUBLE PRECISION NOT NULL CHECK (
+                    confidence >= 0 AND confidence <= 1
+                ),
+                tags JSONB NOT NULL,
+                description TEXT CHECK (description IS NULL OR length(description) <= 512),
+                first_seen_at TIMESTAMPTZ NOT NULL,
+                last_seen_at TIMESTAMPTZ NOT NULL,
+                UNIQUE (indicator_type, value)
+            )"""
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ioc_indicators_type_seen_idx "
+            "ON ioc_indicators (indicator_type, last_seen_at DESC)"
+        )
+
+
+def _vendor_aware_intelligence_identity(repository: object) -> None:
+    """Allow one CVE/product to retain separate CPE vendors."""
+    with repository.connection.cursor() as cursor:
+        cursor.execute(
+            "ALTER TABLE vulnerability_intelligence "
+            "DROP CONSTRAINT IF EXISTS vulnerability_intelligence_pkey"
+        )
+        cursor.execute(
+            "ALTER TABLE vulnerability_intelligence "
+            "ADD CONSTRAINT vulnerability_intelligence_pkey "
+            "PRIMARY KEY (vulnerability_id, vendor, product)"
         )
 
 
@@ -234,6 +489,60 @@ MIGRATIONS = (
         name="asset_organization_ownership",
         revision="asset-org-backfill-and-tenant-canonical-identity-v1",
         apply=_asset_organization_ownership,
+    ),
+    Migration(
+        version=7,
+        name="evidence_organization_ownership",
+        revision="evidence-org-backfill-and-read-index-v1",
+        apply=_evidence_organization_ownership,
+    ),
+    Migration(
+        version=8,
+        name="audit_event_organization_ownership",
+        revision="audit-event-resource-org-assignment-and-read-index-v1",
+        apply=_audit_event_organization_ownership,
+    ),
+    Migration(
+        version=9,
+        name="single_user_workspace",
+        revision="remove-organization-isolation-preserve-personal-data-v1",
+        apply=_single_user_workspace,
+    ),
+    Migration(
+        version=10,
+        name="service_product_fingerprint",
+        revision="persist-service-product-for-intelligence-correlation-v1",
+        apply=_service_product_fingerprint,
+    ),
+    Migration(
+        version=11,
+        name="single_user_schema_reconciliation",
+        revision="reconcile-legacy-tenant-structures-after-single-user-cutover-v1",
+        apply=_single_user_workspace,
+    ),
+    Migration(
+        version=12,
+        name="vulnerability_intelligence_store",
+        revision="persist-normalized-trusted-cve-feed-records-v1",
+        apply=_vulnerability_intelligence,
+    ),
+    Migration(
+        version=13,
+        name="vendor_aware_vulnerability_intelligence",
+        revision="persist-cpe-vendor-and-use-vendor-aware-intelligence-identity-v1",
+        apply=_vendor_aware_intelligence,
+    ),
+    Migration(
+        version=14,
+        name="personal_ioc_indicator_store",
+        revision="persist-normalized-passive-personal-ioc-indicators-v1",
+        apply=_ioc_indicators,
+    ),
+    Migration(
+        version=15,
+        name="vendor_aware_intelligence_identity",
+        revision="key-vulnerability-intelligence-by-cve-vendor-and-product-v1",
+        apply=_vendor_aware_intelligence_identity,
     ),
 )
 
@@ -298,6 +607,24 @@ def _verify_audit_protection(repository: object) -> None:
             raise RuntimeError(f"required audit protection function drifted: {name}")
 
 
+def _verify_single_user_schema(repository: object) -> None:
+    """Fail startup if removed organization tables or ownership columns reappear."""
+    with repository.connection.cursor() as cursor:
+        cursor.execute(
+            """SELECT to_regclass('organizations'), to_regclass('organization_memberships'),
+                      EXISTS (
+                          SELECT 1 FROM information_schema.columns
+                          WHERE table_schema=current_schema()
+                            AND table_name=ANY(%s)
+                            AND column_name='organization_id'
+                      )""",
+            (["campaigns", "assets", "evidence", "audit_events"],),
+        )
+        organizations, memberships, ownership_columns = cursor.fetchone()
+    if organizations is not None or memberships is not None or ownership_columns:
+        raise RuntimeError("database schema is not a single-user workspace")
+
+
 def verify_schema_ready(repository: object) -> None:
     """Verify deployed schema and audit protections without requiring DDL privileges."""
     connection = repository.connection
@@ -316,6 +643,7 @@ def verify_schema_ready(repository: object) -> None:
                 "database schema is not ready for this application; run the controlled "
                 "schema migration command with the migration database identity"
             )
+        _verify_single_user_schema(repository)
         _verify_audit_protection(repository)
     except BaseException:
         connection.rollback()

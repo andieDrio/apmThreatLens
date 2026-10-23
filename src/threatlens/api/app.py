@@ -5,18 +5,20 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import ipaddress
+import json
 import math
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictFloat
 
 from threatlens.auth.service import AuthenticationService, Permission
 from threatlens.attack_paths.engine import (
@@ -26,12 +28,19 @@ from threatlens.attack_paths.engine import (
 )
 from threatlens.evidence.service import EvidenceValidationService
 from threatlens.domain.models import AuditEvent, Campaign, FindingState, Scope
+from threatlens.domain.indicators import normalize_ioc_indicator
 from threatlens.evidence.validation import EvidenceValidationState
 from threatlens.orchestration.engine import ScanOrchestrator
+from threatlens.providers.handoff import ProviderHandoff
+from threatlens.providers.network_discovery import NetworkDiscoveryProvider
+from threatlens.providers.tls import SocketTLSProbe
+from threatlens.providers.nvd_client import NvdCveFeedClient, NvdFeedError, normalize_cve_id
 from threatlens.providers.runtime import ProviderRegistry
+from threatlens.providers.web import WebAssessmentProvider
 from threatlens.risk.engine import RiskContext, RiskEngine
 from threatlens.safety.policy import ExecutionPolicy
 from threatlens.storage.postgres import PostgresRepository
+from threatlens.storage.finding_correlation import DurableFindingCorrelator
 
 
 class LoginRequest(BaseModel):
@@ -99,6 +108,75 @@ class FindingListResponse(BaseModel):
     limit: int
     offset: int
     items: list[FindingReadModel]
+
+
+class NvdImportRequest(BaseModel):
+    cve_ids: list[str] = Field(min_length=1, max_length=10)
+
+
+class VulnerabilityIntelligenceReadModel(BaseModel):
+    vulnerability_id: str
+    title: str
+    severity: str
+    cve: str | None = None
+    cwe: str | None = None
+    vendor: str | None = None
+    product: str | None = None
+    affected_versions: list[str]
+    fixed_version: str | None = None
+    cvss: float | None = None
+    confidence: float
+    references: list[str]
+    source: str
+
+
+class VulnerabilityIntelligenceListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[VulnerabilityIntelligenceReadModel]
+
+
+class NvdImportResponse(BaseModel):
+    requested: int
+    records_saved: int
+
+
+class IocImportItem(BaseModel):
+    indicator_type: Literal["ipv4", "ipv6", "domain", "md5", "sha1", "sha256"]
+    value: str = Field(min_length=1, max_length=512)
+    source: str = Field(min_length=1, max_length=128)
+    confidence: StrictFloat = Field(default=1.0, ge=0, le=1)
+    tags: list[str] = Field(default_factory=list, max_length=20)
+    description: str | None = Field(default=None, max_length=512)
+
+
+class IocImportRequest(BaseModel):
+    indicators: list[IocImportItem] = Field(min_length=1, max_length=1000)
+
+
+class IocReadItem(BaseModel):
+    id: str
+    indicator_type: str
+    value: str
+    source: str
+    confidence: float
+    tags: list[str]
+    description: str | None = None
+    first_seen_at: str
+    last_seen_at: str
+
+
+class IocListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: list[IocReadItem]
+
+
+class IocImportResponse(BaseModel):
+    requested: int
+    indicators_saved: int
 
 
 class CampaignReadModel(BaseModel):
@@ -200,8 +278,6 @@ class PrincipalResponse(BaseModel):
     username: str
     role: str
     session_id: str
-    organization_id: str
-    organization_name: str
 
 
 class CampaignCreateRequest(BaseModel):
@@ -224,6 +300,13 @@ class ScanQueueResponse(BaseModel):
     campaign_id: str
     provider_name: str
     state: str
+
+
+class ProviderCatalogItem(BaseModel):
+    name: str
+    version: str
+    capabilities: list[str]
+    safe_by_default: bool
 
 
 class ScanControlResponse(BaseModel):
@@ -504,6 +587,19 @@ def create_app(
         orchestrator = ScanOrchestrator(repository, ExecutionPolicy(), auth_service)
     if provider_registry is None:
         provider_registry = ProviderRegistry()
+        if callable(getattr(repository, "save_evidence_for_execution", None)):
+            correlator = (
+                DurableFindingCorrelator(repository)
+                if getattr(repository, "schema_migrations_managed", False)
+                else None
+            )
+            handoff = ProviderHandoff(repository, correlator)
+            network_provider = NetworkDiscoveryProvider(
+                repository, handoff, tls_probe=SocketTLSProbe()
+            )
+            web_provider = WebAssessmentProvider(handoff, repository=repository)
+            provider_registry.register(network_provider.metadata, network_provider)
+            provider_registry.register(web_provider.metadata, web_provider)
     context = APIContext(
         repository=repository,
         auth=auth_service,
@@ -666,7 +762,7 @@ def create_app(
 
     @app.get("/api/v1/dashboard/summary", response_model=DashboardSummary)
     def dashboard_summary(current=Depends(require(Permission.READ))) -> DashboardSummary:
-        summary = context.repository.dashboard_summary(current.organization_id)
+        summary = context.repository.dashboard_summary()
         return DashboardSummary(**summary)
 
     @app.get("/api/v1/assets", response_model=AssetListResponse)
@@ -675,9 +771,7 @@ def create_app(
         limit: int = Query(default=50, ge=1, le=100),
         offset: int = Query(default=0, ge=0),
     ) -> AssetListResponse:
-        result = context.repository.assets_read_model(
-            limit=limit, offset=offset, organization_id=current.organization_id
-        )
+        result = context.repository.assets_read_model(limit=limit, offset=offset)
         items = []
         for item in result["items"]:
             normalized = dict(item)
@@ -698,9 +792,7 @@ def create_app(
         limit: int = Query(default=50, ge=1, le=100),
         offset: int = Query(default=0, ge=0),
     ) -> CampaignListResponse:
-        result = context.repository.campaigns_read_model(
-            current.organization_id, limit=limit, offset=offset
-        )
+        result = context.repository.campaigns_read_model(limit=limit, offset=offset)
         items = []
         for item in result["items"]:
             normalized = dict(item)
@@ -724,7 +816,7 @@ def create_app(
     ) -> Response:
         try:
             result = context.repository.campaign_report_export_with_audit(
-                campaign_id, current.user_id, current.organization_id
+                campaign_id, current.user_id
             )
         except KeyError as exc:
             raise HTTPException(
@@ -791,7 +883,7 @@ def create_app(
                 authorized=True,
             )
             context.repository.save_campaign_with_audit(
-                campaign, current.user_id, current.organization_id
+                campaign, current.user_id
             )
         except ValueError as exc:
             raise HTTPException(
@@ -1028,6 +1120,199 @@ def create_app(
             items=items,
         )
 
+    @app.get(
+        "/api/v1/cve",
+        response_model=VulnerabilityIntelligenceListResponse,
+    )
+    def cve_intelligence(
+        current=Depends(require(Permission.READ)),
+        limit: int = Query(default=50, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+    ) -> VulnerabilityIntelligenceListResponse:
+        del current
+        try:
+            result = context.repository.vulnerability_intelligence_read_model(
+                limit=limit,
+                offset=offset,
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="CVE intelligence is unavailable",
+            ) from exc
+        items = [
+            VulnerabilityIntelligenceReadModel(
+                vulnerability_id=item.vulnerability_id,
+                title=item.title,
+                severity=item.severity,
+                cve=item.cve,
+                cwe=item.cwe,
+                vendor=item.vendor,
+                product=item.product,
+                affected_versions=list(item.affected_versions),
+                fixed_version=item.fixed_version,
+                cvss=item.cvss,
+                confidence=item.confidence,
+                references=list(item.references),
+                source=item.source,
+            )
+            for item in result["items"]
+        ]
+        return VulnerabilityIntelligenceListResponse(
+            total=result["total"],
+            limit=result["limit"],
+            offset=result["offset"],
+            items=items,
+        )
+
+    @app.post(
+        "/api/v1/cve/ingest",
+        response_model=NvdImportResponse,
+    )
+    def ingest_nvd_cves(
+        request: NvdImportRequest,
+        current=Depends(require(Permission.ADMIN)),
+    ) -> NvdImportResponse:
+        try:
+            normalized_ids = tuple(normalize_cve_id(value) for value in request.cve_ids)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="invalid CVE identifier",
+            ) from exc
+        cve_ids = tuple(dict.fromkeys(normalized_ids))
+        if len(cve_ids) != len(normalized_ids):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="CVE identifiers must be unique",
+            )
+        try:
+            client = NvdCveFeedClient.from_environment()
+            records = tuple(
+                record
+                for cve_id in cve_ids
+                for record in client.fetch_cve(cve_id)
+            )
+            saved = context.repository.save_vulnerability_intelligence(
+                records,
+                AuditEvent(
+                    action="VULNERABILITY_INTELLIGENCE_IMPORTED",
+                    resource_type="vulnerability_intelligence",
+                    outcome="SUCCESS",
+                    detail=json.dumps(
+                        {
+                            "source": "NVD CVE API 2.0",
+                            "requested_count": len(cve_ids),
+                            "record_count": len(records),
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    actor_user_id=current.user_id,
+                ),
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="invalid CVE import request or server-side NVD configuration",
+            ) from exc
+        except NvdFeedError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="NVD feed request failed",
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="CVE intelligence could not be saved",
+            ) from exc
+        return NvdImportResponse(requested=len(cve_ids), records_saved=saved)
+
+    @app.post("/api/v1/ioc/import", response_model=IocImportResponse)
+    def import_ioc_indicators(
+        request: IocImportRequest,
+        current=Depends(require(Permission.ADMIN)),
+    ) -> IocImportResponse:
+        try:
+            indicators = tuple(
+                normalize_ioc_indicator(
+                    indicator_type=item.indicator_type,
+                    value=item.value,
+                    source=item.source,
+                    confidence=item.confidence,
+                    tags=tuple(item.tags),
+                    description=item.description,
+                )
+                for item in request.indicators
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="invalid IOC indicator",
+            ) from exc
+        identities = {(item.indicator_type, item.value) for item in indicators}
+        if len(identities) != len(indicators):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="IOC indicators must be unique within an import",
+            )
+        try:
+            saved = context.repository.save_ioc_indicators(
+                indicators,
+                AuditEvent(
+                    action="IOC_INDICATORS_IMPORTED",
+                    resource_type="ioc_indicators",
+                    outcome="SUCCESS",
+                    detail=json.dumps(
+                        {"indicator_count": len(indicators)},
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    actor_user_id=current.user_id,
+                ),
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="IOC indicators could not be saved",
+            ) from exc
+        return IocImportResponse(requested=len(indicators), indicators_saved=saved)
+
+    @app.get("/api/v1/ioc", response_model=IocListResponse)
+    def ioc_indicators(
+        current=Depends(require(Permission.READ)),
+        limit: int = Query(default=50, ge=1, le=100),
+        offset: int = Query(default=0, ge=0, le=1_000_000),
+    ) -> IocListResponse:
+        del current
+        try:
+            result = context.repository.ioc_indicators_read_model(limit=limit, offset=offset)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="IOC indicators are unavailable",
+            ) from exc
+        items = [
+            IocReadItem(
+                id=item["id"],
+                indicator_type=item["indicator_type"],
+                value=item["value"],
+                source=item["source"],
+                confidence=item["confidence"],
+                tags=item["tags"],
+                description=item["description"],
+                first_seen_at=item["first_seen_at"],
+                last_seen_at=item["last_seen_at"],
+            )
+            for item in result["items"]
+        ]
+        return IocListResponse(
+            total=result["total"],
+            limit=result["limit"],
+            offset=result["offset"],
+            items=items,
+        )
+
     @app.get("/api/v1/audit-events", response_model=AuditEventListResponse)
     def audit_events(
         current=Depends(require(Permission.ADMIN)),
@@ -1144,7 +1429,9 @@ def create_app(
                     rationale=request.rationale,
                     supporting_evidence_ids=tuple(request.supporting_evidence_ids),
                 )
-        except (KeyError, ValueError) as exc:
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         return EvidenceValidationResponse(
             id=str(validation.id),
@@ -1162,9 +1449,7 @@ def create_app(
         limit: int = Query(default=50, ge=1, le=100),
         offset: int = Query(default=0, ge=0),
     ) -> ScanListResponse:
-        result = context.repository.scans_read_model(
-            current.organization_id, limit=limit, offset=offset
-        )
+        result = context.repository.scans_read_model(limit=limit, offset=offset)
         items = []
         for item in result["items"]:
             normalized = dict(item)
@@ -1185,9 +1470,7 @@ def create_app(
         limit: int = Query(default=50, ge=1, le=100),
         offset: int = Query(default=0, ge=0),
     ) -> FindingListResponse:
-        result = context.repository.findings_read_model(
-            limit=limit, offset=offset, organization_id=current.organization_id
-        )
+        result = context.repository.findings_read_model(limit=limit, offset=offset)
         items = []
         for item in result["items"]:
             normalized = dict(item)
@@ -1211,7 +1494,7 @@ def create_app(
         offset: int = Query(default=0, ge=0),
     ) -> RiskAssessmentListResponse:
         try:
-            context.repository.finding_by_id(finding_id, current.organization_id)
+            context.repository.finding_by_id(finding_id)
         except KeyError as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -1258,7 +1541,7 @@ def create_app(
         current=Depends(require(Permission.ASSESS)),
     ) -> RiskAssessmentResponse:
         try:
-            finding = context.repository.finding_by_id(finding_id, current.organization_id)
+            finding = context.repository.finding_by_id(finding_id)
         except KeyError as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -1353,7 +1636,6 @@ def create_app(
                     actor_user_id=current.user_id,
                     rationale=request.rationale,
                     idempotency_key=idempotency_key,
-                    organization_id=current.organization_id,
                 )
             )
             response.headers["Idempotency-Replayed"] = "false" if created else "true"
@@ -1400,12 +1682,66 @@ def create_app(
         current=Depends(require(Permission.ASSESS)),
     ) -> ScanQueueResponse:
         try:
-            campaign = context.repository.campaign_by_id(
-                campaign_id, current.organization_id
-            )
+            campaign = context.repository.campaign_by_id(campaign_id)
             _, provider = context.provider_registry.get(request.provider_name)
             scan, created = context.orchestrator.queue_idempotent(
                 campaign, provider, idempotency_key=idempotency_key, principal=current
+            )
+            response.headers["Idempotency-Replayed"] = "false" if created else "true"
+        except KeyError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        return ScanQueueResponse(
+            execution_id=str(scan.execution_id),
+            campaign_id=str(scan.campaign_id),
+            provider_name=scan.provider_name,
+            state=scan.state.value,
+        )
+
+    @app.get("/api/v1/providers", response_model=list[ProviderCatalogItem])
+    def list_providers(current=Depends(require(Permission.READ))) -> list[ProviderCatalogItem]:
+        del current
+        items = []
+        for name in context.provider_registry.names():
+            metadata, _ = context.provider_registry.get(name)
+            items.append(
+                ProviderCatalogItem(
+                    name=metadata.name,
+                    version=metadata.version,
+                    capabilities=sorted(capability.value for capability in metadata.capabilities),
+                    safe_by_default=metadata.safe_by_default,
+                )
+            )
+        return items
+
+    @app.post(
+        "/api/v1/campaigns/{campaign_id}/scans/run",
+        response_model=ScanQueueResponse,
+    )
+    def run_scan(
+        campaign_id: UUID,
+        request: ScanQueueRequest,
+        response: Response,
+        idempotency_key: str = Header(
+            ...,
+            alias="Idempotency-Key",
+            min_length=16,
+            max_length=128,
+            pattern=r"^[A-Za-z0-9._:-]{16,128}$",
+        ),
+        current=Depends(require(Permission.ASSESS)),
+    ) -> ScanQueueResponse:
+        try:
+            campaign = context.repository.campaign_by_id(campaign_id)
+            scan, created = context.orchestrator.run_registered_idempotent(
+                campaign,
+                request.provider_name,
+                context.provider_registry,
+                idempotency_key=idempotency_key,
+                principal=current,
             )
             response.headers["Idempotency-Replayed"] = "false" if created else "true"
         except KeyError as exc:
@@ -1480,8 +1816,6 @@ def create_app(
             username=current.username,
             role=current.role.value,
             session_id=str(current.session_id),
-            organization_id=str(current.organization_id),
-            organization_name=current.organization_name,
         )
 
     return app

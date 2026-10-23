@@ -15,8 +15,13 @@ from threatlens.providers.web import (
 
 class MemoryRepository:
     def __init__(self) -> None:
+        self.assets = []
         self.evidence = []
         self.findings = []
+
+    def save_asset_for_execution(self, execution_id, asset):
+        self.assets.append((execution_id, asset))
+        return asset
 
     def save_evidence(self, evidence):
         self.evidence.append(evidence)
@@ -30,14 +35,14 @@ class FakeProbe:
         self.observation = observation
         self.calls = []
 
-    def request(self, url, method, timeout, max_bytes):
-        self.calls.append((url, method, timeout, max_bytes))
+    def request(self, url, method, timeout, max_bytes, *, connect_address):
+        self.calls.append((url, method, timeout, max_bytes, connect_address))
         return self.observation
 
 
-def observation(headers=(), status=200):
+def observation(headers=(), status=200, url="https://example.test/"):
     return HTTPObservation(
-        url="https://example.test/",
+        url=url,
         method="HEAD",
         status_code=status,
         reason="OK",
@@ -54,6 +59,9 @@ def test_web_policy_is_deterministic_and_evidence_backed() -> None:
     assert {finding.vulnerability_id for finding in findings} == {
         "THREATLENS-WEB-HSTS",
         "THREATLENS-WEB-XCTO",
+        "THREATLENS-WEB-CSP",
+        "THREATLENS-WEB-REFERRER-POLICY",
+        "THREATLENS-WEB-FRAME-OPTIONS",
     }
     assert all(finding.evidence_ids == (evidence_id,) for finding in findings)
     assert all(finding.asset_id == asset_id for finding in findings)
@@ -65,6 +73,8 @@ def test_web_policy_does_not_flag_hsts_when_present() -> None:
             headers=(
                 ("strict-transport-security", "max-age=31536000"),
                 ("x-content-type-options", "nosniff"),
+                ("content-security-policy", "default-src 'self'; frame-ancestors 'none'"),
+                ("referrer-policy", "no-referrer"),
             )
         ),
         uuid4(),
@@ -75,7 +85,6 @@ def test_web_policy_does_not_flag_hsts_when_present() -> None:
 
 def test_web_provider_persists_evidence_and_policy_findings() -> None:
     repository = MemoryRepository()
-    asset = None
     from threatlens.domain.models import Asset
 
     asset = Asset(
@@ -100,12 +109,107 @@ def test_web_provider_persists_evidence_and_policy_findings() -> None:
 
     assert len(probe.calls) == 1
     assert probe.calls[0][1] == "HEAD"
+    assert probe.calls[0][4] == "93.184.216.34"
     assert len(repository.evidence) == 1
-    assert len(repository.findings) == 2
+    assert len(repository.findings) == 5
     assert all(
         str(execution_id) == finding_metadata["execution_id"]
         for finding_metadata in [repository.evidence[0].metadata]
     )
+
+
+def test_web_policy_evaluates_all_session_cookie_headers_without_values():
+    response = observation(
+        headers=(
+            ("set-cookie", "session_id=secret-value; Path=/; HttpOnly; SameSite=Lax"),
+            ("set-cookie", "auth_token=another-secret; Secure; SameSite=None"),
+        )
+    )
+    findings = evaluate_web_policy(response, uuid4(), uuid4())
+    vulnerability_ids = {finding.vulnerability_id for finding in findings}
+    assert "THREATLENS-WEB-COOKIE-SECURE" in vulnerability_ids
+    assert "THREATLENS-WEB-COOKIE-HTTPONLY" in vulnerability_ids
+    assert "THREATLENS-WEB-COOKIE-SAMESITE-SECURE" not in vulnerability_ids
+
+    serialized = WebAssessmentProvider._serialize(response)
+    assert "secret-value" not in serialized
+    assert "another-secret" not in serialized
+    assert "[REDACTED]" in serialized
+
+
+def test_web_policy_reports_missing_secure_for_samesite_none_cookie():
+    response = observation(
+        headers=(("set-cookie", "session=secret; SameSite=None; HttpOnly"),),
+        url="http://example.test/",
+    )
+    identifiers = {
+        finding.vulnerability_id
+        for finding in evaluate_web_policy(response, uuid4(), uuid4())
+    }
+    assert "THREATLENS-WEB-COOKIE-SECURE" in identifiers
+    assert "THREATLENS-WEB-COOKIE-SAMESITE-SECURE" not in identifiers
+
+
+def test_web_policy_skips_failed_responses_and_respects_frame_ancestors():
+    failed = evaluate_web_policy(observation(status=503), uuid4(), uuid4())
+    protected = evaluate_web_policy(
+        observation(headers=(("content-security-policy", "frame-ancestors 'none'"),)),
+        uuid4(),
+        uuid4(),
+    )
+    assert failed == ()
+    assert "THREATLENS-WEB-FRAME-OPTIONS" not in {
+        finding.vulnerability_id for finding in protected
+    }
+
+
+def test_web_policy_rejects_disabled_or_malformed_security_headers():
+    response = observation(
+        headers=(
+            ("strict-transport-security", "max-age=0"),
+            ("x-content-type-options", "invalid"),
+            ("content-security-policy", "   "),
+            ("referrer-policy", "unknown-policy"),
+            ("x-frame-options", "allow-from https://other.test"),
+            ("content-security-policy", "x-frame-ancestors 'none'"),
+        )
+    )
+    identifiers = {
+        finding.vulnerability_id
+        for finding in evaluate_web_policy(response, uuid4(), uuid4())
+    }
+    assert {
+        "THREATLENS-WEB-HSTS",
+        "THREATLENS-WEB-XCTO",
+        "THREATLENS-WEB-CSP",
+        "THREATLENS-WEB-REFERRER-POLICY",
+        "THREATLENS-WEB-FRAME-OPTIONS",
+    } <= identifiers
+
+
+def test_web_provider_binds_url_asset_to_execution() -> None:
+    repository = MemoryRepository()
+    execution_id = uuid4()
+    provider = WebAssessmentProvider(
+        ProviderHandoff(repository),
+        WebAssessmentPolicy(allow_private_addresses=True),
+        probe=FakeProbe(observation()),
+        destination_resolver=lambda hostname: ("93.184.216.34",),
+        repository=repository,
+    )
+    campaign = Campaign(
+        name="web-asset-binding",
+        scope=Scope(include=("https://example.test/",)),
+        authorized=True,
+    )
+
+    provider.execute(campaign, execution_id, Event())
+
+    assert len(repository.assets) == 1
+    saved_execution_id, asset = repository.assets[0]
+    assert saved_execution_id == execution_id
+    assert asset.canonical_id == "url:https://example.test/"
+    assert all(finding.asset_id == asset.id for finding in repository.findings)
 
 
 def test_web_provider_rejects_private_destination_by_default() -> None:
@@ -120,6 +224,140 @@ def test_web_provider_rejects_private_destination_by_default() -> None:
     )
     with pytest.raises(PermissionError, match="non-public"):
         provider.execute(campaign, uuid4(), Event())
+
+
+def test_web_provider_rejects_empty_dns_answers_before_probe():
+    probe = FakeProbe(observation())
+    provider = WebAssessmentProvider(
+        ProviderHandoff(MemoryRepository()),
+        probe=probe,
+        destination_resolver=lambda hostname: (),
+    )
+    campaign = Campaign(
+        name="empty-dns",
+        scope=Scope(include=("https://example.test/",)),
+        authorized=True,
+    )
+    with pytest.raises(ConnectionError, match="no addresses"):
+        provider.execute(campaign, uuid4(), Event())
+    assert probe.calls == []
+
+
+@pytest.mark.parametrize("address", ("224.0.0.1", "0.0.0.0", "ff02::1", "::"))
+def test_web_provider_rejects_non_destination_addresses_even_when_private_allowed(address):
+    probe = FakeProbe(observation())
+    provider = WebAssessmentProvider(
+        ProviderHandoff(MemoryRepository()),
+        WebAssessmentPolicy(allow_private_addresses=True),
+        probe=probe,
+        destination_resolver=lambda hostname: (address,),
+    )
+    campaign = Campaign(
+        name="invalid-destination",
+        scope=Scope(include=("https://example.test/",)),
+        authorized=True,
+    )
+    with pytest.raises(PermissionError, match="non-public"):
+        provider.execute(campaign, uuid4(), Event())
+    assert probe.calls == []
+
+
+def test_pinned_http_connections_use_validated_address_and_hostname_sni(monkeypatch):
+    from threatlens.providers.web import _PinnedHTTPConnection, _PinnedHTTPSConnection
+
+    connected = []
+
+    class FakeSocket:
+        def close(self):
+            pass
+
+    raw_socket = FakeSocket()
+
+    def create_connection(address, timeout, source_address):
+        connected.append(address)
+        return raw_socket
+
+    monkeypatch.setattr("threatlens.providers.web.socket.create_connection", create_connection)
+    http = _PinnedHTTPConnection("example.test", 80, 3.0, "93.184.216.34")
+    http.connect()
+    assert connected[-1] == ("93.184.216.34", 80)
+    http.close()
+
+    https = _PinnedHTTPSConnection("example.test", 443, 3.0, "93.184.216.34")
+    assert https._context.check_hostname is True
+    assert https._context.verify_mode.value == 2  # ssl.CERT_REQUIRED
+    wrapped = FakeSocket()
+    sni = []
+
+    class FakeContext:
+        def wrap_socket(self, sock, *, server_hostname):
+            sni.append(server_hostname)
+            return wrapped
+
+    https._context = FakeContext()
+    https.connect()
+    assert connected[-1] == ("93.184.216.34", 443)
+    assert sni == ["example.test"]
+    https.close()
+
+
+def test_socket_http_probe_preserves_authorized_host_and_path(monkeypatch):
+    from threatlens.providers import web
+
+    calls = []
+
+    class FakeResponse:
+        status = 200
+        reason = "OK"
+
+        class headers:
+            @staticmethod
+            def keys():
+                return []
+
+            @staticmethod
+            def get_all(key, default):
+                return default
+
+        @staticmethod
+        def read(max_bytes):
+            return b""
+
+        @staticmethod
+        def getheader(name):
+            return None
+
+    class FakeConnection:
+        def __init__(self, host, port, timeout, connect_address):
+            calls.append(("connect", host, port, timeout, connect_address))
+
+        def putrequest(self, method, path, *, skip_host):
+            calls.append(("request", method, path, skip_host))
+
+        def putheader(self, name, value):
+            calls.append(("header", name, value))
+
+        def endheaders(self):
+            pass
+
+        def getresponse(self):
+            return FakeResponse()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(web, "_PinnedHTTPSConnection", FakeConnection)
+    response = web.SocketHTTPProbe().request(
+        "https://example.test:8443/private?q=1",
+        "HEAD",
+        3.0,
+        1024,
+        connect_address="93.184.216.34",
+    )
+    assert response.status_code == 200
+    assert ("connect", "example.test", 8443, 3.0, "93.184.216.34") in calls
+    assert ("request", "HEAD", "/private?q=1", True) in calls
+    assert ("header", "Host", "example.test:8443") in calls
 
 
 def test_web_provider_rejects_url_userinfo() -> None:

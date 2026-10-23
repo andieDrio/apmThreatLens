@@ -122,7 +122,7 @@ def test_concurrent_instances_persist_one_logical_finding(postgres_repository):
     eb = ProviderHandoff(repo).persist_evidence(
         execution_b, b, Evidence(kind="scan", content="b", source="scanner-b")
     )
-    dsn = os.getenv("THREATLENS_TEST_DATABASE_URL") or os.getenv("THREATLENS_DATABASE_URL")
+    dsn = os.getenv("THREATLENS_TEST_DATABASE_URL")
     assert dsn
     repo2 = type(repo)(dsn)
     repo2.initialize()

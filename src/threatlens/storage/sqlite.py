@@ -24,6 +24,7 @@ from threatlens.domain.models import (
     Service,
     validate_lifecycle_transition,
 )
+from threatlens.domain.indicators import IOCIndicator
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -76,9 +77,29 @@ CREATE TABLE IF NOT EXISTS services (
     protocol TEXT NOT NULL,
     port INTEGER NOT NULL CHECK (port BETWEEN 1 AND 65535),
     service_name TEXT,
+    product TEXT,
     version TEXT,
+    vendor TEXT,
     UNIQUE(asset_id, protocol, port)
 );
+
+CREATE TABLE IF NOT EXISTS ioc_indicators (
+    id TEXT PRIMARY KEY,
+    indicator_type TEXT NOT NULL CHECK (
+        indicator_type IN ('ipv4','ipv6','domain','md5','sha1','sha256')
+    ),
+    value TEXT NOT NULL CHECK (length(value) <= 512),
+    source TEXT NOT NULL CHECK (length(source) BETWEEN 1 AND 128),
+    confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+    tags_json TEXT NOT NULL,
+    description TEXT CHECK (description IS NULL OR length(description) <= 512),
+    first_seen_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    UNIQUE (indicator_type, value)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ioc_indicators_type_seen
+    ON ioc_indicators(indicator_type, last_seen_at);
 
 CREATE TABLE IF NOT EXISTS evidence (
     id TEXT PRIMARY KEY,
@@ -152,6 +173,18 @@ class SQLiteRepository(
             self.connection.execute("ALTER TABLE scans ADD COLUMN heartbeat_at TEXT")
             self.connection.commit()
 
+    def _ensure_service_product_column(self) -> None:
+        columns = {row[1] for row in self.connection.execute("PRAGMA table_info(services)").fetchall()}
+        if columns and "product" not in columns:
+            self.connection.execute("ALTER TABLE services ADD COLUMN product TEXT")
+            self.connection.commit()
+
+    def _ensure_service_vendor_column(self) -> None:
+        columns = {row[1] for row in self.connection.execute("PRAGMA table_info(services)").fetchall()}
+        if columns and "vendor" not in columns:
+            self.connection.execute("ALTER TABLE services ADD COLUMN vendor TEXT")
+            self.connection.commit()
+
     def close(self) -> None:
         self.connection.close()
 
@@ -159,6 +192,8 @@ class SQLiteRepository(
         self.connection.executescript(SCHEMA)
         self.connection.commit()
         self._ensure_scan_heartbeat_column()
+        self._ensure_service_product_column()
+        self._ensure_service_vendor_column()
         self._ensure_finding_context_columns()
         self.initialize_finding_correlation()
         self.initialize_evidence_validation()
@@ -523,22 +558,116 @@ class SQLiteRepository(
                 ),
             )
 
-    def save_service(self, service: Service) -> None:
+    def save_service(self, service: Service) -> Service:
         with self.connection:
             self.connection.execute(
-                """INSERT INTO services (id,asset_id,protocol,port,service_name,version)
-                   VALUES (?,?,?,?,?,?)
+                """INSERT INTO services
+                       (id,asset_id,protocol,port,service_name,product,version,vendor)
+                   VALUES (?,?,?,?,?,?,?,?)
                    ON CONFLICT(asset_id,protocol,port) DO UPDATE SET
-                     service_name=excluded.service_name, version=excluded.version""",
+                     service_name=COALESCE(excluded.service_name,services.service_name),
+                     product=COALESCE(excluded.product,services.product),
+                     version=COALESCE(excluded.version,services.version),
+                     vendor=COALESCE(excluded.vendor,services.vendor)""",
                 (
                     str(service.id),
                     str(service.asset_id),
                     service.protocol,
                     service.port,
                     service.service_name,
+                    service.product,
                     service.version,
+                    service.vendor,
                 ),
             )
+            row = self.connection.execute(
+                """SELECT id,service_name,product,version,vendor FROM services
+                   WHERE asset_id=? AND protocol=? AND port=?""",
+                (str(service.asset_id), service.protocol, service.port),
+            ).fetchone()
+        return Service(
+            asset_id=service.asset_id,
+            protocol=service.protocol,
+            port=service.port,
+            service_name=row[1],
+            product=row[2],
+            version=row[3],
+            vendor=row[4],
+            id=UUID(row[0]),
+        )
+
+    def save_ioc_indicators(
+        self, indicators: tuple[IOCIndicator, ...], audit_event: AuditEvent
+    ) -> int:
+        """Upsert validated indicators and audit the import in one transaction."""
+        now = datetime.now(UTC).isoformat()
+        with self._transaction_lock, self.connection:
+            for indicator in indicators:
+                self.connection.execute(
+                    """INSERT INTO ioc_indicators (
+                           id,indicator_type,value,source,confidence,tags_json,
+                           description,first_seen_at,last_seen_at
+                       ) VALUES (?,?,?,?,?,?,?,?,?)
+                       ON CONFLICT(indicator_type,value) DO UPDATE SET
+                         source=excluded.source,
+                         confidence=excluded.confidence,
+                         tags_json=excluded.tags_json,
+                         description=excluded.description,
+                         last_seen_at=excluded.last_seen_at""",
+                    (
+                        str(indicator.id),
+                        indicator.indicator_type,
+                        indicator.value,
+                        indicator.source,
+                        indicator.confidence,
+                        json.dumps(indicator.tags, separators=(",", ":")),
+                        indicator.description,
+                        now,
+                        now,
+                    ),
+                )
+            self.connection.execute(
+                """INSERT INTO audit_events
+                   (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (
+                    str(audit_event.id),
+                    str(audit_event.actor_user_id) if audit_event.actor_user_id else None,
+                    audit_event.action,
+                    audit_event.resource_type,
+                    str(audit_event.resource_id) if audit_event.resource_id else None,
+                    audit_event.outcome,
+                    audit_event.detail,
+                    audit_event.created_at.isoformat(),
+                ),
+            )
+        return len(indicators)
+
+    def ioc_indicators_read_model(self, limit: int = 50, offset: int = 0) -> dict[str, object]:
+        if not 1 <= limit <= 100 or not 0 <= offset <= 1_000_000:
+            raise ValueError("invalid IOC pagination")
+        total = self.connection.execute("SELECT COUNT(*) FROM ioc_indicators").fetchone()[0]
+        rows = self.connection.execute(
+            """SELECT id,indicator_type,value,source,confidence,tags_json,description,
+                      first_seen_at,last_seen_at
+               FROM ioc_indicators ORDER BY last_seen_at DESC,id LIMIT ? OFFSET ?""",
+            (limit, offset),
+        ).fetchall()
+        items = [
+            {
+                "id": row[0],
+                "indicator_type": row[1],
+                "value": row[2],
+                "source": row[3],
+                "confidence": row[4],
+                "tags": json.loads(row[5]),
+                "description": row[6],
+                "first_seen_at": row[7],
+                "last_seen_at": row[8],
+            }
+            for row in rows
+        ]
+        return {"total": total, "limit": limit, "offset": offset, "items": items}
 
     def save_evidence(self, evidence: Evidence) -> None:
         with self.connection:

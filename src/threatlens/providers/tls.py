@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import socket
 import ssl
 from dataclasses import dataclass
@@ -32,16 +33,30 @@ class TLSObservation:
 
 
 class TLSProbe(Protocol):
-    def inspect(self, host: str, port: int, timeout: float) -> TLSObservation | None: ...
+    def inspect(
+        self,
+        host: str,
+        port: int,
+        timeout: float,
+        *,
+        connect_address: str | None = None,
+    ) -> TLSObservation | None: ...
 
 
 class SocketTLSProbe:
     """Uses Python's TLS stack with certificate validation enabled."""
 
-    def inspect(self, host: str, port: int, timeout: float) -> TLSObservation | None:
+    def inspect(
+        self,
+        host: str,
+        port: int,
+        timeout: float,
+        *,
+        connect_address: str | None = None,
+    ) -> TLSObservation | None:
         context = ssl.create_default_context()
         try:
-            with socket.create_connection((host, port), timeout=timeout) as raw:
+            with socket.create_connection((connect_address or host, port), timeout=timeout) as raw:
                 with context.wrap_socket(raw, server_hostname=host) as tls:
                     cert = tls.getpeercert()
                     subject = _name(cert.get("subject", ()))
@@ -85,6 +100,7 @@ class TLSPolicy:
     ports: tuple[int, ...] = (443, 8443)
     timeout_seconds: float = 2.0
     max_targets: int = 16
+    allow_non_public_hostname_addresses: bool = False
 
     def __post_init__(self) -> None:
         if not self.ports or len(set(self.ports)) != len(self.ports):
@@ -113,36 +129,48 @@ class TLSAssessmentProvider:
         probe: TLSProbe | None = None,
         asset_resolver: Callable[[str], Asset | None] | None = None,
         finding_policy: object | None = None,
+        destination_resolver: Callable[[str], tuple[str, ...]] | None = None,
     ) -> None:
         self.handoff = handoff
         self.policy = policy or TLSPolicy()
         self.probe = probe or SocketTLSProbe()
         self.asset_resolver = asset_resolver
         self.finding_policy = finding_policy
+        self.destination_resolver = destination_resolver or self._resolve_addresses
 
     def execute(self, campaign: Campaign, execution_id: UUID, cancel_event: Event) -> None:
         if len(campaign.scope.include) > self.policy.max_targets:
             raise ValueError("TLS target count exceeds execution policy")
         excluded = {self._normalize_host(value) for value in campaign.scope.exclude}
+        resolved_targets: dict[str, str] = {}
         for target in campaign.scope.include:
             if cancel_event.is_set():
                 return
             host = self._normalize_host(target)
             if host in excluded:
                 continue
+            if host not in resolved_targets:
+                resolved_targets[host] = self._validate_destination(host)
+            connect_address = resolved_targets[host]
             for port in self.policy.ports:
                 if cancel_event.is_set():
                     return
-                observation = self.probe.inspect(host, port, self.policy.timeout_seconds)
+                observation = self.probe.inspect(
+                    host,
+                    port,
+                    self.policy.timeout_seconds,
+                    connect_address=connect_address,
+                )
                 if observation is None:
                     continue
-                content = _serialize(observation)
+                content = serialize_tls_observation(observation)
                 evidence = Evidence(
                     kind="tls-assessment",
                     content=content,
                     source=self.name,
                     metadata={
                         "host": host,
+                        "resolved_address": connect_address,
                         "port": str(port),
                         "tls_version": observation.tls_version or "",
                         "cipher": observation.cipher or "",
@@ -161,6 +189,53 @@ class TLSAssessmentProvider:
                     evidence=persisted_evidence,
                     execution_id=execution_id,
                 )
+
+    def _validate_destination(self, host: str) -> str:
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            address = None
+        if address is None:
+            try:
+                addresses = {
+                    ipaddress.ip_address(value) for value in self.destination_resolver(host)
+                }
+            except OSError as exc:
+                raise ConnectionError(f"TLS assessment DNS resolution failed: {host}") from exc
+            if not addresses:
+                raise ConnectionError(
+                    f"TLS assessment DNS resolution returned no addresses: {host}"
+                ) from None
+            if len(addresses) > 16:
+                raise ValueError(
+                    "TLS assessment DNS answer count exceeds execution policy"
+                ) from None
+            if any(
+                item.is_multicast
+                or item.is_unspecified
+                or (
+                    not self.policy.allow_non_public_hostname_addresses
+                    and not item.is_global
+                )
+                for item in addresses
+            ):
+                raise PermissionError(
+                    "TLS assessment destination resolves to a non-public address"
+                ) from None
+            address = sorted(addresses, key=lambda item: (item.version, int(item)))[0]
+        if address.is_multicast or address.is_unspecified:
+            raise PermissionError("TLS assessment destination is not a usable address")
+        return str(address)
+
+    @staticmethod
+    def _resolve_addresses(hostname: str) -> tuple[str, ...]:
+        try:
+            return tuple(
+                result[4][0]
+                for result in socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+            )
+        except OSError as exc:
+            raise ConnectionError(f"TLS assessment DNS resolution failed: {hostname}") from exc
 
     def _persist_policy_findings(
         self,
@@ -228,7 +303,7 @@ def _name(parts: tuple[tuple[tuple[str, str], ...], ...]) -> str | None:
     return values[0] if values else None
 
 
-def _serialize(observation: TLSObservation) -> str:
+def serialize_tls_observation(observation: TLSObservation) -> str:
     return (
         f"host={observation.host}\nport={observation.port}\n"
         f"tls_version={observation.tls_version or ''}\ncipher={observation.cipher or ''}\n"

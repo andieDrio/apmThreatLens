@@ -13,6 +13,27 @@
   const reportCampaignSelect = document.querySelector("#report-campaign-select");
   const downloadReportButton = document.querySelector("#download-campaign-report");
   const reportStatus = document.querySelector("#report-status");
+  const scopeCreateForm = document.querySelector("#scope-create-form");
+  const scopeTargetInput = document.querySelector("#scope-targets");
+  const scopeTargetLabel = document.querySelector("#scope-target-label");
+  const scopeTargetHelp = document.querySelector("#scope-target-help");
+  const startTargetScanButton = document.querySelector("#start-target-scan");
+  const scanProfileType = document.querySelector("#scan-profile-type");
+  const scanProfileSummary = document.querySelector("#scan-profile-summary");
+  const scanProfileChecks = document.querySelector("#scan-profile-checks");
+  const scanProfileSafety = document.querySelector("#scan-profile-safety");
+  const scanRunForm = document.querySelector("#scan-run-form");
+  const scanCampaignSelect = document.querySelector("#scan-campaign-select");
+  const scanProviderSelect = document.querySelector("#scan-provider-select");
+  const runScanButton = document.querySelector("#run-scan-button");
+  const providerDescription = document.querySelector("#provider-description");
+  const vaptNavGroup = document.querySelector("#vapt-nav-group");
+  const vaptNavToggle = document.querySelector("#vapt-nav-toggle");
+  let registeredProviders = [];
+  let campaignTargets = new Map();
+  let campaignItems = [];
+  let activeScanCapability = "NETWORK";
+  let canAssess = false;
 
   function token() {
     return sessionStorage.getItem(TOKEN_KEY);
@@ -50,12 +71,14 @@
   }
 
   function showLogin() {
+    document.body.classList.remove("app-active");
     loginPanel.hidden = false;
     appPanel.hidden = true;
     userLabel.textContent = "";
   }
 
   function showApp() {
+    document.body.classList.add("app-active");
     loginPanel.hidden = true;
     appPanel.hidden = false;
   }
@@ -138,7 +161,7 @@
     setMessage(statusMessage, "Loading live data…");
     refreshButton.disabled = true;
     try {
-      const [summary, assets, findings, scans, principal, campaigns, evidence, relations] = await Promise.all([
+      const [summary, assets, findings, scans, principal, campaigns, evidence, relations, providers] = await Promise.all([
         request("/api/v1/dashboard/summary"),
         request("/api/v1/assets?limit=8&offset=0"),
         request("/api/v1/findings?limit=8&offset=0"),
@@ -146,8 +169,13 @@
         request("/api/v1/me"),
         request("/api/v1/campaigns?limit=100&offset=0"),
         request("/api/v1/evidence?limit=8&offset=0"),
-        request("/api/v1/attack-path/relations?limit=8&offset=0")
+        request("/api/v1/attack-path/relations?limit=8&offset=0"),
+        request("/api/v1/providers")
       ]);
+      registeredProviders = providers;
+      campaignItems = campaigns.items;
+      campaignTargets = new Map(campaigns.items.map(item => [item.id, item.include]));
+      canAssess = principal.role !== "VIEWER";
       setText("campaign-count", summary.campaigns);
       setText("asset-count", summary.assets);
       setText("service-count", summary.services);
@@ -156,9 +184,12 @@
       setText("finding-total", `${findings.total} total findings`);
       setText("scan-total", `${scans.total} recorded executions`);
       setText("user-label", `${principal.username} · ${principal.role}`);
-      setText("organization-name", principal.organization_name);
-      setText("organization-id", `Organization ID · ${principal.organization_id}`);
-      setText("organization-role", principal.role);
+      scopeCreateForm.hidden = principal.role !== "ADMIN";
+      scanRunForm.hidden = principal.role === "ADMIN";
+      startTargetScanButton.disabled = !canAssess;
+      scanRunForm.querySelectorAll("select, button").forEach(control => {
+        control.disabled = principal.role === "VIEWER";
+      });
       renderBreakdown("severity-breakdown", summary.findings_by_severity, {
         CRITICAL: "bar-critical", HIGH: "bar-high", MEDIUM: "bar-medium",
         LOW: "bar-low", INFO: "bar-info", INFORMATIONAL: "bar-info"
@@ -194,9 +225,11 @@
       for (const campaign of campaigns.items) {
         const option = document.createElement("option");
         option.value = campaign.id;
-        option.textContent = campaign.name;
+        option.textContent = `${campaign.name} · ${campaign.include[0] || "no target"}`;
         reportCampaignSelect.appendChild(option);
       }
+      updateScanCampaignOptions();
+      updateRunButton();
       downloadReportButton.disabled = true;
       renderTable("campaigns-body", campaigns.items.slice(0, 8), [
         { value: item => item.name },
@@ -298,6 +331,259 @@
       downloadReportButton.disabled = !reportCampaignSelect.value;
     }
   });
+  function updateRunButton() {
+    runScanButton.disabled = !canAssess || !scanCampaignSelect.value || !scanProviderSelect.value;
+  }
+
+  function updateProviderOptions() {
+    const previousProvider = scanProviderSelect.value;
+    const targets = campaignTargets.get(scanCampaignSelect.value) || [];
+    const isWebScope = targets.length > 0 && targets.every(value => /^https?:\/\//i.test(value));
+    const scopeMatchesPage = targets.length > 0 && (activeScanCapability === "WEB") === isWebScope;
+    const eligible = scopeMatchesPage
+      ? registeredProviders.filter(item => item.capabilities.includes(activeScanCapability))
+      : [];
+    clearChildren(scanProviderSelect);
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = !targets.length
+      ? "Select a scope first"
+      : !scopeMatchesPage
+        ? `Select a scope for ${activeScanCapability === "WEB" ? "a website" : "a network host"}`
+      : eligible.length
+        ? "Select an assessment module"
+        : "No compatible modules available";
+    scanProviderSelect.appendChild(placeholder);
+    for (const provider of eligible) {
+      const option = document.createElement("option");
+      option.value = provider.name;
+      option.textContent = `${provider.name} · ${provider.capabilities.join(", ")}`;
+      scanProviderSelect.appendChild(option);
+    }
+    scanProviderSelect.value = eligible.some(item => item.name === previousProvider)
+      ? previousProvider
+      : "";
+    updateProviderDescription();
+  }
+
+  function updateScanCampaignOptions() {
+    const previousCampaign = scanCampaignSelect.value;
+    const eligibleCampaigns = campaignItems.filter(campaign => {
+      if (!campaign.authorized) return false;
+      const targets = campaignTargets.get(campaign.id) || [];
+      const isWebScope = targets.length > 0 && targets.every(value => /^https?:\/\//i.test(value));
+      return (activeScanCapability === "WEB") === isWebScope;
+    });
+    clearChildren(scanCampaignSelect);
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = eligibleCampaigns.length
+      ? "Select an authorized scope"
+      : `No authorized ${activeScanCapability === "WEB" ? "website" : "network"} scopes yet`;
+    scanCampaignSelect.appendChild(placeholder);
+    for (const campaign of eligibleCampaigns) {
+      const option = document.createElement("option");
+      option.value = campaign.id;
+      option.textContent = `${campaign.name} · ${campaign.include[0] || "no target"}`;
+      scanCampaignSelect.appendChild(option);
+    }
+    scanCampaignSelect.value = eligibleCampaigns.some(item => item.id === previousCampaign)
+      ? previousCampaign
+      : "";
+    updateProviderOptions();
+  }
+
+  function ipv4Number(value) {
+    const octets = value.split(".");
+    if (octets.length !== 4 || octets.some(part => !/^\d{1,3}$/.test(part))) {
+      throw new Error("Enter a valid IPv4 address or IPv4 range.");
+    }
+    const numbers = octets.map(Number);
+    if (numbers.some(part => part > 255)) throw new Error("IPv4 octets must be 0–255.");
+    return numbers.reduce((total, part) => total * 256 + part, 0);
+  }
+
+  function ipv4String(value) {
+    return [
+      Math.floor(value / 16777216) % 256,
+      Math.floor(value / 65536) % 256,
+      Math.floor(value / 256) % 256,
+      value % 256
+    ].join(".");
+  }
+
+  function expandNetworkHosts(value) {
+    const target = value.trim();
+    if (!target) throw new Error("Enter an IP address or IP range.");
+    if (target.includes("/")) {
+      const [address, prefixText, ...extra] = target.split("/");
+      const addressNumber = ipv4Number(address);
+      const prefix = Number(prefixText);
+      if (extra.length || !/^\d{1,2}$/.test(prefixText) || prefix > 32) {
+        throw new Error("IPv4 CIDR must use a prefix from /0 to /32.");
+      }
+      const size = 2 ** (32 - prefix);
+      let first = Math.floor(addressNumber / size) * size;
+      let last = first + size - 1;
+      if (prefix <= 30) { first += 1; last -= 1; }
+      if (last - first + 1 > 32) throw new Error("This scan is limited to 32 IP addresses.");
+      return Array.from({ length: last - first + 1 }, (_, index) => ipv4String(first + index));
+    }
+    if (/^\d{1,3}(?:\.\d{1,3}){3}-/.test(target)) {
+      const [firstText, lastText, ...extra] = target.split("-");
+      if (!lastText || extra.length) throw new Error("Enter an IPv4 range as startIP-endIP.");
+      const first = ipv4Number(firstText);
+      const last = ipv4Number(lastText);
+      if (last < first) throw new Error("IP range end must be at or after its start.");
+      if (last - first + 1 > 32) throw new Error("This scan is limited to 32 IP addresses.");
+      return Array.from({ length: last - first + 1 }, (_, index) => ipv4String(first + index));
+    }
+    return [target];
+  }
+
+  function buildScanTargets() {
+    const target = scopeTargetInput.value.trim();
+    if (activeScanCapability === "WEB") {
+      let parsed;
+      try {
+        parsed = new URL(target);
+      } catch (_) {
+        throw new Error("Enter a complete website URL beginning with https:// or http://.");
+      }
+      if (!new Set(["http:", "https:"]).has(parsed.protocol) || !parsed.hostname) {
+        throw new Error("Website scans accept HTTP or HTTPS URLs only.");
+      }
+      if (parsed.username || parsed.password || parsed.hash) {
+        throw new Error("Remove URL credentials and fragments before scanning.");
+      }
+      return [target];
+    }
+    return expandNetworkHosts(target);
+  }
+
+  function updateScanFormMode() {
+    const isWeb = activeScanCapability === "WEB";
+    const scanName = isWeb ? "Web Scan" : "Network Scan";
+    startTargetScanButton.textContent = `Start ${scanName}`;
+    scopeTargetLabel.textContent = isWeb ? "Website URL" : "IP address or IP range";
+    scopeTargetInput.placeholder = isWeb
+      ? "https://your-site.example/"
+      : "192.168.1.20 or 192.168.1.0/28";
+    scopeTargetInput.type = isWeb ? "url" : "text";
+    scopeTargetHelp.textContent = isWeb
+      ? "Enter one absolute HTTP(S) URL that you own or are authorized to assess."
+      : "Enter one IP address, hostname, or IPv4 range up to 32 hosts.";
+    scanProfileType.textContent = isWeb ? "Web" : "Network";
+    scanProfileSummary.textContent = isWeb
+      ? "A bounded, read-only HTTP check for the approved website."
+      : "A bounded TCP reachability check for the approved network target.";
+    scanProfileChecks.replaceChildren(...(isWeb
+      ? ["HTTP(S) HEAD request to the target URL", "Response status and security headers recorded as evidence"]
+      : ["TCP connection checks on ports 80 and 443", "Open port observations saved as scan evidence"]
+    ).map(text => {
+      const item = document.createElement("li");
+      item.textContent = text;
+      return item;
+    }));
+    scanProfileSafety.textContent = isWeb
+      ? "Requires explicit authorization. Redirects are not followed, and private or reserved destinations are blocked by default."
+      : "Requires explicit authorization. Checks stay within the saved target scope and use a bounded port profile.";
+  }
+
+  function updateProviderDescription() {
+    const provider = registeredProviders.find(item => item.name === scanProviderSelect.value);
+    if (!provider) {
+      providerDescription.textContent = "Only modules registered by the server can run.";
+    } else if (provider.capabilities.includes("NETWORK")) {
+      providerDescription.textContent = "Bounded TCP connection checks on the server's approved port profile. No exploit payloads or destructive checks.";
+    } else if (provider.capabilities.includes("WEB")) {
+      providerDescription.textContent = "Bounded HTTP(S) HEAD requests. Redirects are not followed; private and reserved destinations are blocked by default.";
+    } else {
+      providerDescription.textContent = `Capabilities: ${provider.capabilities.join(", ")}.`;
+    }
+    updateRunButton();
+  }
+
+  function providerForCurrentScan() {
+    const capability = activeScanCapability;
+    const preferredName = capability === "WEB"
+      ? "builtin-web-assessment"
+      : "builtin-network-discovery";
+    return registeredProviders.find(item => item.name === preferredName && item.safe_by_default)
+      || registeredProviders.find(item => item.safe_by_default && item.capabilities.includes(capability));
+  }
+
+  scopeCreateForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    const submit = scopeCreateForm.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    const scopeStatus = document.querySelector("#scope-status");
+    let savedCampaign = null;
+    setMessage(scopeStatus, "Preparing your authorized scan…");
+    try {
+      const include = buildScanTargets();
+      if (!include.length) throw new Error("Add at least one target.");
+      const provider = providerForCurrentScan();
+      if (!provider) throw new Error("No approved scan module is available for this scan type.");
+      const targetLabel = scopeTargetInput.value.trim().slice(0, 96);
+      const scanName = activeScanCapability === "WEB" ? "Web Scan" : "Network Scan";
+      savedCampaign = await request("/api/v1/campaigns", {
+        method: "POST",
+        body: JSON.stringify({
+          name: `${scanName} · ${targetLabel}`,
+          include,
+          exclude: [],
+          authorized: true
+        })
+      });
+      setMessage(scopeStatus, "Target saved. Running the approved checks…");
+      const result = await request(
+        `/api/v1/campaigns/${encodeURIComponent(savedCampaign.id)}/scans/run`,
+        {
+          method: "POST",
+          headers: { "Idempotency-Key": `ui-run-${crypto.randomUUID().replaceAll("-", "")}` },
+          body: JSON.stringify({ provider_name: provider.name })
+        }
+      );
+      scopeCreateForm.reset();
+      setMessage(scopeStatus, `${scanName} ${result.state.toLowerCase()}. Execution: ${result.execution_id}`);
+      await loadDashboard();
+    } catch (error) {
+      const message = savedCampaign
+        ? `Target saved, but the scan could not start: ${error.message || "unknown error"}`
+        : error.message || "Unable to start the scan.";
+      setMessage(scopeStatus, message, true);
+    } finally {
+      submit.disabled = !canAssess;
+    }
+  });
+
+  scanCampaignSelect.addEventListener("change", updateProviderOptions);
+  scanProviderSelect.addEventListener("change", updateProviderDescription);
+  scanRunForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    const campaignId = scanCampaignSelect.value;
+    const providerName = scanProviderSelect.value;
+    if (!campaignId || !providerName) return;
+    runScanButton.disabled = true;
+    setMessage(document.querySelector("#scan-status"), "Running bounded assessment…");
+    try {
+      const result = await request(
+        `/api/v1/campaigns/${encodeURIComponent(campaignId)}/scans/run`,
+        {
+          method: "POST",
+          headers: { "Idempotency-Key": `ui-run-${crypto.randomUUID().replaceAll("-", "")}` },
+          body: JSON.stringify({ provider_name: providerName })
+        }
+      );
+      setMessage(document.querySelector("#scan-status"), `Assessment ${result.state.toLowerCase()}. Execution: ${result.execution_id}`);
+      await loadDashboard();
+    } catch (error) {
+      setMessage(document.querySelector("#scan-status"), error.message || "Assessment could not run.", true);
+    } finally {
+      updateRunButton();
+    }
+  });
   logoutButton.addEventListener("click", async () => {
     try {
       await request("/api/v1/auth/logout", { method: "POST" });
@@ -309,41 +595,81 @@
   });
 
   const sectionLinks = [...document.querySelectorAll("[data-section-link]")];
+  const viewLinks = [...document.querySelectorAll("[data-section-link], [data-view-link]")];
+  const workspaceViews = [...document.querySelectorAll("[data-workspace-view]")];
+  const pageDetails = {
+    overview: ["Dashboard", "See scan activity and review security findings."],
+    tools: ["VAPT tools", "Run a bounded check against a system you are authorized to test."],
+    "network-scan": ["Network Scan", "Check selected network ports on an authorized host."],
+    "web-scan": ["Web Scan", "Run bounded, read-only checks on an authorized website."],
+    campaigns: ["Authorized scopes", "Campaigns define the targets and exclusions approved for assessment."],
+    assets: ["Asset inventory", "Hosts, domains, and services observed within authorized scope."],
+    findings: ["Findings", "Recorded security issues with severity and affected asset context."],
+    cve: ["CVE", "CVE feed integration is planned; API keys will stay on the server."],
+    ioc: ["IOC Collections", "Import and review your indicator collections."],
+    scans: ["Scan runs", "Persisted assessment executions and their current lifecycle state."],
+    evidence: ["Evidence", "Supporting observations and integrity hashes for recorded results."],
+    "attack-paths": ["Attack paths", "Evidence-linked relationships between assets; review validation state."],
+    "audit-log": ["Audit Logs", "Administrator-only record of security-sensitive actions in this workspace."]
+  };
 
-  function setActiveNavigation(link) {
-    for (const item of sectionLinks) {
-      const active = item === link;
-      item.classList.toggle("active", active);
-      if (active) {
-        item.setAttribute("aria-current", "page");
-      } else {
-        item.removeAttribute("aria-current");
-      }
+  function activateView(view) {
+    const selected = Object.hasOwn(pageDetails, view) ? view : "overview";
+    const renderedView = selected === "network-scan" || selected === "web-scan" ? "tools" : selected;
+    for (const panel of workspaceViews) panel.hidden = panel.dataset.workspaceView !== renderedView;
+    if (selected === "network-scan" || selected === "web-scan") {
+      activeScanCapability = selected === "web-scan" ? "WEB" : "NETWORK";
+      setVaptMenuOpen(true);
+      updateScanFormMode();
+      updateScanCampaignOptions();
+    } else {
+      setVaptMenuOpen(false);
     }
-  }
-
-  function updateActiveNavigation() {
-    if (window.scrollY < 120) {
-      const overview = sectionLinks.find(link => link.getAttribute("href") === "#top");
-      if (overview) setActiveNavigation(overview);
-      return;
-    }
-
-    let current = null;
     for (const link of sectionLinks) {
-      const targetId = link.getAttribute("href")?.slice(1);
-      if (!targetId || targetId === "top") continue;
-      const target = document.getElementById(targetId);
-      if (target && target.getBoundingClientRect().top <= 180) current = link;
+      const active = link.getAttribute("href") === `#${selected}`;
+      link.classList.toggle("active", active);
+      if (active) link.setAttribute("aria-current", "page");
+      else link.removeAttribute("aria-current");
     }
-    if (current) setActiveNavigation(current);
+    const [title, subtitle] = pageDetails[selected];
+    document.getElementById("page-title").textContent = title;
+    document.getElementById("page-subtitle").textContent = subtitle;
+    document.getElementById("page-eyebrow").textContent = `ThreatLens · ${title}`;
+    document.getElementById("workspace-content").scrollTop = 0;
   }
 
-  for (const link of sectionLinks) {
-    link.addEventListener("click", () => setActiveNavigation(link));
+  for (const link of viewLinks) {
+    link.addEventListener("click", event => {
+      const view = link.getAttribute("href")?.slice(1);
+      if (!Object.hasOwn(pageDetails, view)) return;
+      event.preventDefault();
+      if (window.location.hash !== `#${view}`) window.history.pushState(null, "", `#${view}`);
+      activateView(view);
+    });
   }
-  window.addEventListener("scroll", updateActiveNavigation, { passive: true });
-  updateActiveNavigation();
+  window.addEventListener("hashchange", () => activateView(window.location.hash.slice(1)));
+  window.addEventListener("popstate", () => activateView(window.location.hash.slice(1)));
+  activateView(window.location.hash.slice(1));
+
+  function setVaptMenuOpen(open) {
+    vaptNavGroup.classList.toggle("is-open", open);
+    vaptNavToggle.setAttribute("aria-expanded", String(open));
+  }
+  vaptNavToggle.addEventListener("click", () => {
+    setVaptMenuOpen(vaptNavToggle.getAttribute("aria-expanded") !== "true");
+  });
+  vaptNavGroup.addEventListener("mouseenter", () => setVaptMenuOpen(true));
+  vaptNavGroup.addEventListener("mouseleave", () => {
+    const onScanPage = ["#network-scan", "#web-scan"].includes(window.location.hash);
+    if (!onScanPage) setVaptMenuOpen(false);
+  });
+  vaptNavGroup.addEventListener("focusin", () => setVaptMenuOpen(true));
+  vaptNavGroup.addEventListener("focusout", event => {
+    if (!vaptNavGroup.contains(event.relatedTarget)) {
+      const onScanPage = ["#network-scan", "#web-scan"].includes(window.location.hash);
+      if (!onScanPage) setVaptMenuOpen(false);
+    }
+  });
 
   if (token()) {
     showApp();

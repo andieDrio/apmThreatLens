@@ -30,8 +30,8 @@ class FakeProbe:
         self.observation = observation
         self.calls = []
 
-    def request(self, url, method, timeout, max_bytes):
-        self.calls.append((url, method, timeout, max_bytes))
+    def request(self, url, method, timeout, max_bytes, *, connect_address):
+        self.calls.append((url, method, timeout, max_bytes, connect_address))
         return self.observation
 
 
@@ -102,6 +102,7 @@ def test_api_provider_persists_evidence_and_finding() -> None:
     provider.execute(campaign, uuid4(), Event())
     assert len(repository.evidence) == 1
     assert len(repository.findings) == 1
+    assert provider.probe.calls[0][4] == "93.184.216.34"
     assert repository.evidence[0].kind == "api-assessment"
     assert repository.findings[0].evidence_ids == (repository.evidence[0].id,)
 
@@ -119,6 +120,42 @@ def test_api_provider_rejects_private_destination() -> None:
     )
     with pytest.raises(PermissionError, match="non-public"):
         provider.execute(campaign, uuid4(), Event())
+
+
+def test_api_provider_rejects_empty_dns_answers_before_probe():
+    probe = FakeProbe(make_observation())
+    provider = APIAssessmentProvider(
+        ProviderHandoff(MemoryRepository()),
+        probe=probe,
+        destination_resolver=lambda hostname: (),
+    )
+    campaign = Campaign(
+        name="api-empty-dns",
+        scope=Scope(include=("https://api.example.test/v1/items",)),
+        authorized=True,
+    )
+    with pytest.raises(ConnectionError, match="no addresses"):
+        provider.execute(campaign, uuid4(), Event())
+    assert probe.calls == []
+
+
+@pytest.mark.parametrize("address", ("224.0.0.1", "0.0.0.0", "ff02::1", "::"))
+def test_api_provider_rejects_non_destination_addresses_even_when_private_allowed(address):
+    probe = FakeProbe(make_observation())
+    provider = APIAssessmentProvider(
+        ProviderHandoff(MemoryRepository()),
+        APIAssessmentPolicy(allow_private_addresses=True),
+        probe=probe,
+        destination_resolver=lambda hostname: (address,),
+    )
+    campaign = Campaign(
+        name="api-invalid-destination",
+        scope=Scope(include=("https://api.example.test/v1/items",)),
+        authorized=True,
+    )
+    with pytest.raises(PermissionError, match="non-public"):
+        provider.execute(campaign, uuid4(), Event())
+    assert probe.calls == []
 
 
 def test_api_provider_rejects_userinfo_and_fragments() -> None:

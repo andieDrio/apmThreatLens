@@ -14,9 +14,7 @@ from threatlens.storage.postgres import PostgresRepository
 
 
 def _dsn() -> str:
-    return os.getenv("THREATLENS_TEST_DATABASE_URL") or os.getenv(
-        "THREATLENS_DATABASE_URL", ""
-    )
+    return os.getenv("THREATLENS_TEST_DATABASE_URL", "")
 
 
 def _runtime_role(

@@ -47,6 +47,9 @@ _SSH_BANNER = re.compile(
     r"SSH-[0-9.]+-(?P<product>[^\s/]+)(?:/(?P<version>[^\s]+))?(?:\s+(?P<comment>.+))?$",
     re.I,
 )
+_SSH_PRODUCT_VERSION = re.compile(
+    r"^(?P<product>[A-Za-z][A-Za-z0-9.-]*?)[_-](?P<version>[0-9][A-Za-z0-9._+-]{0,63})$"
+)
 
 
 def normalize_observation(
@@ -73,8 +76,14 @@ def normalize_observation(
     elif proto is Protocol.SSH:
         match = _SSH_BANNER.match(text)
         if match:
-            product = match.group("product")
-            version = match.group("version") or match.group("comment")
+            ssh_product = match.group("product")
+            product_version = _SSH_PRODUCT_VERSION.match(ssh_product)
+            if product_version:
+                product = product_version.group("product")
+                version = product_version.group("version")
+            else:
+                product = ssh_product
+                version = match.group("version") or match.group("comment")
     else:
         match = _PRODUCT_VERSION.search(text)
         if match:

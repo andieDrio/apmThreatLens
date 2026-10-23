@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ipaddress
 import socket
+from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Event
 from typing import Protocol
@@ -15,15 +17,31 @@ from threatlens.providers.runtime import ProviderCapability, ProviderMetadata
 
 
 class InterrogationProbe(Protocol):
-    def probe(self, host: str, port: int, timeout: float, max_bytes: int) -> str | None: ...
+    def probe(
+        self,
+        host: str,
+        port: int,
+        timeout: float,
+        max_bytes: int,
+        *,
+        connect_address: str | None = None,
+    ) -> str | None: ...
 
 
 class SocketInterrogationProbe:
     """Bounded protocol probes; never sends arbitrary user-controlled payloads."""
 
-    def probe(self, host: str, port: int, timeout: float, max_bytes: int) -> str | None:
+    def probe(
+        self,
+        host: str,
+        port: int,
+        timeout: float,
+        max_bytes: int,
+        *,
+        connect_address: str | None = None,
+    ) -> str | None:
         try:
-            with socket.create_connection((host, port), timeout=timeout) as sock:
+            with socket.create_connection((connect_address or host, port), timeout=timeout) as sock:
                 sock.settimeout(timeout)
                 if port in {80}:
                     sock.sendall(
@@ -46,6 +64,7 @@ class InterrogationPolicy:
     timeout_seconds: float = 1.0
     max_targets: int = 32
     max_response_bytes: int = 8192
+    allow_non_public_hostname_addresses: bool = False
 
     def __post_init__(self) -> None:
         if not self.ports:
@@ -78,15 +97,18 @@ class ActiveServiceInterrogationProvider:
         handoff: ProviderHandoff,
         policy: InterrogationPolicy | None = None,
         probe: InterrogationProbe | None = None,
+        destination_resolver: Callable[[str], tuple[str, ...]] | None = None,
     ) -> None:
         self.handoff = handoff
         self.policy = policy or InterrogationPolicy()
         self.probe = probe or SocketInterrogationProbe()
+        self.destination_resolver = destination_resolver or self._resolve_addresses
 
     def execute(self, campaign: Campaign, execution_id: UUID, cancel_event: Event) -> None:
         if len(campaign.scope.include) > self.policy.max_targets:
             raise ValueError("interrogation target count exceeds execution policy")
         excluded = {self._normalize_host(value) for value in campaign.scope.exclude}
+        resolved_targets: dict[str, str] = {}
         processed = 0
         for target in campaign.scope.include:
             if cancel_event.is_set():
@@ -94,6 +116,9 @@ class ActiveServiceInterrogationProvider:
             host = self._normalize_host(target)
             if host in excluded:
                 continue
+            if host not in resolved_targets:
+                resolved_targets[host] = self._validate_destination(host)
+            connect_address = resolved_targets[host]
             processed += 1
             if processed > self.policy.max_targets:
                 raise ValueError("interrogation target count exceeds execution policy")
@@ -105,6 +130,7 @@ class ActiveServiceInterrogationProvider:
                     port,
                     self.policy.timeout_seconds,
                     self.policy.max_response_bytes,
+                    connect_address=connect_address,
                 )
                 if not response:
                     continue
@@ -115,6 +141,7 @@ class ActiveServiceInterrogationProvider:
                     source=self.name,
                     metadata={
                         "host": host,
+                        "resolved_address": connect_address,
                         "port": str(port),
                         "protocol": observation.protocol.value,
                         "service_name": observation.service_name or "",
@@ -129,13 +156,62 @@ class ActiveServiceInterrogationProvider:
                     evidence=evidence,
                 )
 
+    def _validate_destination(self, host: str) -> str:
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            address = None
+        if address is None:
+            try:
+                addresses = {
+                    ipaddress.ip_address(value) for value in self.destination_resolver(host)
+                }
+            except OSError as exc:
+                raise ConnectionError(
+                    f"service interrogation DNS resolution failed: {host}"
+                ) from exc
+            if not addresses:
+                raise ConnectionError(
+                    f"service interrogation DNS resolution returned no addresses: {host}"
+                ) from None
+            if len(addresses) > 16:
+                raise ValueError(
+                    "service interrogation DNS answer count exceeds execution policy"
+                ) from None
+            if any(
+                item.is_multicast
+                or item.is_unspecified
+                or (
+                    not self.policy.allow_non_public_hostname_addresses
+                    and not item.is_global
+                )
+                for item in addresses
+            ):
+                raise PermissionError(
+                    "service interrogation destination resolves to a non-public address"
+                ) from None
+            address = sorted(addresses, key=lambda item: (item.version, int(item)))[0]
+        if address.is_multicast or address.is_unspecified:
+            raise PermissionError("service interrogation destination is not usable")
+        return str(address)
+
+    @staticmethod
+    def _resolve_addresses(hostname: str) -> tuple[str, ...]:
+        try:
+            return tuple(
+                result[4][0]
+                for result in socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+            )
+        except OSError as exc:
+            raise ConnectionError(
+                f"service interrogation DNS resolution failed: {hostname}"
+            ) from exc
+
     @staticmethod
     def _normalize_host(target: str) -> str:
         value = target.strip()
         if not value or "://" in value or "/" in value:
             raise ValueError("service interrogation accepts host/IP targets only")
-        import ipaddress
-
         try:
             return str(ipaddress.ip_address(value))
         except ValueError:

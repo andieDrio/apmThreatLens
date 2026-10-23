@@ -1,11 +1,11 @@
 # APM ThreatLens — Project Status
 
-**Last updated:** 2026-10-21
+**Last updated:** 2026-10-23
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 78
-**Highest fully validated gate:** Gate 78B4 (user-confirmed on 2026-10-21; local changes not yet committed)
-**Current gate:** Gate 78 — remaining organization-scoped resource access
-**Current status:** Gate 78B1 is complete and pushed as `eb4e89f`; Gate 78B2 is complete and pushed as `c8793a0`; Gate 78B3 is complete and pushed as `ca0978a`. Gate 78B4 is implemented and user-validated locally: asset identity, provider writes, asset/finding reads, finding actions, and dashboard aggregates are organization-scoped. Evidence, audit, general idempotency, relationships, and asynchronous provider paths remain unscoped, so multiple-organization deployment is not enabled. Commit/push of B4 is pending.
+**Highest architecture gate reached:** Gate 89
+**Highest fully validated gate:** Gate 89 (user-confirmed on 2026-10-23)
+**Current gate:** Reassess the next verified security gap
+**Current status:** The user confirmed Gate 89 focused Network/TLS tests, full PostgreSQL-backed suite at 100%, Ruff, `git diff --check`, and Windows wheel build. Wheel SHA-256: `b107e5b5c3bcb0d60a3f2d1fb9fa084737a6e9b6be3897124844fc32d3760bf0`. Six Starlette deprecation warnings were non-failing. Changes remain local pending the user's commit/push.
 
 ## Executive Summary
 
@@ -412,32 +412,88 @@ The Gate 75 campaign report contains security-sensitive findings and evidence me
 
 The evidence read API redacts secret-like metadata keys and strips URL userinfo, query values, and fragments without modifying persisted evidence or hashes. Safe provenance remains visible. On 2026-10-21, the user confirmed the focused evidence API test and full suite reached 100%, Ruff and `git diff --check` passed, and the Windows wheel built successfully. Five Starlette deprecation warnings were non-failing. Commit `9abd8a8` (`Redact secrets from evidence metadata`) is on `main` and `origin/main`.
 
-## Gate 78 — Organization-Level Data Isolation — IN PROGRESS
+## Gate 78 — Retired: Organization Data Model
 
-### Stage 78A — Organization and Membership Context — COMPLETE
+The user clarified that ThreatLens is a personal project and requested complete removal of organization/membership functionality from the UI, backend, and database. Migration 9 drops the organization tables and ownership columns while preserving campaigns, assets, findings, scans, evidence, and append-only audit history. Historical migration identities 4–8 remain only to support previously migrated databases; migration 9 removes their structures from the active schema. The runtime now reads role directly from the local user record and verifies no organization structures reappear.
 
-Added PostgreSQL organization and membership tables, a transactional default-organization backfill, atomic new-user membership, fail-closed organization context, `/api/v1/me`, and the dashboard security-posture view. On 2026-10-21, the user confirmed the full PostgreSQL-backed suite, Ruff, diff check, and Windows wheel build passed; commit `ff3f914` is on `main` and `origin/main`.
+## Gate 79 — Bounded Network Service Fingerprinting — COMPLETE
 
-### Stage 78B — Organization-Scoped Resource Access — IN PROGRESS
+The network provider probes bounded default TCP ports 22, 25, 80, and 443. For supported open ports it performs bounded SSH/SMTP banner collection or fixed HTTP HEAD, normalizes service/product/version, and persists service/evidence through the execution fence. HTTP evidence retains only status and Server headers. On 2026-10-21, the user ran the full PostgreSQL-backed suite against `threatlens_test`; it reached 100% with five non-failing Starlette deprecation warnings.
 
-#### Stage 78B1 — Campaign ownership — COMPLETE
+## Gate 80 — Personal Workspace and Database Cleanup — COMPLETE
 
-Migration version 5 adds a required organization owner and lookup index to campaigns, backfilling existing campaigns into `Default Organization`. Campaign list/report queries, report exports, create writes, and campaign lookup before scan queueing use the authenticated organization. On 2026-10-21, the user confirmed focused PostgreSQL/API tests, the full test suite, Ruff, diff check, and wheel build passed; commit `eb4e89f` is on `main` and `origin/main`. Multiple-organization deployment remains unsupported until the resource graph is isolated.
+The organization panel and organization footer label are removed. Authentication uses the role on the local user account. API/repository tenant filters and organization parameters have been removed. Migration 9 restores global canonical-asset uniqueness, removes legacy organization tables and columns, and preserves persisted assessment/audit rows and audit append-only triggers. A schema verifier fails startup if legacy organization structures remain.
 
-#### Stage 78B2 — Scan activity reads — COMPLETE
+**Validation closure:** On 2026-10-21, migration 9 completed successfully on `threatlens_dev`. The user ran the full PostgreSQL-backed suite against `threatlens_test`; the screenshot showed 100% completion, returned to the prompt, and listed only five non-failing Starlette deprecation warnings. Local Ruff, full runnable pytest, diff check, and Windows wheel build also passed. No commit or push.
 
-The scan activity read model and count are filtered through each scan's campaign organization. On 2026-10-21, the user confirmed focused PostgreSQL/API tests, the full test suite, Ruff, diff check, and Windows wheel build passed. Commit `c8793a0` is on `main` and `origin/main`.
+## Gate 81 — Evidence-Backed Version-to-CVE Correlation — COMPLETE
 
-#### Stage 78B3 — Scan lifecycle controls — COMPLETE
+The scan persists detected software product separately from its generic service name. Migration 10 adds nullable PostgreSQL `services.product`; migration 11 reconciles stale legacy organization structures while preserving assessment rows; migration 12 stores normalized trusted vulnerability intelligence. The network-free NVD parser only accepts explicit vulnerable exact-version CPE entries. A bounded official NVD client and admin-only import/read APIs enforce rate, response, and role limits; imports are audit-atomic. Network scans query exact product/version matches and emit only `SUSPECTED` findings tied to persisted service evidence through execution-fenced handoff. Findings preserve source and confidence and are not confirmations. On 2026-10-23, the user's latest output confirmed migration, full PostgreSQL-backed tests at 100%, Ruff, `git diff --check`, and wheel build. Five Starlette deprecation warnings were non-failing. Exact test count was not shown.
 
-Cancel and stale-recovery commands verify campaign organization while locking the scan and campaign rows in the mutation transaction. Idempotency replays repeat the ownership check before returning a prior result. On 2026-10-21, the user confirmed focused PostgreSQL/API tests, the full test suite at 100%, Ruff, diff check, and Windows wheel build passed; commit `ca0978a` is on `main` and `origin/main`.
+**Failure and repair history:** The user initially reported PostgreSQL readiness failures because tenant structures remained after migration 9. Migration 11 reruns the idempotent single-user cleanup. A follow-up test regression deleted migration 10 while leaving 11; the test now removes both records and reruns both migrations in order. The user's pgAdmin result confirmed versions 1–9 and 11, so they restored `services.product` and migration 10's exact registry record on `threatlens_test` only. The user later confirmed migrations 10/11 on `threatlens_dev` and most recently migration 12 there.
 
-#### Stage 78B4 — Asset and finding isolation — COMPLETE (local validation)
+**Assistant validation of this repair:** `git diff --check` passed. Pytest and Ruff could not be started in this execution environment because the user's venv path resolves to an isolated sandbox `LOCALAPPDATA`; the fallback Python install manager could not reach its runtime index. No PostgreSQL-backed result is claimed for migration 11.
 
-Canonical asset identity is organization-specific; provider-created assets/services/findings are bound to the organization owning their active scan. Asset/finding reads, finding actions, and dashboard aggregates are scoped. Migration version 6 backfills existing assets into the default organization and makes ownership required. Two-organization PostgreSQL/API regressions cover isolation.
+**Follow-up validation attempt:** On 2026-10-23, the user fixed the psycopg/libpq loading issue and confirmed the DSN targets `threatlens_test`. The PostgreSQL-backed tests then failed during connection setup with `password authentication failed for user "postgresql"`; the test role should be `postgres` for this local database. The suite did not reach migration validation. This is a connection configuration failure, not evidence of a migration 11 regression.
 
-On 2026-10-21, the user confirmed the focused and full PostgreSQL-backed test suites reached 100%, Ruff passed, `git diff --check` passed, and the Windows wheel built successfully. Five Starlette deprecation warnings were non-failing. Changes remain local and await the user's normal commit/push workflow.
+**Latest validation:** The user corrected PostgreSQL authentication, repaired the version-10 gap in `threatlens_test`, and applied migrations 10–12 on `threatlens_dev`. On the exact current NVD import/read implementation, the user confirmed migration success, the PostgreSQL-backed suite reached 100%, Ruff reported “All checks passed,” `git diff --check` returned no whitespace errors (only LF/CRLF notices), and the Windows wheel built successfully with SHA-256 `7673243916b3d85dab56b66cb136a89a6dabcad9de1c2fae865b6cb2e41d400c`. Five Starlette deprecation warnings were non-failing; exact pytest counts were not printed.
 
-#### Remaining work
+The user's pgAdmin result on 2026-10-23 confirmed the test ledger initially had versions 1–9 and 11; version 10 (`service_product_fingerprint`) was missing. The user repaired the test DB ledger and column. Later user-provided output confirms migrations 10–12 on `threatlens_dev` and 100% full-suite completion on the current NVD implementation.
 
-Scope evidence, audit, general idempotency records, relationships, and asynchronous provider handoff by the authenticated organization. Keep multi-organization deployment disabled until the complete resource graph has cross-organization PostgreSQL/API coverage.
+**Current cycle — bounded NVD import and persisted read model (user-validated subphase):** The network-free parser accepts only explicit vulnerable exact-version CPE entries and skips ranges, rejected CVEs, negated nodes, and compound AND nodes. A bounded HTTPS client calls the fixed NVD API endpoint, disables redirects, caps responses at 2 MiB, enforces timeouts and process-wide pacing, validates CVE identifiers/response identity, and reads optional `THREATLENS_NVD_API_KEY` only from the API server environment. ADMIN-only `POST /api/v1/cve/ingest` validates up to 10 distinct identifiers before network access and stores imported records atomically with an audit event. READ-authorized `GET /api/v1/cve` is paginated. Migration 12 creates the single-user intelligence table. Added HTTP-client, API, PostgreSQL upsert/audit, and fixture-isolation regression coverage. Updated README.md, Architecture.md, MasterInstructions.md, PROJECT_STATUS.md, and `.env.example`.
+
+**Validation:** Migration 12 and scan-time correlation were confirmed by the user's latest full validation output. The CVE interface is still pending. No commit/push.
+
+**Security review:** Fixed official HTTPS host; no caller-provided URL; redirects disabled; response and request time bounded; process-wide request pacing is six seconds without a key and one second with a key; ID and response identity checked; optional API key remains server-side; errors do not include request credentials or response bodies. Import requires ADMIN, listing requires READ, and data upsert/audit insertion share a transaction. No findings are created by ingestion. Pacing is process-local, so separate API worker processes do not share rate state. Vendor-aware correlation and the CVE UI remain active follow-up work.
+
+## Gate 82 — Vendor-Aware CVE Matching — COMPLETE
+
+The change retains NVD CPE vendor identity beside product and version. Migration 13 adds vendor columns; migration 15 updates the intelligence primary key to include vendor/product without altering an applied migration identity. This prevents separate vendors with the same product name from overwriting each other's CPE records. SQLite persistence round-trips observed vendor metadata. Vendor conflicts reject candidates; an unknown observed vendor lowers confidence. Findings remain `SUSPECTED`.
+
+**Gate 82 validation closure:** The user confirmed the exact-source Windows wheel built successfully on 2026-10-23 with SHA-256 `afb0d9c0d913c942af975540774830b5059678ce77b742aacfe5bc376b8e9f22`. Together with migration recovery, 100% PostgreSQL suite, Ruff, and diff check, Gate 82 is complete. No commit or push.
+
+## Gate 83 — Personal IOC Collection Import and Read API — COMPLETE
+
+Add a bounded, network-free backend to import and review the user's own IOC collections. Start with strict canonical validation for IP addresses, domains, and MD5/SHA-1/SHA-256 hashes; cap each import batch; persist source and confidence; make writes transactional with audit events; and provide a bounded paginated read API. Treat imported values as untrusted data. Do not trigger lookups, callbacks, or scans during import. CSV/file upload and UI integration remain follow-up work after the JSON API is established.
+
+Implementation includes migrations 14–15, strict domain normalization, bounded ADMIN import and READ listing, transactional SQLite/PostgreSQL upserts with audit events, and API/domain/storage regression tests. The user confirmed migrations, the full PostgreSQL-backed suite green after fixing a stale migration-ledger expectation, Ruff, diff check, and Windows wheel build (SHA-256 `0595d1aa0ef407be6d5063814fce8a5077a696ba1461ccc26fe77b87d7639d02`). Six Starlette deprecation warnings were non-failing.
+
+## Gate 84 — Passive Web Security Posture Checks — COMPLETE
+
+Extend the authorized Web Scan with deterministic findings from bounded normal HTTP responses: missing security headers, unsafe cookie attributes where observable, and actionable titles with CWE references. Keep current scope and response caps; never follow redirects, submit forms, fuzz parameters, execute payloads, or store cookie values. Preserve header observations only after redacting cookie secrets. Add tests for duplicate Set-Cookie handling, non-success responses, header presence, and evidence provenance. No database migration should be needed unless the existing finding model cannot represent the needed details.
+
+Implementation adds findings for absent or ineffective CSP, Referrer-Policy, HSTS, XCTO, and clickjacking protections, plus Secure/HttpOnly/SameSite checks on session-like cookies. It preserves multiple Set-Cookie headers and stores only redacted cookie metadata in evidence. Review found that Secure-attribute findings were only emitted for HTTPS and duplicated the SameSite=None case; the implementation now reports a missing Secure attribute for any observed session cookie exactly once. The user first ran pytest with the database URL unset, which skipped 103 PostgreSQL cases; after correctly setting and verifying `threatlens_test`, the user confirmed the full suite reached 100% without a skip summary, Ruff passed, and `git diff --check` succeeded (only LF/CRLF notices). The exact-source Windows wheel built successfully with SHA-256 `815b6a24043acbd3586dd613f1b901aea83893a9ee2149c464ad97f5b54be8e4`. Six Starlette deprecation warnings were non-failing.
+
+## Gate 85 — Network Scan DNS Resolution Boundary — COMPLETE
+
+The network provider accepts FQDN targets but passes the hostname directly to TCP connect and the service interrogation probe. It does not resolve and validate the destination before connecting, so a scoped name that resolves to loopback, link-local, reserved, or private infrastructure can cause the scanner to access an unintended network. Resolve names once, validate all answers before any socket access, pin connection and interrogation to a validated address, and preserve the original authorized hostname as the asset identity. Keep explicitly scoped literal IP targets (including private IPs) usable for authorized internal assessments. Fail closed for empty, malformed, or disallowed hostname resolutions; add deterministic tests proving no probe occurs on rejected DNS answers. No schema migration or GUI change is expected.
+
+The provider resolves each scoped hostname once per execution, rejects non-global/mixed answers by default (with a 16-address bound), records the validated address in evidence, and pins both TCP connect and HTTP/banner interrogation while retaining the original HTTP Host value. Explicit literal private IPs bypass DNS and remain scannable. Regression tests cover pinning, rejected loopback/mixed answers, internal IP targets, and HTTP Host preservation.
+
+**Validation closure:** On 2026-10-23, the user confirmed the exact source passed the full PostgreSQL-backed suite at 100%, Ruff, `git diff --check`, and Windows wheel build (SHA-256 `983bfd20ec1c0fe2cbfa4795b1cdc40aa5859d72eef03a018dee77474ed31a9e`). Six Starlette deprecation warnings were non-failing. A stray `l` typed after the wheel-success check caused a separate PowerShell command-not-found message and did not invalidate the successful build.
+
+## Gate 86 — Web/API Scan DNS Pinning — COMPLETE
+
+Web and API providers validated DNS answers but then passed the original hostname to urllib, which resolved DNS again at socket-connect time. DNS rebinding could therefore redirect the request to an unvalidated internal destination. The HTTP probe now connects to the validated IP directly while retaining the original hostname for the HTTP Host header and, for HTTPS, TLS SNI and normal certificate hostname verification. Empty DNS answers fail closed; oversized answers are bounded; multicast and unspecified destinations remain prohibited even when explicitly scoped private addresses are enabled. Redirects remain disabled and response limits remain unchanged.
+
+**Validation closure:** On 2026-10-23, the user confirmed the full PostgreSQL-backed suite reached 100%, Ruff passed, `git diff --check` passed with only LF/CRLF notices, and the Windows wheel built successfully (SHA-256 `58e7658678bab6ec3402cc1561bb26c1bba6898884a1040c4d079c630099369b`). Six Starlette deprecation warnings were non-failing.
+
+## Gate 87 — TLS Scan DNS Pinning — COMPLETE
+
+TLS Scan previously connected to scoped hostnames directly, allowing a second uncontrolled DNS lookup and permitting a DNS name to resolve to internal addresses. The provider now resolves and validates hostname answers once per execution, rejects empty/oversized/mixed non-public answer sets by default, pins the TLS socket to the validated destination, and preserves the original hostname for SNI and certificate verification. Explicitly scoped literal private IP addresses remain usable; multicast and unspecified addresses are always denied.
+
+**Validation closure:** On 2026-10-23, the user confirmed the full PostgreSQL-backed suite reached 100%, Ruff passed, `git diff --check` passed, and the Windows wheel built successfully (SHA-256 `3e2a4638b7528d0b8e25d22194d6518658e50e764abdc791bb35c8acb23cde87`). Six Starlette deprecation warnings were non-failing.
+
+## Gate 88 — Standalone Service Interrogation DNS Pinning — COMPLETE
+
+The built-in `ActiveServiceInterrogationProvider` can be instantiated independently from Network Scan and currently passes scoped FQDNs to a socket probe that resolves them at connect time, without rejecting private DNS answers. Add the same fail-closed hostname resolution and validated-address pinning used by the network path, preserving the original host as the banner's Host identity and allowing explicitly scoped literal private IPs. Keep protocol, port, timeout, byte, cancellation, and evidence limits unchanged.
+
+**Validation closure:** On 2026-10-23, the user confirmed the full PostgreSQL-backed suite reached 100%, Ruff passed, `git diff --check` passed, and the Windows wheel built successfully (SHA-256 `42b21abcf780d08056024a084b476566e2567d6c603248b883fa3eecfe0db44c`). Six Starlette deprecation warnings were non-failing.
+
+## Gate 89 — Network Scan TLS Observation Integration — COMPLETE
+
+Network Scan previously stopped at TCP-open evidence on ports 443/8443, leaving the existing TLS probe and deterministic TLS policy findings disconnected from the default target-only scan workflow. The default API Network Scan now injects the bounded TLS probe; only a TCP-open 443/8443 target reaches TLS inspection, pinned to the same validated destination address and original hostname. TLS observations are sealed and persisted through ProviderHandoff under TLS provider provenance, then policy findings reference that persisted evidence. Focused tests cover pinned TLS evidence/finding persistence and the closed-port short circuit.
+
+**Validation closure:** On 2026-10-23, the user confirmed the focused Network/TLS tests, full PostgreSQL-backed suite at 100%, Ruff, and `git diff --check` passed. The Windows wheel built successfully with SHA-256 `b107e5b5c3bcb0d60a3f2d1fb9fa084737a6e9b6be3897124844fc32d3760bf0`. Six Starlette deprecation warnings were non-failing.
+
+**Gate 82 validation failure and repair:** The user's first full run reached 100% but reported 9 PostgreSQL fixture setup errors, one PostgreSQL schema-migration failure, and one TLS source assertion failure. The migration regression test had removed versions 11 and 12 but left version 13 recorded, creating a migration-history gap; the test database retained that gap and temporary legacy tenant structures. The test now removes versions 11–13 together so all are reapplied in order. Recovery was restricted to `threatlens_test`; registry entries 11–13 were removed, then test initialization reapplied them and reran the single-user cleanup. A `ProviderHandoff` regression also appended source labels for non-CVE findings; source composition is now limited to CVE findings so TLS semantics stay unchanged. The user confirmed the corrected full suite at 100%, Ruff, diff check, and later the exact-source Windows wheel build with SHA-256 `afb0d9c0d913c942af975540774830b5059678ce77b742aacfe5bc376b8e9f22`. Gate 82 is complete.

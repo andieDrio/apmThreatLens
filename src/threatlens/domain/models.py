@@ -156,13 +156,19 @@ class Service:
     port: int
     service_name: str | None = None
     version: str | None = None
+    product: str | None = None
     id: UUID = field(default_factory=uuid4)
+    vendor: str | None = None
 
     def __post_init__(self) -> None:
         if not self.protocol.strip():
             raise ValueError("service.protocol cannot be blank")
         if not 1 <= self.port <= 65535:
             raise ValueError("service.port must be within 1..65535")
+        if self.product is not None and (not self.product.strip() or len(self.product) > 128):
+            raise ValueError("service.product must be nonblank and at most 128 characters")
+        if self.vendor is not None and (not self.vendor.strip() or len(self.vendor) > 128):
+            raise ValueError("service.vendor must be nonblank and at most 128 characters")
 
 
 @dataclass(frozen=True, slots=True)

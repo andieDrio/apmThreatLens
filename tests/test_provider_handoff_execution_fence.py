@@ -188,9 +188,7 @@ def test_postgres_output_write_serializes_with_terminal_transition(
 ) -> None:
     repository = postgres_repository
     scan = running_scan(repository)
-    dsn = os.getenv("THREATLENS_TEST_DATABASE_URL") or os.getenv(
-        "THREATLENS_DATABASE_URL"
-    )
+    dsn = os.getenv("THREATLENS_TEST_DATABASE_URL")
     assert dsn
     other_repository = PostgresRepository(dsn)
     other_repository.initialize()

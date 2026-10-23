@@ -118,7 +118,15 @@ class ProviderHandoff:
 
         normalized = replace(
             finding,
-            source=provider.name,
+            source=(
+                provider.name
+                if (
+                    not finding.cve
+                    or not finding.source.strip()
+                    or finding.source == provider.name
+                )
+                else f"{provider.name}; {finding.source.strip()}"
+            ),
         )
         if self.correlator is not None:
             fenced_persist = getattr(self.correlator, "persist_for_execution", None)

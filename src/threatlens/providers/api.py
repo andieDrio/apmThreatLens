@@ -98,12 +98,16 @@ class APIAssessmentProvider:
                 return
             if url in excluded:
                 continue
-            self._validate_destination(url)
+            connect_address = self._validate_destination(url)
             for method in self.policy.methods:
                 if cancel_event.is_set():
                     return
                 observation = self.probe.request(
-                    url, method, self.policy.timeout_seconds, self.policy.max_response_bytes
+                    url,
+                    method,
+                    self.policy.timeout_seconds,
+                    self.policy.max_response_bytes,
+                    connect_address=connect_address,
                 )
                 api_observation = APIObservation(
                     url=observation.url,
@@ -140,7 +144,7 @@ class APIAssessmentProvider:
                             execution_id, self.metadata, asset, finding, (persisted,)
                         )
 
-    def _validate_destination(self, url: str) -> None:
+    def _validate_destination(self, url: str) -> str:
         hostname = urlparse(url).hostname
         if not hostname:
             raise ValueError("API assessment URL has no hostname")
@@ -162,14 +166,16 @@ class APIAssessmentProvider:
             raise ConnectionError(
                 f"API assessment DNS resolution returned no addresses: {hostname}"
             )
-        if not self.policy.allow_private_addresses and any(
-            address.is_private
-            or address.is_loopback
-            or address.is_link_local
-            or address.is_reserved
+        if len(addresses) > 16:
+            raise ValueError("API assessment DNS answer count exceeds execution policy")
+        if any(
+            address.is_multicast
+            or address.is_unspecified
+            or (not self.policy.allow_private_addresses and not address.is_global)
             for address in addresses
         ):
             raise PermissionError("API assessment destination resolves to a non-public address")
+        return str(sorted(addresses, key=lambda address: (address.version, int(address)))[0])
 
     @staticmethod
     def _is_url(value: str) -> bool:

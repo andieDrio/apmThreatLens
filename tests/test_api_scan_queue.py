@@ -8,7 +8,6 @@ from threatlens.api.app import create_app
 from threatlens.auth.service import AuthenticationService, Role
 from threatlens.domain.models import AuditEvent, Campaign, LifecycleState, Scope, Scan, User
 from threatlens.providers.runtime import ProviderMetadata, ProviderRegistry, ProviderCapability
-from threatlens.storage.auth import DEFAULT_ORGANIZATION_ID, DEFAULT_ORGANIZATION_NAME
 
 
 CAMPAIGN_ID = uuid4()
@@ -90,16 +89,6 @@ class FakeRepository:
     def user_by_id(self, user_id):
         return next((user for user in self.users.values() if user.id == user_id), None)
 
-    def organization_for_user(self, user_id):
-        user = self.user_by_id(user_id)
-        if user is None:
-            raise PermissionError("organization context unavailable")
-        return {
-            "organization_id": DEFAULT_ORGANIZATION_ID,
-            "organization_name": DEFAULT_ORGANIZATION_NAME,
-            "role": user.role,
-        }
-
     def create_session(self, user_id, token_hash, expires_at):
         session_id = uuid4()
         self.sessions[token_hash] = {
@@ -136,7 +125,7 @@ class FakeRepository:
     def save_audit_event(self, event: AuditEvent):
         self.audit_events.append(event)
 
-    def campaign_by_id(self, campaign_id, organization_id):
+    def campaign_by_id(self, campaign_id):
         if campaign_id not in self.campaigns:
             raise KeyError(str(campaign_id))
         return self.campaigns[campaign_id]
@@ -154,7 +143,6 @@ class FakeRepository:
     def execute_scan_lifecycle_command(
         self,
         execution_id,
-        organization_id,
         action,
         actor_user_id,
         idempotency_key,
@@ -239,7 +227,6 @@ class FakeOrchestrator:
         request_hash = sha256(f"CANCEL\n{execution_id}".encode()).hexdigest()
         return self.repository.execute_scan_lifecycle_command(
             execution_id,
-            principal.organization_id,
             "CANCEL",
             principal.user_id,
             idempotency_key,
@@ -267,7 +254,6 @@ class FakeOrchestrator:
         request_hash = sha256(f"RECOVER_STALE\n{execution_id}\n300.0".encode()).hexdigest()
         return self.repository.execute_scan_lifecycle_command(
             execution_id,
-            principal.organization_id,
             "RECOVER_STALE",
             principal.user_id,
             idempotency_key,

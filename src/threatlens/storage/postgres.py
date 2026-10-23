@@ -23,14 +23,19 @@ from threatlens.domain.models import (
     Severity,
     validate_finding_remediation_transition,
 )
-from threatlens.storage.auth import DEFAULT_ORGANIZATION_ID, PostgresAuthMixin
+from threatlens.domain.indicators import IOCIndicator
+from threatlens.providers.vulnerability_intelligence import (
+    VulnerabilityIntelligenceRecord,
+    normalize_vulnerability_record,
+)
+from threatlens.storage.auth import PostgresAuthMixin
 from threatlens.storage.evidence_validation import PostgresEvidenceValidationMixin
 from threatlens.storage.finding_correlation import PostgresFindingCorrelationMixin
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS campaigns (
     id UUID PRIMARY KEY, name TEXT NOT NULL, authorized BOOLEAN NOT NULL,
-    state TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL, organization_id UUID
+    state TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL
 );
 CREATE TABLE IF NOT EXISTS scopes (
     campaign_id UUID PRIMARY KEY REFERENCES campaigns(id) ON DELETE CASCADE
@@ -47,7 +52,8 @@ CREATE TABLE IF NOT EXISTS assets (
 CREATE TABLE IF NOT EXISTS services (
     id UUID PRIMARY KEY, asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
     protocol TEXT NOT NULL, port INTEGER NOT NULL CHECK (port BETWEEN 1 AND 65535),
-    service_name TEXT, version TEXT, UNIQUE(asset_id, protocol, port)
+    service_name TEXT, product TEXT, version TEXT, vendor TEXT,
+    UNIQUE(asset_id, protocol, port)
 );
 CREATE TABLE IF NOT EXISTS evidence (
     id UUID PRIMARY KEY, kind TEXT NOT NULL, content TEXT NOT NULL, source TEXT NOT NULL,
@@ -506,14 +512,13 @@ class PostgresRepository(
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.execute(
-                    "INSERT INTO campaigns (id,name,authorized,state,created_at,organization_id) VALUES (%s,%s,%s,%s,%s,%s)",
+                    "INSERT INTO campaigns (id,name,authorized,state,created_at) VALUES (%s,%s,%s,%s,%s)",
                     (
                         campaign.id,
                         campaign.name,
                         campaign.authorized,
                         campaign.state.value,
                         campaign.created_at,
-                        DEFAULT_ORGANIZATION_ID,
                     ),
                 )
                 cursor.execute("INSERT INTO scopes (campaign_id) VALUES (%s)", (campaign.id,))
@@ -523,9 +528,7 @@ class PostgresRepository(
                     + [(campaign.id, value, False) for value in campaign.scope.exclude],
                 )
 
-    def campaign_by_id(
-        self, campaign_id: UUID, organization_id: UUID
-    ) -> Campaign:
+    def campaign_by_id(self, campaign_id: UUID) -> Campaign:
         from threatlens.domain.models import LifecycleState, Scope
 
         with self.connection.cursor() as cursor:
@@ -543,9 +546,9 @@ class PostgresRepository(
                           )
                    FROM campaigns c
                    LEFT JOIN scope_entries se ON se.campaign_id = c.id
-                   WHERE c.id=%s AND c.organization_id=%s
+                   WHERE c.id=%s
                    GROUP BY c.id, c.name, c.authorized, c.state, c.created_at""",
-                (campaign_id, organization_id),
+                (campaign_id,),
             )
             row = cursor.fetchone()
         if row is None:
@@ -562,23 +565,20 @@ class PostgresRepository(
             ),
         )
 
-    def save_campaign_with_audit(
-        self, campaign: Campaign, actor_user_id: UUID, organization_id: UUID
-    ) -> None:
+    def save_campaign_with_audit(self, campaign: Campaign, actor_user_id: UUID) -> None:
         from threatlens.domain.models import AuditEvent
 
         with self._transaction_lock:
             with self.connection.transaction():
                 with self.connection.cursor() as cursor:
                     cursor.execute(
-                        "INSERT INTO campaigns (id,name,authorized,state,created_at,organization_id) VALUES (%s,%s,%s,%s,%s,%s)",
+                        "INSERT INTO campaigns (id,name,authorized,state,created_at) VALUES (%s,%s,%s,%s,%s)",
                         (
                             campaign.id,
                             campaign.name,
                             campaign.authorized,
                             campaign.state.value,
                             campaign.created_at,
-                            organization_id,
                         ),
                     )
                     cursor.execute("INSERT INTO scopes (campaign_id) VALUES (%s)", (campaign.id,))
@@ -614,13 +614,12 @@ class PostgresRepository(
             with self.connection.cursor() as cursor:
                 cursor.execute(
                     """INSERT INTO assets
-                           (id,organization_id,canonical_id,asset_type,value,first_seen_at,last_seen_at)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s)
-                       ON CONFLICT (organization_id,canonical_id) DO UPDATE
+                           (id,canonical_id,asset_type,value,first_seen_at,last_seen_at)
+                       VALUES (%s,%s,%s,%s,%s,%s)
+                       ON CONFLICT (canonical_id) DO UPDATE
                            SET last_seen_at=GREATEST(assets.last_seen_at,EXCLUDED.last_seen_at)""",
                     (
                         asset.id,
-                        DEFAULT_ORGANIZATION_ID,
                         asset.canonical_id,
                         asset.asset_type,
                         asset.value,
@@ -630,22 +629,21 @@ class PostgresRepository(
                 )
 
     def save_asset_for_execution(self, execution_id: UUID, asset: Asset) -> Asset:
-        """Persist a provider asset under the active scan campaign's organization."""
+        """Persist a provider asset only under its active scan execution lease."""
         with self._transaction_lock:
             with self.connection.transaction():
                 with self.connection.cursor() as cursor:
-                    organization_id = self._require_running_execution(cursor, execution_id)
+                    self._require_running_execution(cursor, execution_id)
                     cursor.execute(
                         """INSERT INTO assets
-                               (id,organization_id,canonical_id,asset_type,value,
+                               (id,canonical_id,asset_type,value,
                                 first_seen_at,last_seen_at)
-                           VALUES (%s,%s,%s,%s,%s,%s,%s)
-                           ON CONFLICT (organization_id,canonical_id) DO UPDATE
+                           VALUES (%s,%s,%s,%s,%s,%s)
+                           ON CONFLICT (canonical_id) DO UPDATE
                                SET last_seen_at=GREATEST(assets.last_seen_at,EXCLUDED.last_seen_at)
                            RETURNING id""",
                         (
                             asset.id,
-                            organization_id,
                             asset.canonical_id,
                             asset.asset_type,
                             asset.value,
@@ -660,61 +658,73 @@ class PostgresRepository(
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.execute(
-                    "SELECT organization_id FROM assets WHERE id=%s FOR UPDATE",
-                    (service.asset_id,),
-                )
-                asset = cursor.fetchone()
-                if asset is None or asset[0] != UUID(DEFAULT_ORGANIZATION_ID):
-                    raise KeyError(str(service.asset_id))
-                cursor.execute(
-                    """INSERT INTO services (id,asset_id,protocol,port,service_name,version)
-                       VALUES (%s,%s,%s,%s,%s,%s)
+                    """INSERT INTO services
+                           (id,asset_id,protocol,port,service_name,product,version,vendor)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
                        ON CONFLICT (asset_id,protocol,port) DO UPDATE SET
-                         service_name=EXCLUDED.service_name, version=EXCLUDED.version""",
+                         service_name=COALESCE(EXCLUDED.service_name,services.service_name),
+                         product=COALESCE(EXCLUDED.product,services.product),
+                         version=COALESCE(EXCLUDED.version,services.version),
+                         vendor=COALESCE(EXCLUDED.vendor,services.vendor)""",
                     (
                         service.id,
                         service.asset_id,
                         service.protocol,
                         service.port,
                         service.service_name,
+                        service.product,
                         service.version,
+                        service.vendor,
                     ),
                 )
 
-    def save_service_for_execution(self, execution_id: UUID, service: Service) -> None:
-        """Persist a service observation only under its active scan's organization."""
+    def save_service_for_execution(self, execution_id: UUID, service: Service) -> Service:
+        """Persist a service observation only under its active scan lease."""
         with self._transaction_lock:
             with self.connection.transaction():
                 with self.connection.cursor() as cursor:
-                    organization_id = self._require_running_execution(cursor, execution_id)
-                    cursor.execute(
-                        "SELECT organization_id FROM assets WHERE id=%s FOR UPDATE",
-                        (service.asset_id,),
-                    )
-                    asset = cursor.fetchone()
-                    if asset is None or asset[0] != organization_id:
+                    self._require_running_execution(cursor, execution_id)
+                    cursor.execute("SELECT 1 FROM assets WHERE id=%s FOR UPDATE", (service.asset_id,))
+                    if cursor.fetchone() is None:
                         raise KeyError(str(service.asset_id))
                     cursor.execute(
                         """INSERT INTO services
-                               (id,asset_id,protocol,port,service_name,version)
-                           VALUES (%s,%s,%s,%s,%s,%s)
+                               (id,asset_id,protocol,port,service_name,product,version,vendor)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
                            ON CONFLICT (asset_id,protocol,port) DO UPDATE SET
-                             service_name=EXCLUDED.service_name, version=EXCLUDED.version""",
+                             service_name=COALESCE(EXCLUDED.service_name,services.service_name),
+                             product=COALESCE(EXCLUDED.product,services.product),
+                             version=COALESCE(EXCLUDED.version,services.version),
+                             vendor=COALESCE(EXCLUDED.vendor,services.vendor)
+                           RETURNING id,service_name,product,version,vendor""",
                         (
                             service.id,
                             service.asset_id,
                             service.protocol,
                             service.port,
                             service.service_name,
+                            service.product,
                             service.version,
+                            service.vendor,
                         ),
                     )
+                    row = cursor.fetchone()
+        return Service(
+            asset_id=service.asset_id,
+            protocol=service.protocol,
+            port=service.port,
+            service_name=row[1],
+            product=row[2],
+            version=row[3],
+            vendor=row[4],
+            id=row[0],
+        )
 
     @staticmethod
-    def _require_running_execution(cursor, execution_id: UUID) -> UUID:
+    def _require_running_execution(cursor, execution_id: UUID) -> None:
         """Lock and verify the durable execution state before accepting provider output."""
         cursor.execute(
-            """SELECT s.state,c.organization_id FROM scans s
+            """SELECT s.state FROM scans s
                JOIN campaigns c ON c.id=s.campaign_id
                WHERE s.execution_id=%s FOR UPDATE OF s,c""",
             (execution_id,),
@@ -726,7 +736,6 @@ class PostgresRepository(
             raise RuntimeError(
                 "provider output rejected because execution is not RUNNING"
             )
-        return row[1]
 
     def save_evidence_for_execution(
         self, execution_id: UUID, evidence: Evidence
@@ -759,7 +768,8 @@ class PostgresRepository(
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
                 cursor.execute(
-                    """INSERT INTO evidence (id,kind,content,source,captured_at,sha256,metadata_json)
+                    """INSERT INTO evidence
+                       (id,kind,content,source,captured_at,sha256,metadata_json)
                        VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                     (
                         evidence.id,
@@ -775,13 +785,15 @@ class PostgresRepository(
     def save_finding(self, finding: Finding) -> None:
         with self.connection.transaction():
             with self.connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT organization_id FROM assets WHERE id=%s FOR UPDATE",
-                    (finding.asset_id,),
-                )
-                asset = cursor.fetchone()
-                if asset is None or asset[0] != UUID(DEFAULT_ORGANIZATION_ID):
+                cursor.execute("SELECT 1 FROM assets WHERE id=%s FOR UPDATE", (finding.asset_id,))
+                if cursor.fetchone() is None:
                     raise KeyError(str(finding.asset_id))
+                cursor.execute(
+                    "SELECT id FROM evidence WHERE id=ANY(%s)",
+                    (list(finding.evidence_ids),),
+                )
+                if len(cursor.fetchall()) != len(set(finding.evidence_ids)):
+                    raise KeyError("finding references missing evidence")
                 if finding.service_id is not None:
                     cursor.execute(
                         "SELECT 1 FROM services WHERE id=%s AND asset_id=%s",
@@ -824,14 +836,18 @@ class PostgresRepository(
         with self._transaction_lock:
             with self.connection.transaction():
                 with self.connection.cursor() as cursor:
-                    organization_id = self._require_running_execution(cursor, execution_id)
-                    cursor.execute(
-                        "SELECT organization_id FROM assets WHERE id=%s FOR UPDATE",
-                        (finding.asset_id,),
-                    )
-                    asset = cursor.fetchone()
-                    if asset is None or asset[0] != organization_id:
+                    self._require_running_execution(cursor, execution_id)
+                    cursor.execute("SELECT 1 FROM assets WHERE id=%s FOR UPDATE", (finding.asset_id,))
+                    if cursor.fetchone() is None:
                         raise KeyError(str(finding.asset_id))
+                    cursor.execute(
+                        "SELECT id FROM evidence WHERE id=ANY(%s)",
+                        (list(finding.evidence_ids),),
+                    )
+                    if len(cursor.fetchall()) != len(set(finding.evidence_ids)):
+                        raise KeyError(
+                            "finding references missing evidence"
+                        )
                     if finding.service_id is not None:
                         cursor.execute(
                             "SELECT 1 FROM services WHERE id=%s AND asset_id=%s FOR UPDATE",
@@ -874,18 +890,14 @@ class PostgresRepository(
         target_state: FindingState,
         actor_user_id: UUID,
         rationale: str,
-        organization_id: UUID = DEFAULT_ORGANIZATION_ID,
     ) -> tuple[bool, FindingState, bool]:
         """Atomically apply an authorized remediation state transition and audit it."""
         with self._transaction_lock:
             with self.connection.transaction():
                 with self.connection.cursor() as cursor:
                     cursor.execute(
-                        """SELECT f.state FROM findings f
-                           JOIN assets a ON a.id=f.asset_id
-                           WHERE f.id=%s AND a.organization_id=%s
-                           FOR UPDATE OF f,a""",
-                        (finding_id, organization_id),
+                        "SELECT state FROM findings WHERE id=%s FOR UPDATE",
+                        (finding_id,),
                     )
                     row = cursor.fetchone()
                     if row is None:
@@ -981,7 +993,6 @@ class PostgresRepository(
     def transition_finding_remediation_idempotent(
         self, finding_id: UUID, target_state: FindingState, actor_user_id: UUID,
         rationale: str, idempotency_key: str,
-        organization_id: UUID = DEFAULT_ORGANIZATION_ID,
     ) -> tuple[bool, FindingState, bool, bool]:
         """Apply remediation once per actor/key and durably replay its result."""
         payload = json.dumps({
@@ -999,10 +1010,8 @@ class PostgresRepository(
                         if existing[0] != request_hash:
                             raise ValueError("Idempotency-Key was already used for a different remediation request")
                         cursor.execute(
-                            """SELECT 1 FROM findings f JOIN assets a ON a.id=f.asset_id
-                               WHERE f.id=%s AND a.organization_id=%s
-                               FOR UPDATE OF f,a""",
-                            (finding_id, organization_id),
+                            "SELECT 1 FROM findings WHERE id=%s FOR UPDATE",
+                            (finding_id,),
                         )
                         if cursor.fetchone() is None:
                             raise KeyError(str(finding_id))
@@ -1010,14 +1019,12 @@ class PostgresRepository(
                     changed, state, allowed = self.transition_finding_remediation_with_audit(
                         finding_id=finding_id, target_state=target_state,
                         actor_user_id=actor_user_id, rationale=rationale,
-                        organization_id=organization_id,
                     )
                     cursor.execute("INSERT INTO finding_remediation_idempotency (actor_user_id, idempotency_key, request_hash, finding_id, changed, state, allowed, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)", (actor_user_id, idempotency_key, request_hash, finding_id, changed, state.value, allowed, datetime.now(UTC)))
                     return changed, state, allowed, True
     def finding_by_id(
         self,
         finding_id: UUID,
-        organization_id: UUID = DEFAULT_ORGANIZATION_ID,
     ) -> Finding:
         from threatlens.domain.models import FindingState, Severity
 
@@ -1027,9 +1034,9 @@ class PostgresRepository(
                           f.vulnerability_id, f.cwe, f.cve, f.cvss, f.confidence,
                           f.source, f.detected_at, f.service_id, f.endpoint,
                           f.parameter, f.location
-                   FROM findings f JOIN assets a ON a.id=f.asset_id
-                   WHERE f.id=%s AND a.organization_id=%s""",
-                (finding_id, organization_id),
+                   FROM findings f
+                   WHERE f.id=%s""",
+                (finding_id,),
             )
             row = cursor.fetchone()
             if row is None:
@@ -1272,7 +1279,6 @@ class PostgresRepository(
     def execute_scan_lifecycle_command(
         self,
         execution_id: UUID,
-        organization_id: UUID,
         action: str,
         actor_user_id: UUID,
         idempotency_key: str,
@@ -1338,9 +1344,9 @@ class PostgresRepository(
                         cursor.execute(
                             """SELECT 1 FROM scans s
                                JOIN campaigns c ON c.id=s.campaign_id
-                               WHERE s.execution_id=%s AND c.organization_id=%s
+                               WHERE s.execution_id=%s
                                FOR UPDATE OF s, c""",
-                            (execution_id, organization_id),
+                            (execution_id,),
                         )
                         if cursor.fetchone() is None:
                             raise KeyError(str(execution_id))
@@ -1349,9 +1355,9 @@ class PostgresRepository(
                     cursor.execute(
                         """SELECT s.state, COALESCE(s.heartbeat_at, s.started_at)
                            FROM scans s JOIN campaigns c ON c.id=s.campaign_id
-                           WHERE s.execution_id=%s AND c.organization_id=%s
+                           WHERE s.execution_id=%s
                            FOR UPDATE OF s, c""",
-                        (execution_id, organization_id),
+                        (execution_id,),
                     )
                     row = cursor.fetchone()
                     if row is None:
@@ -1732,38 +1738,29 @@ class PostgresRepository(
                     )
                     return changed
 
-    def dashboard_summary(
-        self, organization_id: UUID = DEFAULT_ORGANIZATION_ID
-    ) -> dict[str, object]:
+    def dashboard_summary(self) -> dict[str, object]:
         """Return bounded read-only aggregate data for the authenticated dashboard."""
         with self.connection.cursor() as cursor:
             cursor.execute(
-                "SELECT COUNT(*) FROM campaigns WHERE organization_id=%s",
-                (organization_id,),
+                "SELECT COUNT(*) FROM campaigns",
             )
             campaigns = int(cursor.fetchone()[0])
             cursor.execute(
-                "SELECT COUNT(*) FROM assets WHERE organization_id=%s",
-                (organization_id,),
+                "SELECT COUNT(*) FROM assets",
             )
             assets = int(cursor.fetchone()[0])
             cursor.execute(
-                """SELECT COUNT(*) FROM services s JOIN assets a ON a.id=s.asset_id
-                   WHERE a.organization_id=%s""",
-                (organization_id,),
+                "SELECT COUNT(*) FROM services",
             )
             services = int(cursor.fetchone()[0])
             cursor.execute(
-                """SELECT COUNT(*) FROM findings f JOIN assets a ON a.id=f.asset_id
-                   WHERE a.organization_id=%s""",
-                (organization_id,),
+                "SELECT COUNT(*) FROM findings",
             )
             findings = int(cursor.fetchone()[0])
             cursor.execute(
                 """SELECT f.severity,COUNT(*) FROM findings f
-                   JOIN assets a ON a.id=f.asset_id WHERE a.organization_id=%s
+                   JOIN assets a ON a.id=f.asset_id
                    GROUP BY f.severity ORDER BY f.severity""",
-                (organization_id,),
             )
             findings_by_severity = {
                 str(row[0]): int(row[1]) for row in cursor.fetchall()
@@ -1771,8 +1768,7 @@ class PostgresRepository(
             cursor.execute(
                 """SELECT s.state,COUNT(*) FROM scans s
                    JOIN campaigns c ON c.id=s.campaign_id
-                   WHERE c.organization_id=%s GROUP BY s.state ORDER BY s.state""",
-                (organization_id,),
+                   GROUP BY s.state ORDER BY s.state""",
             )
             scans_by_state = {str(row[0]): int(row[1]) for row in cursor.fetchall()}
         return {
@@ -1784,9 +1780,7 @@ class PostgresRepository(
             "scans_by_state": scans_by_state,
         }
 
-    def campaigns_read_model(
-        self, organization_id: UUID, limit: int = 50, offset: int = 0
-    ) -> dict[str, object]:
+    def campaigns_read_model(self, limit: int = 50, offset: int = 0) -> dict[str, object]:
         """Return bounded authorized campaign metadata and explicit scope entries."""
         if not 1 <= limit <= 100:
             raise ValueError("limit must be within 1..100")
@@ -1794,8 +1788,7 @@ class PostgresRepository(
             raise ValueError("offset cannot be negative")
         with self.connection.cursor() as cursor:
             cursor.execute(
-                "SELECT COUNT(*) FROM campaigns WHERE organization_id=%s",
-                (organization_id,),
+                "SELECT COUNT(*) FROM campaigns",
             )
             total = int(cursor.fetchone()[0])
             cursor.execute(
@@ -1812,11 +1805,10 @@ class PostgresRepository(
                           )
                    FROM campaigns c
                    LEFT JOIN scope_entries se ON se.campaign_id = c.id
-                   WHERE c.organization_id=%s
                    GROUP BY c.id, c.name, c.authorized, c.state, c.created_at
                    ORDER BY c.created_at DESC, c.id DESC
                    LIMIT %s OFFSET %s""",
-                (organization_id, limit, offset),
+                (limit, offset),
             )
             rows = cursor.fetchall()
         return {
@@ -1837,9 +1829,7 @@ class PostgresRepository(
             ],
         }
 
-    def campaign_report_read_model(
-        self, campaign_id: UUID, organization_id: UUID
-    ) -> dict[str, object]:
+    def campaign_report_read_model(self, campaign_id: UUID) -> dict[str, object]:
         """Build a bounded report using only scans and evidence from one campaign."""
         with self.connection.cursor() as cursor:
             cursor.execute(
@@ -1854,9 +1844,9 @@ class PostgresRepository(
                           )
                    FROM campaigns c
                    LEFT JOIN scope_entries se ON se.campaign_id=c.id
-                   WHERE c.id=%s AND c.organization_id=%s
+                   WHERE c.id=%s
                    GROUP BY c.id, c.name, c.authorized, c.state, c.created_at""",
-                (campaign_id, organization_id),
+                (campaign_id,),
             )
             campaign_row = cursor.fetchone()
             if campaign_row is None:
@@ -2019,12 +2009,12 @@ class PostgresRepository(
         }
 
     def campaign_report_export_with_audit(
-        self, campaign_id: UUID, actor_user_id: UUID, organization_id: UUID
+        self, campaign_id: UUID, actor_user_id: UUID
     ) -> dict[str, object]:
         """Read a campaign report and record its export in one transaction."""
         with self._transaction_lock:
             with self.connection.transaction():
-                report = self.campaign_report_read_model(campaign_id, organization_id)
+                report = self.campaign_report_read_model(campaign_id)
                 finding_summary = report["finding_summary"]
                 scan_summary = report["scan_summary"]
                 event = AuditEvent(
@@ -2059,9 +2049,7 @@ class PostgresRepository(
                     )
         return report
 
-    def scans_read_model(
-        self, organization_id: UUID, limit: int = 50, offset: int = 0
-    ) -> dict[str, object]:
+    def scans_read_model(self, limit: int = 50, offset: int = 0) -> dict[str, object]:
         """Return bounded scan execution state for the authenticated application layer."""
         if not 1 <= limit <= 100:
             raise ValueError("limit must be within 1..100")
@@ -2070,9 +2058,7 @@ class PostgresRepository(
         with self.connection.cursor() as cursor:
             cursor.execute(
                 """SELECT COUNT(*) FROM scans s
-                   JOIN campaigns c ON c.id=s.campaign_id
-                   WHERE c.organization_id=%s""",
-                (organization_id,),
+                   JOIN campaigns c ON c.id=s.campaign_id""",
             )
             total = int(cursor.fetchone()[0])
             cursor.execute(
@@ -2081,10 +2067,9 @@ class PostgresRepository(
                           LEFT(s.error, 2048)
                    FROM scans s
                    JOIN campaigns c ON c.id = s.campaign_id
-                   WHERE c.organization_id=%s
                    ORDER BY s.queued_at DESC, s.execution_id DESC
                    LIMIT %s OFFSET %s""",
-                (organization_id, limit, offset),
+                (limit, offset),
             )
             rows = cursor.fetchall()
         return {
@@ -2108,14 +2093,20 @@ class PostgresRepository(
             ],
         }
 
-    def evidence_read_model(self, limit: int = 50, offset: int = 0) -> dict[str, object]:
+    def evidence_read_model(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, object]:
         """Return bounded immutable evidence metadata without exposing raw payloads."""
         if not 1 <= limit <= 100:
             raise ValueError("limit must be within 1..100")
         if offset < 0:
             raise ValueError("offset cannot be negative")
         with self.connection.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*) FROM evidence")
+            cursor.execute(
+                "SELECT COUNT(*) FROM evidence",
+            )
             total = int(cursor.fetchone()[0])
             cursor.execute(
                 """SELECT id, kind, source, captured_at, sha256, metadata_json
@@ -2146,7 +2137,6 @@ class PostgresRepository(
         self,
         limit: int = 50,
         offset: int = 0,
-        organization_id: UUID = DEFAULT_ORGANIZATION_ID,
     ) -> dict[str, object]:
         """Return a bounded finding list without exposing raw evidence or arbitrary SQL."""
         if not 1 <= limit <= 100:
@@ -2155,9 +2145,7 @@ class PostgresRepository(
             raise ValueError("offset cannot be negative")
         with self.connection.cursor() as cursor:
             cursor.execute(
-                """SELECT COUNT(*) FROM findings f JOIN assets a ON a.id=f.asset_id
-                   WHERE a.organization_id=%s""",
-                (organization_id,),
+                "SELECT COUNT(*) FROM findings",
             )
             total = int(cursor.fetchone()[0])
             cursor.execute(
@@ -2168,10 +2156,9 @@ class PostgresRepository(
                    FROM findings f
                    JOIN assets a ON a.id = f.asset_id
                    LEFT JOIN services s ON s.id = f.service_id
-                   WHERE a.organization_id=%s
                    ORDER BY f.detected_at DESC, f.id DESC
                    LIMIT %s OFFSET %s""",
-                (organization_id, limit, offset),
+                (limit, offset),
             )
             rows = cursor.fetchall()
         items = [
@@ -2202,11 +2189,52 @@ class PostgresRepository(
         ]
         return {"total": total, "limit": limit, "offset": offset, "items": items}
 
+    def vulnerability_intelligence_for_service(
+        self, product: str, version: str, limit: int = 50
+    ) -> tuple[VulnerabilityIntelligenceRecord, ...]:
+        """Return only exact product/version intelligence candidates for a scan."""
+        if not product.strip() or len(product) > 128:
+            raise ValueError("invalid service product")
+        if not version.strip() or len(version) > 128:
+            raise ValueError("invalid service version")
+        if not 1 <= limit <= 50:
+            raise ValueError("invalid vulnerability intelligence match limit")
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT vulnerability_id,title,severity,cve,cwe,vendor,product,
+                          affected_versions,fixed_version,cvss,confidence,
+                          references_json,source
+                   FROM vulnerability_intelligence
+                   WHERE lower(product)=lower(%s)
+                     AND affected_versions @> jsonb_build_array(%s::text)
+                   ORDER BY updated_at DESC, vulnerability_id
+                   LIMIT %s""",
+                (product, version, limit),
+            )
+            rows = cursor.fetchall()
+        return tuple(
+            normalize_vulnerability_record(
+                vulnerability_id=row[0],
+                title=row[1],
+                severity=row[2],
+                cve=row[3],
+                cwe=row[4],
+                vendor=row[5],
+                product=row[6],
+                affected_versions=tuple(row[7]),
+                fixed_version=row[8],
+                cvss=row[9],
+                confidence=row[10],
+                references=tuple(row[11]),
+                source=row[12],
+            )
+            for row in rows
+        )
+
     def assets_read_model(
         self,
         limit: int = 50,
         offset: int = 0,
-        organization_id: UUID = DEFAULT_ORGANIZATION_ID,
     ) -> dict[str, object]:
         """Return bounded asset inventory with its observed services."""
         if not 1 <= limit <= 100:
@@ -2215,8 +2243,7 @@ class PostgresRepository(
             raise ValueError("offset cannot be negative")
         with self.connection.cursor() as cursor:
             cursor.execute(
-                "SELECT COUNT(*) FROM assets WHERE organization_id=%s",
-                (organization_id,),
+                "SELECT COUNT(*) FROM assets",
             )
             total = int(cursor.fetchone()[0])
             cursor.execute(
@@ -2225,13 +2252,13 @@ class PostgresRepository(
                           s.id, s.protocol, s.port, s.service_name, s.version
                    FROM (
                        SELECT id, canonical_id, asset_type, value, first_seen_at, last_seen_at
-                       FROM assets WHERE organization_id=%s
+                       FROM assets
                        ORDER BY last_seen_at DESC, id
                        LIMIT %s OFFSET %s
                    ) a
                    LEFT JOIN services s ON s.asset_id = a.id
                    ORDER BY a.last_seen_at DESC, a.id, s.port NULLS LAST, s.id NULLS LAST""",
-                (organization_id, limit, offset),
+                (limit, offset),
             )
             rows = cursor.fetchall()
         grouped: dict[UUID, dict[str, object]] = {}
@@ -2266,17 +2293,182 @@ class PostgresRepository(
             "items": list(grouped.values()),
         }
 
-    def asset_id(
-        self,
-        canonical_id: str,
-        organization_id: UUID = DEFAULT_ORGANIZATION_ID,
-    ) -> UUID:
+    def asset_id(self, canonical_id: str) -> UUID:
         with self.connection.cursor() as cursor:
             cursor.execute(
-                "SELECT id FROM assets WHERE canonical_id=%s AND organization_id=%s",
-                (canonical_id, organization_id),
+                "SELECT id FROM assets WHERE canonical_id=%s",
+                (canonical_id,),
             )
             row = cursor.fetchone()
         if row is None:
             raise KeyError(canonical_id)
         return row[0]
+
+    def save_vulnerability_intelligence(
+        self,
+        records: tuple[VulnerabilityIntelligenceRecord, ...],
+        audit_event: AuditEvent,
+    ) -> int:
+        """Upsert normalized feed records and audit the import atomically."""
+        saved = 0
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    for record in records:
+                        cursor.execute(
+                            """INSERT INTO vulnerability_intelligence (
+                                vulnerability_id, vendor, product, title, severity, cve, cwe,
+                                affected_versions, fixed_version, cvss, confidence,
+                                references_json, source, updated_at
+                            ) VALUES (
+                                %s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s::jsonb,%s,%s
+                            ) ON CONFLICT (vulnerability_id, vendor, product) DO UPDATE SET
+                                title=EXCLUDED.title,
+                                severity=EXCLUDED.severity,
+                                cve=EXCLUDED.cve,
+                                cwe=EXCLUDED.cwe,
+                                affected_versions=EXCLUDED.affected_versions,
+                                fixed_version=EXCLUDED.fixed_version,
+                                cvss=EXCLUDED.cvss,
+                                confidence=EXCLUDED.confidence,
+                                references_json=EXCLUDED.references_json,
+                                source=EXCLUDED.source,
+                                updated_at=EXCLUDED.updated_at""",
+                            (
+                                record.vulnerability_id,
+                                record.vendor or "",
+                                record.product,
+                                record.title,
+                                record.severity,
+                                record.cve,
+                                record.cwe,
+                                json.dumps(record.affected_versions),
+                                record.fixed_version,
+                                record.cvss,
+                                record.confidence,
+                                json.dumps(record.references),
+                                record.source,
+                                datetime.now(UTC),
+                            ),
+                        )
+                        saved += 1
+                    cursor.execute(
+                        """INSERT INTO audit_events
+                           (id,actor_user_id,action,resource_type,resource_id,outcome,detail,created_at)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        (
+                            audit_event.id,
+                            audit_event.actor_user_id,
+                            audit_event.action,
+                            audit_event.resource_type,
+                            audit_event.resource_id,
+                            audit_event.outcome,
+                            audit_event.detail,
+                            audit_event.created_at,
+                        ),
+                    )
+        return saved
+
+    def vulnerability_intelligence_read_model(
+        self, limit: int = 50, offset: int = 0
+    ) -> dict[str, object]:
+        if not 1 <= limit <= 100 or offset < 0:
+            raise ValueError("invalid vulnerability intelligence pagination")
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM vulnerability_intelligence")
+            total = cursor.fetchone()[0]
+            cursor.execute(
+                """SELECT vulnerability_id,title,severity,cve,cwe,vendor,product,
+                          affected_versions,fixed_version,cvss,confidence,
+                          references_json,source,updated_at
+                   FROM vulnerability_intelligence
+                   ORDER BY updated_at DESC, vulnerability_id, product
+                   LIMIT %s OFFSET %s""",
+                (limit, offset),
+            )
+            rows = cursor.fetchall()
+        items = [
+            normalize_vulnerability_record(
+                vulnerability_id=row[0],
+                title=row[1],
+                severity=row[2],
+                cve=row[3],
+                cwe=row[4],
+                vendor=row[5],
+                product=row[6],
+                affected_versions=tuple(row[7]),
+                fixed_version=row[8],
+                cvss=row[9],
+                confidence=row[10],
+                references=tuple(row[11]),
+                source=row[12],
+            )
+            for row in rows
+        ]
+        return {"total": total, "limit": limit, "offset": offset, "items": items}
+
+    def save_ioc_indicators(
+        self, indicators: tuple[IOCIndicator, ...], audit_event: AuditEvent
+    ) -> int:
+        """Upsert validated indicators and audit the import in one transaction."""
+        imported_at = datetime.now(UTC)
+        with self._transaction_lock:
+            with self.connection.transaction():
+                with self.connection.cursor() as cursor:
+                    for indicator in indicators:
+                        cursor.execute(
+                            """INSERT INTO ioc_indicators (
+                                   id,indicator_type,value,source,confidence,tags,
+                                   description,first_seen_at,last_seen_at
+                               ) VALUES (%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s)
+                               ON CONFLICT (indicator_type,value) DO UPDATE SET
+                                 source=EXCLUDED.source,
+                                 confidence=EXCLUDED.confidence,
+                                 tags=EXCLUDED.tags,
+                                 description=EXCLUDED.description,
+                                 last_seen_at=EXCLUDED.last_seen_at""",
+                            (
+                                indicator.id,
+                                indicator.indicator_type,
+                                indicator.value,
+                                indicator.source,
+                                indicator.confidence,
+                                json.dumps(indicator.tags),
+                                indicator.description,
+                                imported_at,
+                                imported_at,
+                            ),
+                        )
+                    self._insert_audit_event(cursor, audit_event)
+        return len(indicators)
+
+    def ioc_indicators_read_model(self, limit: int = 50, offset: int = 0) -> dict[str, object]:
+        if not 1 <= limit <= 100 or not 0 <= offset <= 1_000_000:
+            raise ValueError("invalid IOC pagination")
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM ioc_indicators")
+            total = int(cursor.fetchone()[0])
+            cursor.execute(
+                """SELECT id,indicator_type,value,source,confidence,tags,description,
+                          first_seen_at,last_seen_at
+                   FROM ioc_indicators
+                   ORDER BY last_seen_at DESC,id
+                   LIMIT %s OFFSET %s""",
+                (limit, offset),
+            )
+            rows = cursor.fetchall()
+        items = [
+            {
+                "id": str(row[0]),
+                "indicator_type": row[1],
+                "value": row[2],
+                "source": row[3],
+                "confidence": row[4],
+                "tags": list(row[5]),
+                "description": row[6],
+                "first_seen_at": row[7].isoformat(),
+                "last_seen_at": row[8].isoformat(),
+            }
+            for row in rows
+        ]
+        return {"total": total, "limit": limit, "offset": offset, "items": items}

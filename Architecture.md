@@ -38,7 +38,7 @@ TARGET
 
 The foundational domain model must support at minimum:
 
-- Organization
+- Local user and role
 - Campaign
 - Scope
 - Target
@@ -184,6 +184,10 @@ The integration is deliberately fail-closed when finding generation is enabled b
 ## 18. PostgreSQL Deployment Boundary
 
 PostgreSQL is the permanent production persistence backend through `PostgresRepository`. The schema mirrors the current domain integrity requirements: foreign keys, unique canonical asset identity, service uniqueness per asset/protocol/port, finding/evidence relationships, scan execution identity, and bounded CVSS/confidence values.
+
+The PostgreSQL app runtime registers the built-in TCP discovery and HTTP(S) baseline providers. `GET /api/v1/providers` exposes only registered provider metadata. `POST /api/v1/campaigns/{campaign_id}/scans/run` loads a campaign from the personal workspace, applies durable scan-command idempotency, claims the queued execution with a QUEUED-to-RUNNING compare-and-set, executes through the bounded provider runtime, and finalizes via the existing audited lifecycle transition. Exact retries can claim a still-QUEUED execution after interruption; concurrent retries cannot both claim it. The queue-only `/scans` endpoint remains available for a separate local worker.
+
+TCP scope accepts a bare host/IP (bounded default ports) or one explicit endpoint such as `192.0.2.10:8443` or `[2001:db8::10]:8443`; explicit endpoints probe only that port. HTTP assessment accepts absolute HTTP(S) URLs, limits requests to HEAD by default, suppresses redirects, bounds response reads, and blocks private/reserved destinations by default. These are conservative observation tools and do not run exploit payloads or call external Nmap/Nikto executables. The synchronous run endpoint is intended for these bounded local-development scans; durable multi-process worker handoff remains separate work.
 
 The repository contains `.env.example` with separate `THREATLENS_DATABASE_URL` (runtime) and `THREATLENS_MIGRATION_DATABASE_URL` (controlled schema migration) templates. Real credentials must remain outside version control. Local PostgreSQL installation, service lifecycle, database creation, and credential provisioning are deployment responsibilities and must not be silently automated by the application. API startup verifies schema readiness without applying DDL; run `python -m threatlens.storage.migrate` separately with the migration identity.
 
@@ -849,36 +853,88 @@ Gate 77 sanitizes metadata at the API response boundary: redact secret-like fiel
 
 **Validation status:** On 2026-10-21, the user confirmed the focused evidence API test and full suite reached 100%, Ruff and `git diff --check` passed, and the Windows wheel built successfully. Five Starlette deprecation warnings were non-failing. Commit `9abd8a8` is on `main` and `origin/main`; validation was user-confirmed.
 
-## Architecture Gate 78 — Organization-Level Data Isolation — IN PROGRESS
+## Architecture Gate 78 — Retired: Organization Data Model
 
-The architecture names Organization as a required core domain, but the PostgreSQL schema has no organization or user-membership entities. READ endpoints currently return global datasets to any authenticated READ principal, and assets are globally deduplicated by canonical identity. This is not a safe boundary for multiple customer organizations.
+The user confirmed APM ThreatLens is a personal project and requested complete removal of multi-tenant organization and membership functionality from the GUI, backend, and database. The runtime uses local account roles and a single personal workspace. Migration 9 removes the legacy organization and membership tables plus ownership columns from campaigns, assets, evidence, and audit events, preserving assessment rows and the append-only audit trail. The runtime schema verifier fails startup if those legacy structures reappear.
 
-Gate 78 is staged because a partial tenant filter would leave cross-organization paths exposed.
+Migration versions 4–8 remain in the ordered migration ledger because deployed databases already recorded their names and checksums. They are historical upgrade steps only; version 9 removes their structures from the active schema. Removing or editing their migration identities would prevent safe upgrades.
 
-### Stage 78A — Organization and Membership Context — COMPLETE
+Keep user authentication, role authorization, explicit target authorization, scan scope enforcement, cancellation, and audit history. No organization or membership context is used.
+## Architecture Gate 79 — Bounded Network Service Fingerprinting — COMPLETE
 
-PostgreSQL organization and membership tables, explicit default organization, retry-safe migration, atomic new-user membership, fail-closed organization context, `/api/v1/me`, and dashboard identity were implemented and user-validated on `main` commit `ff3f914`.
+The built-in Network Scan checks bounded default TCP ports 22, 25, 80, and 443. For an open port among 22, 25, and 80, it performs one additional fixed probe: receive-only SSH/SMTP banner collection or HTTP `HEAD /`. `normalize_observation()` extracts protocol/product/version metadata; service version is persisted and bounded banner evidence is sealed through execution-fenced `ProviderHandoff`. SSH banners such as `OpenSSH_9.6p1` normalize to product `OpenSSH`, version `9.6p1`. HTTP evidence retains only the status and `Server` headers to avoid storing cookies or unrelated response headers. Cancellation is checked before the follow-up probe and response bytes are capped at 8192.
 
-### Stage 78B — Organization-Scoped Resource Access — IN PROGRESS
+The provider tests use deterministic fake probes and cover service/version persistence plus evidence hash/provenance. On 2026-10-21, the user ran the full PostgreSQL-backed suite against `threatlens_test`; it reached 100% with five non-failing Starlette deprecation warnings. Ruff, `git diff --check`, and the Windows wheel build passed locally. No stealth, IDS/IPS evasion, or exploit payloads. This is an incremental capability and must not be presented as enterprise-scanner parity.
 
-#### Stage 78B1 — Campaign ownership — COMPLETE
+## Architecture Gate 80 — Personal Workspace and Database Cleanup — COMPLETE
 
-Add and backfill a required `campaigns.organization_id` foreign key. Campaign list/report reads, writes, and lookup before scan queueing are scoped by authenticated organization. The user confirmed focused tests, full suite, Ruff, diff check, and wheel build; commit `eb4e89f` is on `main` and `origin/main`.
+The authenticated UI and runtime use a local user role without organization/membership context. PostgreSQL migration 9 removes legacy organization tables and ownership columns, restores global canonical-asset uniqueness, and preserves assessment records and append-only audit controls. Startup fails closed if those structures reappear. Versions 4–8 remain in the immutable migration ledger for upgrade compatibility; migration 9 removes their structures from the active schema. On 2026-10-21 the user confirmed migration success on `threatlens_dev` and a 100% full PostgreSQL-backed test run on `threatlens_test`; five Starlette deprecation warnings were non-failing.
 
-#### Stage 78B2 — Scan activity reads — COMPLETE
+## Architecture Gate 81 — Evidence-Backed Version-to-CVE Correlation — COMPLETE
 
-Filter scan activity rows and counts through each scan's owning campaign. On 2026-10-21, the user confirmed focused PostgreSQL/API tests, full suite, Ruff, diff check, and Windows wheel build passed; commit `c8793a0` is on `main` and `origin/main`.
+Migrations 10–12 persist detected product and trusted intelligence. The NVD parser emits records only for explicit vulnerable exact-version CPE entries; rejected records, ranges, negated nodes, and compound AND nodes are skipped. A bounded HTTPS client calls only the official NVD host, disables redirects, caps responses at 2 MiB, enforces timeouts and process-wide request pacing, and reads an optional API key from the server environment. Admin-only `POST /api/v1/cve/ingest` transactionally stores records with an audit event; READ-authorized `GET /api/v1/cve` provides a bounded paginated read model. Network scans query exact product/version intelligence after service interrogation and emit only `SUSPECTED` findings tied to persisted service evidence through execution-fenced handoff. The provider persists the canonical service ID returned by PostgreSQL upserts. On 2026-10-23, the user confirmed migration success, the full PostgreSQL-backed suite reached 100%, Ruff and `git diff --check` passed, and the Windows wheel built; five Starlette deprecation warnings were non-failing. Matches remain candidates, not confirmed vulnerabilities.
 
-#### Stage 78B3 — Scan lifecycle controls — COMPLETE
+## Architecture Gate 82 — Vendor-Aware CVE Matching — COMPLETE
 
-Scan cancel and stale-recovery commands lock and verify the scan and owning campaign organization in the same transaction as the state mutation, audit event, and idempotency record. Replays also verify current ownership before returning a prior result. PostgreSQL regression coverage confirms cross-organization commands return not found without changing state, audit, or idempotency data, including replay after ownership changes. On 2026-10-21, the user confirmed focused PostgreSQL/API tests, the full suite at 100%, Ruff, diff check, and Windows wheel build passed; commit `ca0978a` is on `main` and `origin/main`.
+NVD CPE vendor identity is retained alongside product and exact version. PostgreSQL migration 13 adds vendor fields, and migration 15 applies the vendor-aware intelligence key `(vulnerability_id, vendor, product)` without rewriting the already-applied migration 13 identity. SQLite also persists observed vendor metadata. Matching rejects candidates when observed and intelligence vendors conflict; an unknown observed vendor lowers confidence. Findings remain `SUSPECTED`. On 2026-10-23, the user confirmed migration recovery, full PostgreSQL tests at 100%, Ruff, diff checks, and the exact-source Windows wheel build (SHA-256 `afb0d9c0d913c942af975540774830b5059678ce77b742aacfe5bc376b8e9f22`).
 
-#### Stage 78B4 — Asset and finding isolation — COMPLETE (local validation)
+## Architecture Gate 83 — Personal IOC Collection Import and Read API — COMPLETE
 
-Canonical asset identity is organization-specific. Provider-created assets, services, and findings bind to the campaign organization of their active scan; authenticated asset/finding read models, finding actions, and dashboard aggregates are scoped. Migration version 6 backfills existing assets to the default organization without data loss. Two-organization PostgreSQL/API regressions cover cross-organization reads and writes. On 2026-10-21, the user confirmed the focused and full PostgreSQL-backed suites, Ruff, `git diff --check`, and Windows wheel build passed. Five Starlette deprecation warnings were non-failing. Changes are local and await commit/push.
+The API accepts bounded JSON imports for IPv4, IPv6, domains, and MD5/SHA-1/SHA-256 hashes. It canonicalizes values, rejects unsupported or malformed input, stores provenance/confidence/tags, and writes an audit event in the same transaction. ADMIN is required to import and READ to list, with pagination capped at 100 entries and an offset of 1,000,000. Import performs no DNS resolution, callbacks, lookups, or scans. CSV ingestion and UI integration remain later work. PostgreSQL migration 14 creates the IOC store; migration 15 applies the distinct vendor-aware CVE key. The user confirmed migrations, IOC API/PostgreSQL tests, the full suite after updating a stale migration-ledger expectation, Ruff, diff check, and wheel build (SHA-256 `0595d1aa0ef407be6d5063814fce8a5077a696ba1461ccc26fe77b87d7639d02`). The user also confirmed the latest full PostgreSQL-backed suite passed at 100% and Ruff passed, with six non-failing Starlette deprecation warnings.
 
-#### Remaining Stage 78B work
+## Architecture Gate 84 — Passive Web Security Posture Checks — COMPLETE
 
-Scope remaining reads, aggregates, reports, writes, async provider handoff, evidence/finding relationships, audit events, and idempotency boundaries by the authenticated organization. Cross-organization IDs return not found; missing organization context fails closed. Multiple customer organizations must not be enabled until cross-organization API/PostgreSQL regressions cover the full resource graph.
+Improve useful Web Scan results using deterministic, evidence-backed checks against the already-authorized, bounded HTTP response. Checks cover Content-Security-Policy, Referrer-Policy, clickjacking protection, and Secure/HttpOnly/SameSite cookie attributes only when a session-like cookie is actually set. Preserve separate Set-Cookie header values, redact all cookie contents from evidence, and do not infer the presence of sensitive pages from a HEAD-only response. No redirect following, forms, fuzzing, payloads, or scope expansion. Validation and severity must distinguish confirmed header absence from contextual recommendations.
 
-**Acceptance criteria:** retry-safe, data-preserving migration; membership/role enforcement; two-organization tests for direct IDs, lists, aggregates, reports, evidence provenance, relationships, writes, and async paths; full PostgreSQL-backed suite without skips, Ruff, `git diff --check`, and wheel build before closing Gate 78.
+The user clarified that APM ThreatLens is currently a personal project. Prioritize useful Network Scan and Web Scan capability in this personal VAPT project. Keep the target-entry GUI simple and build scanner depth behind the existing provider/runtime/scope boundaries.
+
+**Gate 84 validation:** On 2026-10-23, the user confirmed the exact source passed the full PostgreSQL-backed suite at 100% without a skip summary, Ruff, `git diff --check`, and a Windows wheel build (SHA-256 `815b6a24043acbd3586dd613f1b901aea83893a9ee2149c464ad97f5b54be8e4`). Six Starlette deprecation warnings were non-failing. An earlier attempted run without `THREATLENS_TEST_DATABASE_URL` skipped PostgreSQL tests; that was corrected before final validation.
+
+## Architecture Gate 85 — Network Scan DNS Resolution Boundary — COMPLETE
+
+Network Scan previously passed scoped FQDNs directly to TCP connect and service interrogation, allowing separate system DNS lookups for each probe without validating the returned addresses. Resolve each hostname once per execution; reject empty, malformed, oversized, private, reserved, loopback, or link-local answer sets before creating a socket; pin both the TCP check and follow-up service probe to the same validated IP; and retain the original FQDN as the authorized asset identity and HTTP Host value. Explicitly scoped literal private IPs remain available for authorized internal assessments. Evidence records both the authorized host and resolved IP. No schema migration or UI changes are needed.
+
+**Validation closure:** The user confirmed the exact source passed the full PostgreSQL-backed suite at 100%, Ruff, `git diff --check`, and Windows wheel build (SHA-256 `983bfd20ec1c0fe2cbfa4795b1cdc40aa5859d72eef03a018dee77474ed31a9e`). Six Starlette deprecation warnings were non-failing.
+
+## Architecture Gate 86 — Web/API Scan DNS Pinning — COMPLETE
+
+Web/API assessment validates every DNS answer before sending requests and rejects empty or oversized answer sets. The transport connects directly to a validated address instead of resolving the hostname a second time. It retains the authorized hostname for the HTTP Host header and HTTPS SNI/certificate verification. Multicast and unspecified destinations are rejected even when private-address assessment is explicitly enabled. Existing response bounds, read-only methods, scope checks, and redirect suppression remain enforced.
+
+Validation closure: On 2026-10-23, the user confirmed the full PostgreSQL-backed suite reached 100%, Ruff passed, `git diff --check` passed, and the Windows wheel built successfully (SHA-256 `58e7658678bab6ec3402cc1561bb26c1bba6898884a1040c4d079c630099369b`). Six Starlette deprecation warnings were non-failing.
+
+## Architecture Gate 87 — TLS Scan DNS Pinning — COMPLETE
+
+TLS assessment now resolves each scoped hostname once per execution, rejects empty, oversized, or disallowed answer sets before opening a socket, and pins the TLS connection to the validated address. The original hostname is retained for SNI and normal certificate hostname validation. Explicit literal private IPs remain supported for authorized internal scans; multicast and unspecified addresses remain prohibited. Default policy rejects non-public hostname answers, with an explicit policy option for internal hostname scans.
+
+Validation closure: On 2026-10-23, the user confirmed the full PostgreSQL-backed suite reached 100%, Ruff and `git diff --check` passed, and the Windows wheel built successfully (SHA-256 `3e2a4638b7528d0b8e25d22194d6518658e50e764abdc791bb35c8acb23cde87`). Six Starlette deprecation warnings were non-failing.
+
+## Architecture Gate 88 — Standalone Service Interrogation DNS Pinning — COMPLETE
+
+The standalone active service interrogation provider must resolve each scoped hostname once, reject empty/oversized or disallowed non-public DNS answers before socket access, and pin its bounded banner probe to the validated IP. Preserve the original hostname for the fixed HTTP Host value and evidence identity. Explicit literal private IP targets remain available for authorized internal assessments. Preserve existing protocol, port, timeout, response-size, cancellation, and evidence-handoff controls.
+
+Validation closure: On 2026-10-23, the user confirmed the full PostgreSQL-backed suite reached 100%, Ruff and `git diff --check` passed, and the Windows wheel built successfully (SHA-256 `42b21abcf780d08056024a084b476566e2567d6c603248b883fa3eecfe0db44c`). Six Starlette deprecation warnings were non-failing.
+
+## Architecture Gate 89 — Network Scan TLS Observation Integration — COMPLETE
+
+The default Network Scan now performs bounded TLS inspection only after a TCP-open result on ports 443 or 8443. It reuses the network provider's already validated and pinned destination address while retaining the scoped hostname for SNI and certificate validation. TLS evidence and deterministic policy findings use the established TLS provider metadata and ProviderHandoff sealing/execution fence. No additional target entry or scan UI was added.
+
+Validation closure: On 2026-10-23, the user confirmed focused Network/TLS tests, the full PostgreSQL-backed suite at 100%, Ruff, `git diff --check`, and Windows wheel build (SHA-256 `b107e5b5c3bcb0d60a3f2d1fb9fa084737a6e9b6be3897124844fc32d3760bf0`). Six Starlette deprecation warnings were non-failing.
+
+### UI usability and scan launch — locally implemented
+
+The user requested a VAPT-first GUI with fixed top navigation/footer, working sidebar navigation, a target-only scan flow, and direct scan launch. For administrators, the local UI now presents one target field, explicit authorization confirmation, and a start button; it creates the authorized campaign and automatically selects the matching safe-by-default registered provider. Network target expansion is capped at 32 hosts. The current registered implementation still performs bounded TCP checks on its default ports or read-only HTTP observation; this is not yet the requested advanced scanner. Advanced network, web/API, cloud, and distributed capabilities remain roadmap items. UI/API tests pass locally; the user confirmed full PostgreSQL-backed validation of the single-user schema cleanup.
+
+## Product Capability Roadmap and Security Boundaries
+
+The README roadmap is the product target, not an implementation claim. Architecture work must preserve these boundaries as capabilities are added:
+
+- **Authorized scope is mandatory.** Every provider action, redirect, DNS resolution, worker dispatch, imported endpoint, and callback must be checked against persisted allow-lists and exclusions. Revalidate immediately before network access; default-deny ambiguous or out-of-scope targets.
+- **Network discovery is transparent and bounded.** TCP/UDP/permitted ICMP discovery, service/OS fingerprinting, CPE extraction, and traceroute must have explicit probe budgets, timeouts, and evidence provenance. Do not add decoys, fragmentation, source-port manipulation, firewall bypass, or IDS/IPS evasion.
+- **Check modules are capabilities, not arbitrary code execution.** Require a reviewed manifest, version, declared permissions/effects, resource limits, isolation, and normalized evidence contract. No arbitrary user scripts execute in the API process.
+- **Web/API checks are non-destructive by default.** Keep crawling same-scope and bounded; validate imported OpenAPI/Postman/GraphQL inputs; show request budgets; avoid modifying data or executing commands. OOB callbacks require an operator-owned service and explicit opt-in. RCE payload execution is out of scope.
+- **Authentication secrets are protected.** Store profiles and tokens using a dedicated secret boundary, redact them from logs/evidence/reports, and never place credentials in browser storage or source control. Authorization testing must use explicit test identities.
+- **Cloud/container checks are read-only and least-privilege.** Do not alter resources or probe cloud metadata endpoints. IaC analysis is local/static by default and must redact discovered secrets.
+- **Distributed execution inherits authorization boundaries.** Queue records and workers must bind actor, campaign, scope, provider permissions, idempotency, cancellation, and audit context. No worker may trust a client-supplied target claim.
+- **Reports preserve evidence quality.** Separate observed fact, inferred match, and validated vulnerability; include source/version/confidence and remediation; omit raw secrets and unsafe payloads.
+
+The intended sequence is evidence-backed network/service capabilities, bounded web/API checks, trusted CVE/IOC ingestion, read-only cloud/container/IaC assessment, durable workers, CLI/CI integration, and expanded report formats. Every stage needs explicit scope enforcement, regression coverage, and validation before its status is marked complete. Gates 85–89 are complete. No tenant model is in scope.

@@ -14,6 +14,45 @@ Implementation follows an evidence-first, safety-controlled VAPT orchestration m
 
 Build a production-grade, authorized VAPT orchestration platform that integrates asset discovery, attack-surface management, network/web/API/infrastructure assessment, vulnerability intelligence, normalized evidence, finding correlation, risk analysis, attack-path analysis, validation, remediation tracking, campaign orchestration, and professional reporting.
 
+## Product Capability Roadmap
+
+This roadmap describes the intended product, not features that are already available. See [Current State](#current-state) and `PROJECT_STATUS.md` for implemented capabilities and validation status.
+
+### Network and infrastructure assessment
+
+- Add policy-controlled host discovery using selected TCP, UDP, and permitted ICMP probes. Probes must remain inside an explicitly authorized scope and use transparent rate limits; they must not attempt firewall or IDS/IPS evasion.
+- Fingerprint operating systems and services from bounded TCP/IP and banner observations. Return confidence and standardized CPE identifiers only when evidence supports them; never infer a vulnerable version from a guess.
+- Provide a modular, reviewed check engine for safe configuration checks such as exposed anonymous services and unauthenticated management interfaces. Modules declare required permissions, network effects, limits, and evidence types before registration.
+- Correlate observed product and exact version data with trusted local or API-fed CVE sources, including source provenance, CVSS version/score, and match confidence.
+- Offer bounded traceroute and TTL observations to visualize paths only for authorized targets.
+- Provide operator-visible concurrency, timeout, jitter, and rate controls for stability and impact management. Decoy identities, packet fragmentation, source-port manipulation, and stealth/evasion modes are out of scope.
+
+### Web application and API assessment
+
+- Add an isolated headless-browser crawler for JavaScript-rendered applications. Keep navigation within the approved host/path scope and cap depth, pages, time, and downloaded bytes.
+- Import OpenAPI/Swagger documents, Postman collections, and supported GraphQL schemas as proposed endpoint inventories. Validate and bound all imported documents before use.
+- Add configurable parameter, header, and HTTP-method checks with per-target budgets and clear request previews. Fuzzing must be non-destructive and rate-limited.
+- Develop context-aware SQL/NoSQL injection and reflected/stored/DOM XSS checks in safe modes. Do not modify or delete application data, execute commands, or claim exploitability from an unverified signal. Any out-of-band verification must use an operator-controlled callback service and explicit opt-in; RCE payload execution is out of scope.
+- Add authenticated testing profiles for approved test accounts, cookie jars, JWT/OAuth flows, and later MFA integration. Keep credentials encrypted, access-controlled, redacted from logs, and out of browser storage. BOLA/IDOR and workflow checks require explicit test identities and bounded test records.
+- Assess CORS and rate-limit behavior using conservative request budgets and report observations with reproducible evidence.
+
+### Cloud, containers, and infrastructure as code
+
+- Add read-only, least-privilege AWS, GCP, and Azure posture checks for storage exposure, IAM policy breadth, and security-group/firewall configuration. Do not probe cloud metadata endpoints or alter cloud resources.
+- Assess Docker and Kubernetes only through explicitly authorized endpoints or supplied read-only credentials. Detect exposed management surfaces and risky configuration without deploying workloads or changing cluster state.
+- Add local static analysis for Terraform, Kubernetes manifests, and Dockerfiles. Treat source files as untrusted input, redact secrets, and never upload them to third parties by default.
+
+### Platform, orchestration, and reporting
+
+- Move long-running assessment work to durable asynchronous queues with bounded concurrency, cancellation, recovery, and observable worker health. Add distributed workers only after execution authorization is enforced at every worker boundary.
+- Enforce allow-lists, exclusions, DNS/IP resolution checks, redirect controls, and scope revalidation immediately before every network action.
+- Build JSON, CSV, HTML, and PDF reports for executives and developers, grouped by Critical/High/Medium/Low/Info, with evidence references, confidence, remediation guidance, and safe proof details.
+- Provide both a CLI and authenticated REST API/dashboard for case management and controlled CI/CD integration. CI/CD must use scoped credentials and fail safely on authorization or policy errors.
+
+### Delivery order
+
+Prioritize the personal VAPT workflow: expand evidence-backed network/service identification and safe checks; add bounded web/API discovery and authenticated testing; connect trusted CVE and IOC sources; then add cloud/container/IaC assessment, durable workers, CLI/CI integration, and report formats. Each capability requires explicit scope enforcement, regression coverage, and validation before being described as complete.
+
 ## Engineering Principle
 
 DISCOVER → UNDERSTAND → VALIDATE → CORRELATE → PRIORITIZE → REMEDIATE → VERIFY
@@ -34,7 +73,8 @@ Evidence over assumption. Correlation over duplication. Risk over raw vulnerabil
 - Provider execution runtime with structured execution events, execution metrics, failure capture, and cooperative timeout/cancellation signaling.
 - Evidence-first provider handoff with immutable evidence sealing, SHA-256 content integrity, execution/provider provenance, and finding/evidence validation.
 - Controlled discovery provider that normalizes only authorized campaign targets, honors exclusions/cancellation, persists normalized assets, and records discovery evidence without claiming vulnerabilities or performing network probing.
-- Controlled TCP network discovery adapter with explicit host allowlisting through campaign scope, exclusion enforcement, bounded target count, bounded ports, per-connect timeout, cooperative cancellation, service normalization, and evidence provenance.
+- Controlled TCP network discovery adapter with explicit host allowlisting through campaign scope, one-time hostname resolution and validated-address pinning, exclusion enforcement, bounded target count/ports, per-connect timeout, cooperative cancellation, service normalization, and evidence provenance.
+- The PostgreSQL application runtime registers the in-house TCP discovery and HTTP(S) baseline providers. The authenticated provider catalog reports what is actually available. An idempotent run endpoint executes a queued scan under the existing lifecycle lease; explicit `host:port` and `[IPv6]:port` scope entries select a single TCP port.
 - Service identification and protocol metadata normalizer for bounded observations, with explicit protocol classification, product/version extraction, confidence, and banner-size limits. Identification remains an observation layer and does not create vulnerability claims.
 - Controlled active service interrogation provider using only explicit, bounded protocol probes for authorized in-scope hosts, with target/port/response limits, cancellation, timeout, and evidence provenance.
 - Controlled TLS assessment provider with bounded TLS handshake inspection, certificate metadata capture, hostname verification state, cipher/protocol observation, timeout/target limits, exclusion enforcement, cancellation, and evidence provenance.
@@ -128,11 +168,14 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO threatlen
 REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
   ON audit_events FROM threatlens_runtime;
 GRANT SELECT, INSERT ON audit_events TO threatlens_runtime;
+REVOKE INSERT, UPDATE, DELETE ON users FROM threatlens_runtime;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
   ON threatlens_schema_migrations FROM threatlens_runtime;
 GRANT SELECT ON threatlens_schema_migrations TO threatlens_runtime;
 REVOKE CREATE ON SCHEMA public FROM threatlens_runtime;
 ```
+
+The runtime identity may authenticate users but cannot provision or modify user accounts. Create the initial administrator and later accounts through a trusted deployment/admin workflow using the migration identity; do not grant the runtime role write access to `users`.
 
 Use the same migration owner for subsequent schema changes so its default privileges apply. Existing installations may need a DBA-led ownership transfer before the migration identity can safely manage pre-existing objects. The runtime role must not be a member of the migration role, table owner, database owner, or superuser. Test the effective grants in the target environment; role membership and inherited grants can otherwise defeat a direct REVOKE.
 
@@ -193,7 +236,7 @@ Recovery is explicit: after a persistence failure, operators can inspect the aut
 
 ## Next Architecture Direction
 
-After local validation of this hardening, continue Gate 18 reliability/performance review with any remaining transaction-boundary races before advancing to the next architecture priority.
+Gates 83–89 are complete, including personal IOC import/read, passive Web Scan posture findings, DNS-pinned assessment, and bounded TLS observation on open TLS ports found during Network Scan. The simple one-target UI and DNS-pinned connection are preserved. Keep target entry simple and do not reintroduce tenant scope.
 
 
 ## Gate 18 Reliability Hardening Update — Execution Heartbeat and Stale Recovery
@@ -515,10 +558,18 @@ The report endpoint records `CAMPAIGN_REPORT_EXPORTED` with the authenticated ac
 
 The evidence-list response redacts secret-like metadata fields and sanitizes URL-like values by removing userinfo, query strings, and fragments. Stored evidence and hashes remain unchanged; safe provenance such as provider and execution ID remains available. On 2026-10-21, the user confirmed the focused evidence API test and full suite reached 100%, Ruff, diff check, and Windows wheel build passed. Five Starlette deprecation warnings were non-failing.
 
-### Architecture Gate 78 — Organization-Level Data Isolation: IN PROGRESS
+### Architecture Gate 78 — Retired: Organization Data Model
 
-Gate 78 is staged because partial scoping would leave cross-organization paths exposed.
+Gate 80 is complete: migration 9 succeeded on `threatlens_dev`, and the user ran the full PostgreSQL-backed suite against `threatlens_test`, which reached 100% with five non-failing Starlette deprecation warnings. Active organization/membership context, tenant filters, ownership columns, and the organization status panel are removed. Migration 9 preserves personal assessment and append-only audit records. Historical migration identities 4–8 remain solely for upgrade compatibility; migration 9 removes their structures from the active schema.
 
-Stage 78A is complete on `main` (`ff3f914`) and user-validated: PostgreSQL organizations/memberships, a retry-safe assignment of existing users to `Default Organization`, atomic membership creation for new accounts, fail-closed authenticated organization context, and a dashboard security-posture view.
+The authenticated GUI presents the personal VAPT workflow and administrator-defined authorized targets. The PostgreSQL runtime exposes the built-in bounded TCP and HTTP(S) providers through `GET /api/v1/providers`; `/api/v1/campaigns/{campaign_id}/scans/run` performs a bounded run, while `/scans` remains queue-only. Current scans are baseline checks, not enterprise-scanner parity.
 
-Stages 78B1, 78B2, and 78B3 are complete on `main` (`eb4e89f`, `c8793a0`, and `ca0978a`). Stage 78B4 is implemented and user-validated locally: canonical asset identity, provider asset/service/finding writes, asset/finding reads, finding actions, and dashboard aggregates are organization-scoped. The user confirmed the focused and full PostgreSQL-backed suites, Ruff, `git diff --check`, and Windows wheel build passed on 2026-10-21; five Starlette deprecation warnings were non-failing. B4 changes await commit/push. Evidence, audit, general idempotency, relationships, and asynchronous provider paths remain unscoped; multiple customer organizations remain unsupported until the full resource graph is isolated and tested.
+### Completed implementation gate — Gate 79: Bounded Network Service Fingerprinting
+
+The built-in Network Scan checks bounded default TCP ports 22, 25, 80, and 443. For open ports 22, 25, and 80, it performs a fixed banner probe (SSH/SMTP receive-only or HTTP HEAD), extracts protocol/product/version metadata, updates the persisted service record, and stores bounded evidence through the execution handoff. HTTP evidence retains only the status and `Server` headers. The user ran the full PostgreSQL-backed test suite against `threatlens_test`; it reached 100% with five non-failing Starlette deprecation warnings. This is an incremental capability, not enterprise-scanner parity. No stealth/evasion or exploit payloads.
+
+### Current implementation gate — Gate 81: Evidence-Backed Version-to-CVE Correlation
+
+Migrations 10–13 persist detected service products, reconcile legacy single-user schemas, store normalized vulnerability intelligence, and retain NVD CPE vendors. Migration 15 applies vendor-aware intelligence identity. On 2026-10-23 the user confirmed migration, full PostgreSQL-backed tests at 100%, Ruff, `git diff --check`, and Windows wheel build for vendor-aware exact product/version matching; five Starlette deprecation warnings were non-failing. Scan-time matching writes only `SUSPECTED` findings supported by persisted service-interrogation evidence through execution-fenced handoff. The NVD parser accepts only explicit vulnerable CPE entries with one exact version; a bounded HTTPS client disables redirects, caps responses at 2 MiB, applies timeouts and process-wide request pacing, and reads optional `THREATLENS_NVD_API_KEY` only from the server environment. Admin-only `POST /api/v1/cve/ingest` imports up to 10 distinct IDs with an audit event; READ-authorized `GET /api/v1/cve` exposes a paginated read model. Gate 82 is complete; wheel SHA-256: `afb0d9c0d913c942af975540774830b5059678ce77b742aacfe5bc376b8e9f22`. Gate 83 adds migrations 14–15 and a bounded passive personal IOC import/read API; the user confirmed migrations, the full suite green, Ruff, diff check, and wheel SHA-256 `0595d1aa0ef407be6d5063814fce8a5077a696ba1461ccc26fe77b87d7639d02`. Gates 84–89 add passive Web posture findings, DNS-pinned assessment, and bounded TLS observation on TLS ports found by Network Scan. No tenant scope.
+
+Gate 84 adds passive checks for missing/ineffective security headers and unsafe session-cookie attributes to the existing bounded Web Scan. Cookie values are redacted in persisted evidence. Local web/IOC tests pass (28 tests), Ruff and diff checks pass; full PostgreSQL-backed validation and a wheel build remain pending.
