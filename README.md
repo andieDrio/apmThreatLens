@@ -236,7 +236,7 @@ Recovery is explicit: after a persistence failure, operators can inspect the aut
 
 ## Next Architecture Direction
 
-Gates 83–89 are complete, including personal IOC import/read, passive Web Scan posture findings, DNS-pinned assessment, and bounded TLS observation on open TLS ports found during Network Scan. Gate 90 is in progress to minimize sensitive HTTP response data persisted as evidence; it requires no UI change. The simple one-target UI and DNS-pinned connection are preserved. Keep target entry simple and do not reintroduce tenant scope.
+Gates 83–90 are complete, including personal IOC import/read, passive Web Scan posture findings, DNS-pinned assessment, bounded TLS observation on open TLS ports found during Network Scan, and HTTP response evidence minimization. On 2026-10-23, focused Web/API tests and the full pytest suite reached 100% with full-run exit code 0; Ruff, `git diff --check`, and Windows wheel build passed. Wheel SHA-256: `750799068f195d4908e613fb26790eb19669eea52f4082576f6bac2dfe443acd`. Six Starlette deprecation warnings were non-failing; the captured summary did not include explicit passed/skipped totals. Before selecting Gate 91, inspect the latest main implementation and identify the highest unfinished architecture gap. The simple one-target UI and DNS-pinned connection are preserved. Keep target entry simple and do not reintroduce tenant scope.
 
 
 ## Gate 18 Reliability Hardening Update — Execution Heartbeat and Stale Recovery
