@@ -2,10 +2,10 @@
 
 **Last updated:** 2026-10-23
 **Source of truth:** GitHub `main`  
-**Highest architecture gate reached:** Gate 89
+**Highest architecture gate reached:** Gate 90
 **Highest fully validated gate:** Gate 89 (user-confirmed on 2026-10-23)
-**Current gate:** Reassess the next verified security gap
-**Current status:** The user confirmed Gate 89 focused Network/TLS tests, full PostgreSQL-backed suite at 100%, Ruff, `git diff --check`, and Windows wheel build. Wheel SHA-256: `b107e5b5c3bcb0d60a3f2d1fb9fa084737a6e9b6be3897124844fc32d3760bf0`. Six Starlette deprecation warnings were non-failing. Changes remain local pending the user's commit/push.
+**Current gate:** Gate 90 — HTTP response evidence minimization (in progress)
+**Current status:** Gate 89's focused Network/TLS tests, full PostgreSQL-backed suite at 100%, Ruff, `git diff --check`, and Windows wheel build were user-confirmed. Wheel SHA-256: `b107e5b5c3bcb0d60a3f2d1fb9fa084737a6e9b6be3897124844fc32d3760bf0`; six Starlette deprecation warnings were non-failing. Commit `d6f53f9` is confirmed on `main` and `origin/main`. Gate 90 changes are local and awaiting validation.
 
 ## Executive Summary
 
@@ -495,5 +495,9 @@ The built-in `ActiveServiceInterrogationProvider` can be instantiated independen
 Network Scan previously stopped at TCP-open evidence on ports 443/8443, leaving the existing TLS probe and deterministic TLS policy findings disconnected from the default target-only scan workflow. The default API Network Scan now injects the bounded TLS probe; only a TCP-open 443/8443 target reaches TLS inspection, pinned to the same validated destination address and original hostname. TLS observations are sealed and persisted through ProviderHandoff under TLS provider provenance, then policy findings reference that persisted evidence. Focused tests cover pinned TLS evidence/finding persistence and the closed-port short circuit.
 
 **Validation closure:** On 2026-10-23, the user confirmed the focused Network/TLS tests, full PostgreSQL-backed suite at 100%, Ruff, and `git diff --check` passed. The Windows wheel built successfully with SHA-256 `b107e5b5c3bcb0d60a3f2d1fb9fa084737a6e9b6be3897124844fc32d3760bf0`. Six Starlette deprecation warnings were non-failing.
+
+## Gate 90 — HTTP Response Evidence Minimization — IN PROGRESS
+
+Web/API evidence previously persisted raw response excerpts, arbitrary response headers, redirect destinations, and request URLs with potential userinfo, query credentials, or fragments. The local implementation now stores a SHA-256 digest and byte count instead of body text; allowlists response headers and redacts cookie values; records only whether a redirect was observed; and removes URL userinfo, query strings, and fragments from persisted evidence and URL metadata. The API provider still evaluates the bounded body in memory for its existing JSON check. Network requests, scope validation, and redirect suppression are unchanged. Validate the focused and full PostgreSQL-backed suites, Ruff, diff check, and Windows wheel before marking complete.
 
 **Gate 82 validation failure and repair:** The user's first full run reached 100% but reported 9 PostgreSQL fixture setup errors, one PostgreSQL schema-migration failure, and one TLS source assertion failure. The migration regression test had removed versions 11 and 12 but left version 13 recorded, creating a migration-history gap; the test database retained that gap and temporary legacy tenant structures. The test now removes versions 11–13 together so all are reapplied in order. Recovery was restricted to `threatlens_test`; registry entries 11–13 were removed, then test initialization reapplied them and reran the single-user cleanup. A `ProviderHandoff` regression also appended source labels for non-CVE findings; source composition is now limited to CVE findings so TLS semantics stay unchanged. The user confirmed the corrected full suite at 100%, Ruff, diff check, and later the exact-source Windows wheel build with SHA-256 `afb0d9c0d913c942af975540774830b5059678ce77b742aacfe5bc376b8e9f22`. Gate 82 is complete.

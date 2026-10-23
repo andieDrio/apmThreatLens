@@ -20,6 +20,12 @@ from urllib.parse import urlparse, urlsplit
 
 from threatlens.domain.models import Asset, Campaign, Evidence, Finding, FindingState, Severity
 from threatlens.providers.handoff import ProviderHandoff
+from threatlens.providers.http_evidence import (
+    redirect_was_observed,
+    safe_content_type,
+    safe_http_evidence_url,
+    serialize_http_evidence,
+)
 from threatlens.providers.runtime import ProviderCapability, ProviderMetadata
 
 
@@ -203,11 +209,13 @@ class WebAssessmentProvider:
                     content=self._serialize(observation),
                     source=self.name,
                     metadata={
-                        "url": url,
+                        "url": safe_http_evidence_url(url),
                         "method": method,
                         "status_code": str(observation.status_code),
-                        "content_type": self._header(observation, "content-type"),
-                        "location": observation.redirect_location or "",
+                        "content_type": safe_content_type(
+                            self._header(observation, "content-type")
+                        ),
+                        "redirect_observed": str(redirect_was_observed(observation)).lower(),
                     },
                 )
                 persisted = self.handoff.persist_evidence(execution_id, self.metadata, evidence)
@@ -244,14 +252,48 @@ class WebAssessmentProvider:
 
     @staticmethod
     def _normalize_url(value: str) -> str:
-        parsed = urlparse(value.strip())
+        value = value.strip()
+        parsed = urlparse(value)
+
         if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
-            raise ValueError(f"web assessment requires an absolute HTTP(S) URL: {value!r}")
-        if parsed.username or parsed.password:
+            raise ValueError(
+                f"web assessment requires an absolute HTTP(S) URL: {value!r}"
+            )
+
+        if parsed.username is not None or parsed.password is not None:
             raise ValueError("web assessment URLs cannot contain userinfo")
+
         if parsed.fragment:
             raise ValueError("web assessment URLs cannot contain fragments")
-        return value.strip()
+
+        try:
+            port = parsed.port
+        except ValueError as exc:
+            raise ValueError("web assessment URL contains an invalid port") from exc
+
+        scheme = parsed.scheme.lower()
+        hostname = parsed.hostname.lower()
+
+        # IPv6 literals must retain brackets in the URL authority.
+        if ":" in hostname:
+            hostname = f"[{hostname}]"
+        else:
+            try:
+                hostname = hostname.encode("idna").decode("ascii")
+            except UnicodeError as exc:
+                raise ValueError("web assessment URL contains an invalid hostname") from exc
+
+        default_port = 80 if scheme == "http" else 443
+        netloc = hostname
+        if port is not None and port != default_port:
+            netloc = f"{netloc}:{port}"
+
+        return parsed._replace(
+            scheme=scheme,
+            netloc=netloc,
+            path=parsed.path or "/",
+            fragment="",
+        ).geturl()
 
     def _validate_destination(self, url: str) -> str:
         hostname = urlparse(url).hostname
@@ -297,15 +339,8 @@ class WebAssessmentProvider:
 
     @staticmethod
     def _serialize(observation: HTTPObservation) -> str:
-        headers = "\n".join(
-            f"{key}: {_redact_set_cookie(value) if key.lower() == 'set-cookie' else value}"
-            for key, value in observation.headers
-        )
-        return (
-            f"url={observation.url}\nmethod={observation.method}\n"
-            f"status_code={observation.status_code}\nreason={observation.reason}\n"
-            f"headers:\n{headers}\nredirect_location={observation.redirect_location or ''}\n"
-            f"body_excerpt:\n{observation.body_excerpt}"
+        return serialize_http_evidence(
+            observation, cookie_redactor=_redact_set_cookie
         )
 
 

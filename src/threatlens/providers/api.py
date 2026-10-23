@@ -17,8 +17,14 @@ from urllib.parse import urlparse
 
 from threatlens.domain.models import Asset, Campaign, Evidence, Finding, FindingState, Severity
 from threatlens.providers.handoff import ProviderHandoff
+from threatlens.providers.http_evidence import (
+    redirect_was_observed,
+    safe_content_type,
+    safe_http_evidence_url,
+    serialize_http_evidence,
+)
 from threatlens.providers.runtime import ProviderMetadata, ProviderCapability
-from threatlens.providers.web import HTTPProbe
+from threatlens.providers.web import HTTPProbe, _redact_set_cookie
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,11 +133,13 @@ class APIAssessmentProvider:
                     content=self._serialize(api_observation),
                     source=self.name,
                     metadata={
-                        "url": url,
+                        "url": safe_http_evidence_url(url),
                         "method": method,
                         "status_code": str(observation.status_code),
-                        "content_type": self._header(observation, "content-type"),
-                        "location": observation.redirect_location or "",
+                        "content_type": safe_content_type(
+                            self._header(observation, "content-type")
+                        ),
+                        "redirect_observed": str(redirect_was_observed(observation)).lower(),
                     },
                 )
                 persisted = self.handoff.persist_evidence(execution_id, self.metadata, evidence)
@@ -202,12 +210,10 @@ class APIAssessmentProvider:
 
     @staticmethod
     def _serialize(observation: APIObservation) -> str:
-        headers = "\n".join(f"{key}: {value}" for key, value in observation.headers)
-        return (
-            f"url={observation.url}\nmethod={observation.method}\n"
-            f"status_code={observation.status_code}\nreason={observation.reason}\n"
-            f"headers:\n{headers}\nredirect_location={observation.redirect_location or ''}\n"
-            f"body_excerpt:\n{observation.body_excerpt}"
+        return serialize_http_evidence(
+            observation,
+            cookie_redactor=_redact_set_cookie,
+            body_truncated=observation.body_truncated,
         )
 
 

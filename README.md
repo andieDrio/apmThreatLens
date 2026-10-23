@@ -236,7 +236,7 @@ Recovery is explicit: after a persistence failure, operators can inspect the aut
 
 ## Next Architecture Direction
 
-Gates 83–89 are complete, including personal IOC import/read, passive Web Scan posture findings, DNS-pinned assessment, and bounded TLS observation on open TLS ports found during Network Scan. The simple one-target UI and DNS-pinned connection are preserved. Keep target entry simple and do not reintroduce tenant scope.
+Gates 83–89 are complete, including personal IOC import/read, passive Web Scan posture findings, DNS-pinned assessment, and bounded TLS observation on open TLS ports found during Network Scan. Gate 90 is in progress to minimize sensitive HTTP response data persisted as evidence; it requires no UI change. The simple one-target UI and DNS-pinned connection are preserved. Keep target entry simple and do not reintroduce tenant scope.
 
 
 ## Gate 18 Reliability Hardening Update — Execution Heartbeat and Stale Recovery

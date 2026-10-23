@@ -1,3 +1,4 @@
+from hashlib import sha256
 from threading import Event
 from uuid import uuid4
 
@@ -105,6 +106,38 @@ def test_api_provider_persists_evidence_and_finding() -> None:
     assert provider.probe.calls[0][4] == "93.184.216.34"
     assert repository.evidence[0].kind == "api-assessment"
     assert repository.findings[0].evidence_ids == (repository.evidence[0].id,)
+
+
+def test_api_evidence_redacts_response_body_headers_and_redirect_url() -> None:
+    body = '{"account_email":"person@example.test","access_token":"secret-body-value"}'
+    response = APIObservation(
+        url="https://user:secret-url-value@api.example.test/v1/profile?access_token=secret-query-value#private",
+        method="GET",
+        status_code=200,
+        reason="OK",
+        headers=(
+            ("content-type", "application/json"),
+            ("x-auth-token", "secret-header-value"),
+            ("location", "https://other.example.test/?token=secret-redirect-value"),
+        ),
+        body_excerpt=body,
+        redirect_location="https://other.example.test/?token=secret-redirect-value",
+    )
+
+    serialized = APIAssessmentProvider._serialize(response)
+
+    assert body not in serialized
+    assert "person@example.test" not in serialized
+    assert "secret-body-value" not in serialized
+    assert "secret-header-value" not in serialized
+    assert "secret-redirect-value" not in serialized
+    assert "secret-url-value" not in serialized
+    assert "secret-query-value" not in serialized
+    assert "private" not in serialized
+    assert "url=https://api.example.test/v1/profile" in serialized
+    assert "x-auth-token" not in serialized
+    assert f"body_excerpt_sha256={sha256(body.encode()).hexdigest()}" in serialized
+    assert "redirect_observed=true" in serialized
 
 
 def test_api_provider_rejects_private_destination() -> None:

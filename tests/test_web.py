@@ -1,3 +1,4 @@
+from hashlib import sha256
 from threading import Event
 from uuid import uuid4
 
@@ -135,6 +136,42 @@ def test_web_policy_evaluates_all_session_cookie_headers_without_values():
     assert "secret-value" not in serialized
     assert "another-secret" not in serialized
     assert "[REDACTED]" in serialized
+
+
+def test_web_evidence_keeps_only_safe_headers_and_body_digest():
+    body = '<html><input value="private-profile-data"></html>'
+    response = HTTPObservation(
+        url="https://user:secret-url-value@example.test/profile?session=secret-query-value#private",
+        method="GET",
+        status_code=200,
+        reason="OK",
+        headers=(
+            ("content-type", "text/html; profile=secret-content-type-value"),
+            ("x-api-key", "secret-header-value"),
+            ("server", "s" * 513),
+            ("location", "https://other.test/?access_token=secret-redirect-value"),
+        ),
+        body_excerpt=body,
+        redirect_location="https://other.test/?access_token=secret-redirect-value",
+    )
+
+    serialized = WebAssessmentProvider._serialize(response)
+
+    assert body not in serialized
+    assert "private-profile-data" not in serialized
+    assert "secret-header-value" not in serialized
+    assert "secret-redirect-value" not in serialized
+    assert "secret-content-type-value" not in serialized
+    assert "secret-url-value" not in serialized
+    assert "secret-query-value" not in serialized
+    assert "private" not in serialized
+    assert "url=https://example.test/profile" in serialized
+    assert "x-api-key" not in serialized
+    assert "headers_truncated=true" in serialized
+    server_line = next(line for line in serialized.splitlines() if line.startswith("server: "))
+    assert len(server_line.removeprefix("server: ")) == 512
+    assert f"body_excerpt_sha256={sha256(body.encode()).hexdigest()}" in serialized
+    assert "redirect_observed=true" in serialized
 
 
 def test_web_policy_reports_missing_secure_for_samesite_none_cookie():
@@ -381,3 +418,56 @@ def test_web_provider_supports_explicit_bounded_get() -> None:
     )
     provider.execute(campaign, uuid4(), Event())
     assert probe.calls[0][1] == "GET"
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    (
+        (" HTTPS://EXAMPLE.test ", "https://example.test/"),
+        ("http://EXAMPLE.test:80", "http://example.test/"),
+        ("https://EXAMPLE.test:443/path", "https://example.test/path"),
+        ("https://EXAMPLE.test:8443/Path?x=1", "https://example.test:8443/Path?x=1"),
+        ("https://[2001:db8::1]:443", "https://[2001:db8::1]/"),
+        ("https://BÜCHER.example/", "https://xn--bcher-kva.example/"),
+    ),
+)
+def test_web_provider_normalizes_url_identity(value, expected):
+    assert WebAssessmentProvider._normalize_url(value) == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        "https://example.test:invalid/",
+        "https://example.test:99999/",
+        "ftp://example.test/",
+        "https://user:pass@example.test/",
+        "https://example.test/#fragment",
+    ),
+)
+def test_web_provider_rejects_invalid_or_unsupported_urls(value):
+    with pytest.raises(ValueError):
+        WebAssessmentProvider._normalize_url(value)
+
+
+def test_web_provider_excludes_equivalent_normalized_url():
+    repository = MemoryRepository()
+    probe = FakeProbe(observation())
+    provider = WebAssessmentProvider(
+        ProviderHandoff(repository),
+        WebAssessmentPolicy(allow_private_addresses=True),
+        probe=probe,
+        destination_resolver=lambda hostname: ("93.184.216.34",),
+    )
+    campaign = Campaign(
+        name="normalized-exclusion",
+        scope=Scope(
+            include=("https://EXAMPLE.test",),
+            exclude=("https://example.test:443/",),
+        ),
+        authorized=True,
+    )
+
+    provider.execute(campaign, uuid4(), Event())
+
+    assert probe.calls == []
+    assert repository.evidence == []
